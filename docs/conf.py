@@ -75,9 +75,14 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/Kankelborg-Group/interp",
-            "icon": "fab fa-github-square",
+            "url": "https://github.com/byrdie/interp",
+            "icon": "fa-brands fa-github",
             "type": "fontawesome",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/interp/",
+            "icon": "fa-brands fa-python",
         },
     ],
 }

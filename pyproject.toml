@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "interp"
+authors = [
+    {name = "Roy T. Smart", email = "roytsmart@gmail.com"},
+]
+description = "Numba-accelerated interpolation routines"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "numpy",
+    "numba",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "scipy",
+]
+doc = [
+    "pytest",
+    "graphviz",
+    "sphinx-autodoc-typehints",
+    "pydata-sphinx-theme",
+    "jupyter-sphinx",
+    "sphinx-favicon",
+]
+
+[project.urls]
+Homepage = "https://github.com/byrdie/interp"
+Documentation = "https://interp.readthedocs.io/en/latest"
+
+[tool.setuptools_scm]

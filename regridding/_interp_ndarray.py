@@ -11,7 +11,7 @@ __all__ = [
 
 def ndarray_linear_interpolation(
         a: np.ndarray,
-        coordinates: tuple[np.ndarray],
+        indices: tuple[np.ndarray, ...],
         axis: None | int | tuple[int] = None,
 ):
 
@@ -26,9 +26,9 @@ def ndarray_linear_interpolation(
     axis = np.core.numeric.normalize_axis_tuple(axis, ndim=a.ndim)
     print("axis", axis)
 
-    if len(coordinates) != len(axis):
+    if len(indices) != len(axis):
         raise ValueError(
-            f"The number of coordinates, {len(coordinates)}, must match the number of elements in axis, {len(axis)}"
+            f"The number of coordinates, {len(indices)}, must match the number of elements in axis, {len(axis)}"
         )
 
     axis_orthogonal = tuple(ax for ax in range(a.ndim) if ax not in axis)
@@ -36,10 +36,10 @@ def ndarray_linear_interpolation(
     shape_orthogonal = tuple(a.shape[ax] if ax in axis_orthogonal else 1 for ax in range(a.ndim))
     print("shape_orthogonal", shape_orthogonal)
 
-    shape_result = np.broadcast_shapes(shape_orthogonal, *[coord.shape for coord in coordinates])
+    shape_result = np.broadcast_shapes(shape_orthogonal, *[ind.shape for ind in indices])
     print("shape_result", shape_result)
 
-    coordinates = tuple(np.broadcast_to(coord, shape=shape_result) for coord in coordinates)
+    indices = tuple(np.broadcast_to(ind, shape=shape_result) for ind in indices)
 
     result = np.empty(shape_result)
     for index in np.ndindex(*shape_orthogonal):
@@ -51,7 +51,7 @@ def ndarray_linear_interpolation(
 
         if len(axis) == 1:
 
-            x, = coordinates
+            x, = indices
 
             result[index] = _ndarray_linear_interpolation_1d(
                 a=a[index],
@@ -60,7 +60,7 @@ def ndarray_linear_interpolation(
 
         elif len(axis) == 2:
 
-            x, y = coordinates
+            x, y = indices
 
             result[index] = _ndarray_linear_interpolation_2d(
                 a=a[index],

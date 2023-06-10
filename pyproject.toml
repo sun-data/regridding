@@ -3,7 +3,7 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "interp"
+name = "regridding"
 authors = [
     {name = "Roy T. Smart", email = "roytsmart@gmail.com"},
 ]
@@ -35,7 +35,7 @@ doc = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/byrdie/interp"
-Documentation = "https://interp.readthedocs.io/en/latest"
+Homepage = "https://github.com/byrdie/regridding"
+Documentation = "https://regridding.readthedocs.io/en/latest"
 
 [tool.setuptools_scm]

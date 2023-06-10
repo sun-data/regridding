@@ -6,7 +6,7 @@ Introduction
     :template: module_custom.rst
     :recursive:
 
-    interp
+    regridding
 
 
 

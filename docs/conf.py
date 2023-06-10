@@ -19,7 +19,7 @@ os.environ['PYTHONPATH'] = ';'.join((package_path, os.environ.get('PYTHONPATH', 
 
 # -- Project information -----------------------------------------------------
 
-project = 'interp'
+project = 'regridding'
 copyright = '2023, Roy T. Smart'
 author = 'Roy T. Smart'
 
@@ -75,13 +75,13 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/byrdie/interp",
+            "url": "https://github.com/byrdie/regridding",
             "icon": "fa-brands fa-github",
             "type": "fontawesome",
         },
         {
             "name": "PyPI",
-            "url": "https://pypi.org/project/interp/",
+            "url": "https://pypi.org/project/regridding/",
             "icon": "fa-brands fa-python",
         },
     ],

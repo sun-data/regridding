@@ -77,6 +77,4 @@ def test_ndarray_linear_interpolation_2d(
     result = regridding.ndarray_linear_interpolation(a=a, indices=(x, y), axis=axis)
     expected = scipy.ndimage.map_coordinates(input=a, coordinates=np.stack([x, y]), order=1)
 
-    print(result - expected)
-
     assert np.allclose(result, expected)

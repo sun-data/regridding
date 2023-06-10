@@ -24,7 +24,6 @@ def ndarray_linear_interpolation(
     if axis is None:
         axis = tuple(range(a.ndim))
     axis = np.core.numeric.normalize_axis_tuple(axis, ndim=a.ndim)
-    print("axis", axis)
 
     if len(indices) != len(axis):
         raise ValueError(
@@ -32,12 +31,9 @@ def ndarray_linear_interpolation(
         )
 
     axis_orthogonal = tuple(ax for ax in range(a.ndim) if ax not in axis)
-    print("axis_orthogonal", axis_orthogonal)
     shape_orthogonal = tuple(a.shape[ax] if ax in axis_orthogonal else 1 for ax in range(a.ndim))
-    print("shape_orthogonal", shape_orthogonal)
 
     shape_result = np.broadcast_shapes(shape_orthogonal, *[ind.shape for ind in indices])
-    print("shape_result", shape_result)
 
     indices = tuple(np.broadcast_to(ind, shape=shape_result) for ind in indices)
 

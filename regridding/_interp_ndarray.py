@@ -20,7 +20,7 @@ def ndarray_linear_interpolation(
 
     if len(indices) != len(axis):
         raise ValueError(
-            f"The number of coordinates, {len(indices)}, must match the number of elements in axis, {len(axis)}"
+            f"The number of indices, {len(indices)}, must match the number of elements in axis, {len(axis)}"
         )
 
     axis_orthogonal = tuple(ax for ax in range(a.ndim) if ax not in axis)

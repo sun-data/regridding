@@ -11,54 +11,145 @@ __all__ = [
 def ndarray_linear_interpolation(
         a: np.ndarray,
         indices: tuple[np.ndarray, ...],
-        axis: None | int | tuple[int] = None,
+        axis: None | int | tuple[int, ...] = None,
+        axis_indices: None | int | tuple[int, ...] = None,
 ):
+    """
+    Interpolate a :class:`numpy.ndarray` onto a new grid.
+
+    Similar to :func:`scipy.ndimage.map_coordinates`, but allows for interpolation along only some of the
+    axes of ``a``.
+
+    Parameters
+    ----------
+    a
+        The input array to be interpolated. Should have at least as many axes as ``len(indices)``
+    indices
+        The new indices where ``a`` will be evaluated. The number of indices, ``len(indices)`` should be equal
+        to the number of interpolation axes, ``len(axis)``
+    axis
+        The axes of ``a`` to interpolate. If :class:`None`, interpolate over all the axes of ``a``.
+    axis_indices
+        The axes of ``indices`` that are complementary to the axes in ``axis``.
+        If :class:`None`, all axes of indices are complementary to the axes in ``axis``.
+
+    Returns
+    -------
+
+        The interpolated array
+
+    Examples
+    --------
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import regridding
+
+        x = np.arange(5)
+        y = np.arange(6)
+
+    Interpolate a 1D array
+
+    .. jupyter-execute::
+
+        a = x * x
+
+        x_new = np.linspace(0, x.size - 1, num=20)
+        a_new = regridding.ndarray_linear_interpolation(a, indices=(x_new, ))
+
+        plt.figure(figsize=(6, 3));
+        plt.scatter(x, a, s=100, label="original", zorder=1);
+        plt.scatter(x_new, a_new, label="interpolated", zorder=0);
+        plt.legend();
+
+    """
+
+    shape_a = a.shape
+    ndim_a = a.ndim
+
+    indices_broadcasted = np.broadcast(*indices)
+    shape_indices = indices_broadcasted.shape
+    ndim_indices = indices_broadcasted.ndim
 
     if axis is None:
-        axis = tuple(range(a.ndim))
-    axis = np.core.numeric.normalize_axis_tuple(axis, ndim=a.ndim)
+        axis = tuple(range(ndim_a))
+    axis = np.core.numeric.normalize_axis_tuple(axis, ndim=ndim_a)
+    axis = tuple(~(~np.array(axis) % ndim_a))
+
+    if axis_indices is None:
+        axis_indices = tuple(range(ndim_indices))
+    axis_indices = np.core.numeric.normalize_axis_tuple(axis_indices, ndim=ndim_indices)
+    axis_indices = tuple(~(~np.array(axis_indices) % ndim_indices))
 
     if len(indices) != len(axis):
         raise ValueError(
             f"The number of indices, {len(indices)}, must match the number of elements in axis, {len(axis)}"
         )
 
-    axis_orthogonal = tuple(ax for ax in range(a.ndim) if ax not in axis)
-    shape_orthogonal = tuple(a.shape[ax] if ax in axis_orthogonal else 1 for ax in range(a.ndim))
+    axis_orthogonal_a = tuple(ax for ax in range(-ndim_a, 0) if ax not in axis)
+    axis_orthogonal_indices = tuple(ax for ax in range(-ndim_indices, 0) if ax not in axis_indices)
 
-    shape_result = np.broadcast_shapes(shape_orthogonal, *[ind.shape for ind in indices])
+    shape_orthogonal_a = tuple(shape_a[ax] for ax in axis_orthogonal_a)
+    shape_orthogonal_indices = tuple(shape_indices[ax] for ax in axis_orthogonal_indices)
 
-    indices = tuple(np.broadcast_to(ind, shape=shape_result) for ind in indices)
+    shape_orthogonal = np.broadcast_shapes(shape_orthogonal_a, shape_orthogonal_indices)
 
-    result = np.empty(shape_result)
-    for index in np.ndindex(*shape_orthogonal):
+    ndim_broadcasted_a = len(shape_orthogonal) + len(axis)
+    ndim_broadcasted_indices = len(shape_orthogonal) + len(axis_indices)
 
-        index = list(index)
-        for ax in axis:
-            index[ax] = slice(None)
-        index = tuple(index)
+    shape_broadcasted_a = tuple(
+        shape_a[ax] if ax in axis else shape_orthogonal[axis_orthogonal_a.index(ax)]
+        for ax in range(-ndim_broadcasted_a, 0)
+    )
+    shape_broadcasted_indices = tuple(
+        shape_indices[ax] if ax in axis_indices else shape_orthogonal[axis_orthogonal_indices.index(ax)]
+        for ax in range(-ndim_broadcasted_indices, 0)
+    )
 
-        if len(axis) == 1:
+    a = np.broadcast_to(a, shape_broadcasted_a)
+    indices = tuple(np.broadcast_to(ind, shape_broadcasted_indices) for ind in indices)
 
-            x, = indices
+    result = np.empty(shape_indices)
 
-            result[index] = _ndarray_linear_interpolation_1d(
-                a=a[index],
-                x=x[index],
-            )
+    def index_a_indices(index: tuple[int, ...]) -> tuple[tuple, tuple]:
+        index_a = tuple(
+            slice(None) if ax in axis else index[axis_orthogonal_a.index(ax)]
+            for ax in range(-ndim_broadcasted_a, 0)
+        )
+        index_indices = tuple(
+            slice(None) if ax in axis_indices else index[axis_orthogonal_indices.index(ax)]
+            for ax in range(-ndim_broadcasted_indices, 0)
+        )
+        return index_a, index_indices
 
-        elif len(axis) == 2:
 
-            x, y = indices
+    if len(axis) == 1:
 
-            result[index] = _ndarray_linear_interpolation_2d(
-                a=a[index],
-                x=x[index],
-                y=y[index],
-            )
+        x, = indices
 
-        else:
-            raise NotImplementedError
+        for index in np.ndindex(*shape_orthogonal):
+            index_a, index_indices = index_a_indices(index)
+            result[index_indices] = _ndarray_linear_interpolation_1d(
+                a=a[index_a],
+                x=x[index_indices].reshape(-1),
+            ).reshape(x[index_indices].shape)
+
+    elif len(axis) == 2:
+
+        x, y = indices
+
+        for index in np.ndindex(*shape_orthogonal):
+            index_a, index_indices = index_a_indices(index)
+            result[index_indices] = _ndarray_linear_interpolation_2d(
+                a=a[index_a],
+                x=x[index_indices].reshape(-1),
+                y=y[index_indices].reshape(-1),
+            ).reshape(x[index_indices].shape)
+
+    else:
+        raise NotImplementedError
 
     return result
 
@@ -70,12 +161,12 @@ def _ndarray_linear_interpolation_1d(
 ) -> np.ndarray:
 
     shape_output = x.shape
-    shape_output_x, = shape_output
+    size_output, = shape_output
 
-    result = np.empty(shape_output)
+    result = np.empty(size_output)
 
-    for i in numba.prange(shape_output_x):
-        result[i] = _linear_interpolation(a, x, i)
+    for i in numba.prange(size_output):
+        result[i] = _linear_interpolation(a, x[i])
 
     return result
 
@@ -88,13 +179,12 @@ def _ndarray_linear_interpolation_2d(
 ) -> np.ndarray:
 
     shape_output = x.shape
-    shape_output_x, shape_output_y = shape_output
+    size_output, = shape_output
 
-    result = np.empty(shape_output)
+    result = np.empty(size_output)
 
-    for i in numba.prange(shape_output_x):
-        for j in numba.prange(shape_output_y):
-            result[i, j] = _bilinear_interpolation(a, x, y, i, j)
+    for i in numba.prange(size_output):
+        result[i] = _bilinear_interpolation(a, x[i], y[i])
 
     return result
 
@@ -102,14 +192,12 @@ def _ndarray_linear_interpolation_2d(
 @numba.njit
 def _linear_interpolation(
         a: np.ndarray,
-        x: np.ndarray,
-        i: int,
+        x: float,
 ) -> float:
 
     shape_input_x, = a.shape
 
-    x_i = x[i]
-    x_0 = int(math.floor(x_i))
+    x_0 = int(math.floor(x))
 
     if x_0 < 0:
         x_0 = 0
@@ -118,10 +206,12 @@ def _linear_interpolation(
 
     x_1 = x_0 + 1
 
-    y_0 = a[x_0]
-    y_1 = a[x_1]
+    a_0 = a[x_0]
+    a_1 = a[x_1]
 
-    return y_0 + (x_i - x_0) * (y_1 - y_0)
+    dx = x - x_0
+
+    return a_0 * (1 - dx) + a_1 * dx
 
 
 @numba.njit
@@ -129,17 +219,12 @@ def _bilinear_interpolation(
         a: np.ndarray,
         x: np.ndarray,
         y: np.ndarray,
-        i: int,
-        j: int,
 ) -> float:
 
     shape_input_x, shape_input_y = a.shape
 
-    x_ij = x[i, j]
-    y_ij = y[i, j]
-
-    x_00 = int(math.floor(x_ij))
-    y_00 = int(math.floor(y_ij))
+    x_00 = int(math.floor(x))
+    y_00 = int(math.floor(y))
 
     if x_00 < 0:
         x_00 = 0
@@ -162,13 +247,13 @@ def _bilinear_interpolation(
     a_10 = a[x_10, y_10]
     a_11 = a[x_11, y_11]
 
-    dx_ij = x_ij - x_00
-    dy_ij = y_ij - y_00
+    dx = x - x_00
+    dy = y - y_00
 
-    w_00 = (1 - dx_ij) * (1 - dy_ij)
-    w_01 = (1 - dx_ij) * dy_ij
-    w_10 = dx_ij * (1 - dy_ij)
-    w_11 = dx_ij * dy_ij
+    w_00 = (1 - dx) * (1 - dy)
+    w_01 = (1 - dx) * dy
+    w_10 = dx * (1 - dy)
+    w_11 = dx * dy
 
     return (a_00 * w_00) + (a_01 * w_01) + (a_10 * w_10) + (a_11 * w_11)
 

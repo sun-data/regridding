@@ -1,7 +1,6 @@
 from __future__ import annotations
 import math
 import numpy as np
-import astropy.units as u
 import numba
 
 __all__ = [
@@ -14,12 +13,6 @@ def ndarray_linear_interpolation(
         indices: tuple[np.ndarray, ...],
         axis: None | int | tuple[int] = None,
 ):
-
-    if isinstance(a, u.Quantity):
-        a = a.value
-        a_unit = a.unit
-    else:
-        a_unit = None
 
     if axis is None:
         axis = tuple(range(a.ndim))

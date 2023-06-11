@@ -60,9 +60,6 @@ def ndarray_linear_interpolation(
         else:
             raise NotImplementedError
 
-    if a_unit is not None:
-        result = result << a_unit
-
     return result
 
 

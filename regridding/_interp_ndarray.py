@@ -111,7 +111,7 @@ def ndarray_linear_interpolation(
     a = np.broadcast_to(a, shape_broadcasted_a)
     indices = tuple(np.broadcast_to(ind, shape_broadcasted_indices) for ind in indices)
 
-    result = np.empty(shape_indices)
+    result = np.empty(shape_broadcasted_indices)
 
     def index_a_indices(index: tuple[int, ...]) -> tuple[tuple, tuple]:
         index_a = tuple(
@@ -123,7 +123,6 @@ def ndarray_linear_interpolation(
             for ax in range(-ndim_broadcasted_indices, 0)
         )
         return index_a, index_indices
-
 
     if len(axis) == 1:
 
@@ -217,8 +216,8 @@ def _linear_interpolation(
 @numba.njit
 def _bilinear_interpolation(
         a: np.ndarray,
-        x: np.ndarray,
-        y: np.ndarray,
+        x: float,
+        y: float,
 ) -> float:
 
     shape_input_x, shape_input_y = a.shape

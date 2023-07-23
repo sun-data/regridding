@@ -4,7 +4,7 @@ import dataclasses
 from typing import Sequence
 import numpy as np
 import numba
-import _conservative_ramshaw
+import regridding._conservative_ramshaw
 
 __all__ = [
     "regrid",
@@ -207,7 +207,7 @@ def calc_weights(
 
             if method == "conservative":
                 if order == 1:
-                    result = _conservative_ramshaw._conservative_ramshaw(
+                    result = regridding._conservative_ramshaw._conservative_ramshaw(
                         # values_input=values_input[index_values_input],
                         # values_output=values_output[index_values_output],
                         grid_input=(

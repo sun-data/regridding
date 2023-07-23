@@ -8,36 +8,40 @@ __all__ = []
 
 
 @numba.njit(
-    # error_model="numpy",
+    error_model="numpy",
     # parallel=True,
     # inline="always",
-    boundscheck=True,
+    # boundscheck=True,
 )
 def _conservative_ramshaw(
-        values_input: np.ndarray,
+        # values_input: np.ndarray,
+        # values_output: np.ndarray,
         grid_input: tuple[np.ndarray, np.ndarray],
         grid_output: tuple[np.ndarray, np.ndarray],
-) -> np.ndarray:
+        epsilon: float = 1e-14,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+    indices_input = numba.typed.List.empty_list(numba.int64)
+    indices_output = numba.typed.List.empty_list(numba.int64)
+    weights = numba.typed.List.empty_list(numba.float64)
 
     input_x, input_y = grid_input
-    output_x, output_y = grid_output
+    # output_x, output_y = grid_output
 
     shape_input = input_x.shape
-    shape_output = np.broadcast_shapes(output_x.shape, output_y.shape)
-
-    values_output = np.zeros((shape_output[0] - 1, shape_output[1] - 1))
+    # shape_output = np.broadcast_shapes(output_x.shape, output_y.shape)
 
     grids_sweep = grid_input, grid_output
     grids_static = grid_output, grid_input
     grids_input = "sweep", "static"
     axes = 0, 1
 
-    # # k = slice(None, -1)
-    # k = slice(1, None)
+    # k = slice(None, -1)
+    # # k = slice(1, None)
     # grids_sweep = grids_sweep[k]
     # grids_static = grids_static[k]
     # grids_input = grids_input[k]
-    # axes = 0,
+    # axes = 1,
 
     area_input = np.zeros((shape_input[0] - 1, shape_input[1] - 1))
     for axis in axes:
@@ -48,52 +52,47 @@ def _conservative_ramshaw(
             axis=axis,
         )
 
-    values_input = values_input / area_input
+    # values_input = values_input / area_input
 
     for grid_sweep, grid_static, grid_input in zip(grids_sweep, grids_static, grids_input):
         grid_static_x, grid_static_y = grid_static
         grid_sweep_x, grid_sweep_y = grid_sweep
         for axis in axes:
             _sweep_axis(
-                values_input=values_input,
-                values_output=values_output,
-                # area_output=area_output,
-                # grid_sweep=grid_sweep,
-                # grid_static=grid_static,
+                # values_input=values_input,
+                # values_output=values_output,
+                area_input=area_input,
                 grid_sweep_x=grid_sweep_x,
                 grid_sweep_y=grid_sweep_y,
                 grid_static_x=grid_static_x,
                 grid_static_y=grid_static_y,
                 axis=axis,
                 grid_input=grid_input,
+                epsilon=epsilon,
+                indices_input=indices_input,
+                indices_output=indices_output,
+                weights=weights,
             )
 
-    # area_output = np.zeros((shape_output[0] - 1, shape_output[1] - 1))
-    # for axis in axes:
-    #     _grid_area_sweep(
-    #         out=area_output,
-    #         grid_x=grid_output[0],
-    #         grid_y=grid_output[1],
-    #         axis=axis,
-    #     )
-
-    # return area_output
-    # return values_output * area_output
-    return values_output
+    # return values_output
+    return indices_input, indices_output, weights
 
 
-@numba.njit(error_model="numpy", parallel=True)
+@numba.njit(error_model="numpy", parallel=False)
 def _sweep_axis(
-        values_input: np.ndarray,
-        values_output: np.ndarray,
-        # area_output: np.ndarray,
+        # values_input: np.ndarray,
+        # values_output: np.ndarray,
+        area_input: np.ndarray,
         grid_static_x: np.ndarray,
         grid_static_y: np.ndarray,
         grid_sweep_x: np.ndarray,
         grid_sweep_y: np.ndarray,
         axis: int,
         grid_input: str,
-        epsilon: float = 1e-14,
+        epsilon: float,
+        indices_input: numba.typed.List,
+        indices_output: numba.typed.List,
+        weights: numba.typed.List,
 ) -> None:
 
     if grid_input == "static":
@@ -101,7 +100,7 @@ def _sweep_axis(
     elif grid_input == "sweep":
         input_is_sweep = True
     else:
-        raise ValueError(f"The `grid_input` argument must have the value 'static' or 'sweep', got '{grid_input}'")
+        print(f"The `grid_input` argument must have the value 'static' or 'sweep', got '{grid_input}'")
 
     # print(input_is_sweep)
 
@@ -109,13 +108,14 @@ def _sweep_axis(
         grid_sweep_y, grid_sweep_x = grid_sweep_x.T, grid_sweep_y.T
         grid_static_y, grid_static_x = grid_static_x, grid_static_y
         if input_is_sweep:
-            values_input = values_input.T
-        else:
-            values_output = values_output.T
+            area_input = area_input.T
+        #     values_input = values_input.T
+        # else:
+        #     values_output = values_output.T
     elif axis == 1:
         pass
     else:
-        raise ValueError(f"The `axis` argument must be 0 or 1, got {axis}")
+        print(f"The `axis` argument must be 0 or 1, got {axis}")
 
     shape_static_x, shape_static_y = list(grid_static_x.shape)
     shape_sweep_x, shape_sweep_y = list(grid_sweep_x.shape)
@@ -174,6 +174,15 @@ def _sweep_axis(
         cells_static_n[cells_top],
         cells_static_n[cells_left],
     ))
+
+    index_output = numba.typed.List()
+    index_input = numba.typed.List()
+    weight = numba.typed.List()
+
+    for i in range(shape_sweep_x):
+        index_output.append(numba.typed.List.empty_list(numba.int64))
+        index_input.append(numba.typed.List.empty_list(numba.int64))
+        weight.append(numba.typed.List.empty_list(numba.float64))
 
     for i in numba.prange(shape_sweep_x):
 
@@ -248,9 +257,10 @@ def _sweep_axis(
 
             else:
                 point_sweep_2x, point_sweep_2y, j_new, m_new, n_new = _step_inside_static(
-                    values_input=values_input,
-                    values_output=values_output,
+                    # values_input=values_input,
+                    # values_output=values_output,
                     # area_output=area_output,
+                    area_input=area_input,
                     grid_static_x=grid_static_x,
                     grid_static_y=grid_static_y,
                     shape_sweep_x=shape_sweep_x,
@@ -268,6 +278,9 @@ def _sweep_axis(
                     j=j,
                     m=m,
                     n=n,
+                    index_input=index_input[i],
+                    index_output=index_output[i],
+                    weight=weight[i],
                 )
 
             # print("j_new", j_new)
@@ -300,6 +313,18 @@ def _sweep_axis(
 
         # print("---------------------------")
 
+    for i in range(shape_sweep_x):
+        index_input_i = index_input[i]
+        index_output_i = index_output[i]
+        weight_i = weight[i]
+        for w in range(len(weight_i)):
+            indices_input.append(index_input_i[w])
+            indices_output.append(index_output_i[w])
+            weights.append(weight_i[w])
+        # indices_input += index_input[i]
+        # indices_output += index_output[i]
+        # weights += weight[i]
+
 
 @numba.njit(inline="always")
 def _step_outside_static(
@@ -322,7 +347,10 @@ def _step_outside_static(
         j: int,
         m: int,
         n: int,
+
 ) -> tuple[float, float, int, int, int, bool]:
+
+    # print("step outside")
 
     direction_sweep_x = point_sweep_2x - point_sweep_1x
     direction_sweep_y = point_sweep_2y - point_sweep_1y
@@ -331,6 +359,8 @@ def _step_outside_static(
     j_new = j + 1
     m_new = m
     n_new = n
+
+    u_min = np.inf
 
     # print("m and n not set")
     for v in range(len(edges_border_static_m)):
@@ -368,6 +398,9 @@ def _step_outside_static(
             x4=point_sweep_2x, y4=point_sweep_2y,
         )
 
+        if u > u_min:
+            continue
+
         if (0 - epsilon) < u < (1 + epsilon):
             if (0 - epsilon) < t < (1 + epsilon):
 
@@ -395,7 +428,7 @@ def _step_outside_static(
 
                 # plt.scatter(point_sweep_2x, point_sweep_2y)
 
-                break
+                # break
 
         elif math.isnan(u) or math.isnan(t):
 
@@ -405,6 +438,9 @@ def _step_outside_static(
             else:
                 u1 = (vertex_static_1y - point_sweep_1y) / (point_sweep_2y - point_sweep_1y)
                 u2 = (vertex_static_2y - point_sweep_1y) / (point_sweep_2y - point_sweep_1y)
+
+            if u1 > u_min:
+                continue
 
             # print("u1", u1)
             # print("u2", u2)
@@ -426,9 +462,7 @@ def _step_outside_static(
                     point_sweep_2x = point_sweep_1x + u * (point_sweep_2x - point_sweep_1x)
                     point_sweep_2y = point_sweep_1y + u * (point_sweep_2y - point_sweep_1y)
 
-                # plt.scatter(point_sweep_2x, point_sweep_2y)
-
-                break
+                # break
 
     # if not input_is_sweep:
     #     i_left = i - 1
@@ -440,14 +474,20 @@ def _step_outside_static(
     #     if 0 <= i_right < (shape_sweep_x - 1):
     #         area_output[i_right, j] -= area_sweep
 
+    # print("point_sweep_1", (point_sweep_1x, point_sweep_1y))
+    # print("point_sweep_2", (point_sweep_2x, point_sweep_2y))
+
+    # plt.scatter(point_sweep_1x, point_sweep_1y)
+    # plt.scatter(point_sweep_2x, point_sweep_2y)
+
     return point_sweep_2x, point_sweep_2y, j_new, m_new, n_new, sweep_is_inside_static
 
 
 @numba.njit(inline="always")
 def _step_inside_static(
-        values_input: np.ndarray,
-        values_output: np.ndarray,
-        # area_output: np.ndarray,
+        # values_input: np.ndarray,
+        # values_output: np.ndarray,
+        area_input: np.ndarray,
         grid_static_x: np.ndarray,
         grid_static_y: np.ndarray,
         shape_sweep_x: int,
@@ -465,9 +505,14 @@ def _step_inside_static(
         j: int,
         m: int,
         n: int,
+        index_input: numba.typed.List,
+        index_output: numba.typed.List,
+        weight: numba.typed.List,
 ) -> tuple[float, float, int, int, int]:
 
-    intersection_found = False
+    # print("step inside")
+
+    # intersection_found = False
 
     shape_static_x, shape_static_y = grid_static_x.shape
 
@@ -490,6 +535,8 @@ def _step_inside_static(
 
     m_left = m_right = m
     n_left = n_right = n
+
+    u_min = np.inf
 
     for v in range(len(vertices_static_m)):
 
@@ -529,10 +576,6 @@ def _step_inside_static(
         #     [vertex_static_1y, vertex_static_2y],
         #     color="lime"
         # )
-        # # plt.plot(
-        # #     [vertex_static_1x, vertex_static_1x + normal_static_x],
-        # #     [vertex_static_1y, vertex_static_1y + normal_static_y],
-        # # )
 
         t, u = _two_line_segment_intersection_parameters(
             x1=vertex_static_1x, y1=vertex_static_1y,
@@ -540,12 +583,20 @@ def _step_inside_static(
             x3=point_sweep_1x, y3=point_sweep_1y,
             x4=point_sweep_2x, y4=point_sweep_2y,
         )
+
         # print(t, u)
+
+        if u > u_min:
+            # print("u greater than u_min, continuing")
+            continue
+
         if (0 - epsilon) < u < (1 + epsilon):
             if (0 - epsilon) < t < (1 + epsilon):
 
-                if intersection_found:
-                    continue
+                # print("intersection found")
+
+                # if intersection_found:
+                #     continue
 
                 m_test = m + normal_m
                 n_test = n + normal_n
@@ -574,10 +625,12 @@ def _step_inside_static(
                 else:
                     j_new = j
 
+                u_min = u
+
                 m_new = m_test
                 n_new = n_test
 
-                intersection_found = True
+                # intersection_found = True
 
                 point_sweep_2x = point_sweep_1x + u * (point_sweep_2x - point_sweep_1x)
                 point_sweep_2y = point_sweep_1y + u * (point_sweep_2y - point_sweep_1y)
@@ -585,6 +638,8 @@ def _step_inside_static(
                 # plt.scatter(point_sweep_2x, point_sweep_2y)
 
         elif math.isnan(u) or math.isnan(t):
+
+            # print("parallel lines found")
 
             if point_sweep_1x != point_sweep_2x:
                 u1 = (vertex_static_1x - point_sweep_1x) / (point_sweep_2x - point_sweep_1x)
@@ -595,6 +650,9 @@ def _step_inside_static(
 
             # print("u1", u1)
             # print("u2", u2)
+
+            if u1 > u_min:
+                continue
 
             if u1 > u2:
                 u1, u2 = u2, u1
@@ -639,7 +697,7 @@ def _step_inside_static(
                     m_left, m_right = m_right, m_left
                     n_left, n_right = n_right, n_left
 
-                break
+                # break
 
             elif epsilon <= u1 <= (1 + epsilon):
 
@@ -655,9 +713,8 @@ def _step_inside_static(
                     j_new = j
                     point_sweep_2x = point_sweep_1x + u1 * (point_sweep_2x - point_sweep_1x)
                     point_sweep_2y = point_sweep_1y + u1 * (point_sweep_2y - point_sweep_1y)
-                    # plt.scatter(point_sweep_2x, point_sweep_2y, zorder=10)
 
-                break
+                # break
 
     i_left, i_right = i - 1, i
 
@@ -700,27 +757,76 @@ def _step_inside_static(
         j_output_left = j
         j_output_right = j
 
-    area_sweep = point_sweep_1x * point_sweep_2y - point_sweep_2x * point_sweep_1y
+    area_sweep = (point_sweep_1x * point_sweep_2y - point_sweep_2x * point_sweep_1y) / 2
 
     if 0 <= i_input_left < (shape_input_x - 1) and 0 <= j_input_left < (shape_input_y - 1):
-        value_input_left = values_input[i_input_left, j_input_left]
-    else:
-        value_input_left = 0
+        if 0 <= i_output_left < (shape_output_x - 1) and 0 <= j_output_left < (shape_output_y - 1):
+            weight.append(area_sweep / area_input[i_input_left, j_input_left])
+            if axis == 0:
+                if input_is_sweep:
+                    index_input.append((shape_input_x - 1) * j_input_left + i_input_left)
+                    index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
+                else:
+                    index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
+                    index_output.append((shape_output_x - 1) * j_output_left + i_output_left)
+            else:
+                index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
+                index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
+
+            # index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
+            # if input_is_sweep and (axis == 0):
+            #     index_input.append((shape_input_x - 1) * j_input_left + i_input_left)
+            #     # index_input.append(shape_input_y * i_input_left + j_input_left)
+            # else:
+            #     index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
+            #     # index_input.append(shape_input_x * j_input_left + i_input_left)
 
     if 0 <= i_input_right < (shape_input_x - 1) and 0 <= j_input_right < (shape_input_y - 1):
-        value_input_right = values_input[int(i_input_right), j_input_right]
-    else:
-        value_input_right = 0
+        if 0 <= i_output_right < (shape_output_x - 1) and 0 <= j_output_right < (shape_output_y - 1):
+            weight.append(-area_sweep / area_input[i_input_right, j_input_right])
+            if axis == 0:
+                if input_is_sweep:
+                    index_input.append((shape_input_x - 1) * j_input_right + i_input_right)
+                    index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
+                else:
+                    index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
+                    index_output.append((shape_output_x - 1) * j_output_right + i_output_right)
+            else:
+                index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
+                index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
 
-    if 0 <= i_output_left < (shape_output_x - 1) and 0 <= j_output_left < (shape_output_y - 1):
-        values_output[i_output_left, j_output_left] += value_input_left * area_sweep / 2
+            # index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
+            # if input_is_sweep and (axis == 0):
+            #     index_input.append((shape_input_x - 1) * j_input_right + i_input_right)
+            #     # index_input.append(shape_input_y * i_input_right + j_input_right)
+            # else:
+            #     index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
+            #     # index_input.append(shape_input_x * j_input_right + i_input_right)
 
-    if 0 <= i_output_right < (shape_output_x - 1) and 0 <= j_output_right < (shape_output_y - 1):
-        values_output[int(i_output_right), j_output_right] -= value_input_right * area_sweep / 2
+    # if 0 <= i_input_left < (shape_input_x - 1) and 0 <= j_input_left < (shape_input_y - 1):
+    #     value_input_left = values_input[i_input_left, j_input_left]
+    # else:
+    #     value_input_left = 0
+    #
+    # if 0 <= i_input_right < (shape_input_x - 1) and 0 <= j_input_right < (shape_input_y - 1):
+    #     value_input_right = values_input[int(i_input_right), j_input_right]
+    # else:
+    #     value_input_right = 0
+    #
+    # if 0 <= i_output_left < (shape_output_x - 1) and 0 <= j_output_left < (shape_output_y - 1):
+    #     values_output[i_output_left, j_output_left] += value_input_left * area_sweep / 2
+    #
+    # if 0 <= i_output_right < (shape_output_x - 1) and 0 <= j_output_right < (shape_output_y - 1):
+    #     values_output[int(i_output_right), j_output_right] -= value_input_right * area_sweep / 2
 
     # if not input_is_sweep:
     #     area_output[i_output_left, j_output_left] += area_sweep
     #     area_output[int(i_output_right), j_output_right] -= area_sweep
+
+    # print("point_sweep_1", (point_sweep_1x, point_sweep_1y))
+    # print("point_sweep_2", (point_sweep_2x, point_sweep_2y))
+    # plt.scatter(point_sweep_1x, point_sweep_1y, zorder=10)
+    # plt.scatter(point_sweep_2x, point_sweep_2y, zorder=10)
 
     return point_sweep_2x, point_sweep_2y, j_new, m_new, n_new
 

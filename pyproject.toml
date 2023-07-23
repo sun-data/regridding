@@ -26,6 +26,7 @@ test = [
 ]
 doc = [
     "pytest",
+    "matplotlib",
     "graphviz",
     "sphinx-autodoc-typehints",
     "pydata-sphinx-theme",

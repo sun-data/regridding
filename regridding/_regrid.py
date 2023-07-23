@@ -176,7 +176,6 @@ def calc_weights(
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
     for index in np.ndindex(*shape_orthogonal):
-        print("index", index)
 
         index_vertices_input = list(index)
         for ax in axis_input:
@@ -325,20 +324,15 @@ def _regrid_from_weights_2d(
         values_output: np.ndarray,
 ) -> None:
 
-    shape_input_x, shape_input_y = values_input.shape
-    shape_output_x, shape_output_y = values_output.shape
+    values_input = values_input.reshape(-1)
+    values_output = values_output.reshape(-1)
 
     for i in range(len(weights)):
 
         index_input = indices_input[i]
-        i_input = index_input // shape_input_y
-        j_input = index_input % shape_input_y
-
         index_output = indices_output[i]
-        i_output = index_output // shape_output_y
-        j_output = index_output % shape_output_y
 
-        values_output[i_output, j_output] += weights[i] * values_input[i_input, j_input]
+        values_output[index_output] += weights[i] * values_input[index_input]
 
 
 @dataclasses.dataclass

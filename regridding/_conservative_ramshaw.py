@@ -78,7 +78,7 @@ def _conservative_ramshaw(
     return indices_input, indices_output, weights
 
 
-@numba.njit(error_model="numpy", parallel=False)
+@numba.njit(error_model="numpy", parallel=True)
 def _sweep_axis(
         # values_input: np.ndarray,
         # values_output: np.ndarray,
@@ -756,6 +756,9 @@ def _step_inside_static(
         i_output_right = i_right
         j_output_left = j
         j_output_right = j
+
+    i_input_right = int(i_input_right)
+    i_output_right = int(i_output_right)
 
     area_sweep = (point_sweep_1x * point_sweep_2y - point_sweep_2x * point_sweep_1y) / 2
 

@@ -21,9 +21,9 @@ def _conservative_ramshaw(
         epsilon: float = 1e-14,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
-    indices_input = numba.typed.List.empty_list(numba.int64)
-    indices_output = numba.typed.List.empty_list(numba.int64)
-    weights = numba.typed.List.empty_list(numba.float64)
+    weights = numba.typed.List()
+    for x in range(0):
+        weights.append((0., 0., 0.))
 
     input_x, input_y = grid_input
     # output_x, output_y = grid_output
@@ -69,13 +69,11 @@ def _conservative_ramshaw(
                 axis=axis,
                 grid_input=grid_input,
                 epsilon=epsilon,
-                indices_input=indices_input,
-                indices_output=indices_output,
                 weights=weights,
             )
 
     # return values_output
-    return indices_input, indices_output, weights
+    return weights
 
 
 @numba.njit(error_model="numpy", parallel=True)
@@ -90,8 +88,6 @@ def _sweep_axis(
         axis: int,
         grid_input: str,
         epsilon: float,
-        indices_input: numba.typed.List,
-        indices_output: numba.typed.List,
         weights: numba.typed.List,
 ) -> None:
 
@@ -175,14 +171,13 @@ def _sweep_axis(
         cells_static_n[cells_left],
     ))
 
-    index_output = numba.typed.List()
-    index_input = numba.typed.List()
     weight = numba.typed.List()
 
     for i in range(shape_sweep_x):
-        index_output.append(numba.typed.List.empty_list(numba.int64))
-        index_input.append(numba.typed.List.empty_list(numba.int64))
-        weight.append(numba.typed.List.empty_list(numba.float64))
+        w = numba.typed.List()
+        for _ in range(0):
+            w.append((0., 0., 0.))
+        weight.append(w)
 
     for i in numba.prange(shape_sweep_x):
 
@@ -278,8 +273,6 @@ def _sweep_axis(
                     j=j,
                     m=m,
                     n=n,
-                    index_input=index_input[i],
-                    index_output=index_output[i],
                     weight=weight[i],
                 )
 
@@ -314,13 +307,10 @@ def _sweep_axis(
         # print("---------------------------")
 
     for i in range(shape_sweep_x):
-        index_input_i = index_input[i]
-        index_output_i = index_output[i]
         weight_i = weight[i]
         for w in range(len(weight_i)):
-            indices_input.append(index_input_i[w])
-            indices_output.append(index_output_i[w])
             weights.append(weight_i[w])
+
         # indices_input += index_input[i]
         # indices_output += index_output[i]
         # weights += weight[i]
@@ -505,8 +495,6 @@ def _step_inside_static(
         j: int,
         m: int,
         n: int,
-        index_input: numba.typed.List,
-        index_output: numba.typed.List,
         weight: numba.typed.List,
 ) -> tuple[float, float, int, int, int]:
 
@@ -774,15 +762,19 @@ def _step_inside_static(
 
     if 0 <= i_input_left < (shape_input_x - 1) and 0 <= j_input_left < (shape_input_y - 1):
         if 0 <= i_output_left < (shape_output_x - 1) and 0 <= j_output_left < (shape_output_y - 1):
-            weight.append(area_sweep / area_input[i_input_left, j_input_left])
-            index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
-            index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
+            weight.append((
+                (shape_input_y - 1) * i_input_left + j_input_left,
+                (shape_output_y - 1) * i_output_left + j_output_left,
+                area_sweep / area_input[i_input_left, j_input_left],
+            ))
 
     if 0 <= i_input_right < (shape_input_x - 1) and 0 <= j_input_right < (shape_input_y - 1):
         if 0 <= i_output_right < (shape_output_x - 1) and 0 <= j_output_right < (shape_output_y - 1):
-            weight.append(-area_sweep / area_input[i_input_right, j_input_right])
-            index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
-            index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
+            weight.append((
+                (shape_input_y - 1) * i_input_right + j_input_right,
+                (shape_output_y - 1) * i_output_right + j_output_right,
+                -area_sweep / area_input[i_input_right, j_input_right],
+            ))
 
     # if 0 <= i_input_left < (shape_input_x - 1) and 0 <= j_input_left < (shape_input_y - 1):
     #     value_input_left = values_input[i_input_left, j_input_left]

@@ -93,7 +93,7 @@ def calc_weights(
         axis_output: None | int | tuple[int, ...] = None,
         method: str = "conservative",
         order: int = 1,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[int, ...]]:
+) -> tuple[np.ndarray, tuple[int, ...]]:
 
     # shape_values_input = values_input.shape
     shape_vertices_input = np.broadcast(*vertices_input).shape
@@ -171,8 +171,6 @@ def calc_weights(
     vertices_output = tuple(np.broadcast_to(component, shape_output) for component in vertices_output)
     # values_input = np.broadcast_to(values_input, bshape_values_input)
 
-    indices_input = np.empty(shape_orthogonal, dtype=numba.typed.List)
-    indices_output = np.empty(shape_orthogonal, dtype=numba.typed.List)
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
     for index in np.ndindex(*shape_orthogonal):
@@ -207,7 +205,7 @@ def calc_weights(
 
             if method == "conservative":
                 if order == 1:
-                    result = regridding._conservative_ramshaw._conservative_ramshaw(
+                    weights[index] = regridding._conservative_ramshaw._conservative_ramshaw(
                         # values_input=values_input[index_values_input],
                         # values_output=values_output[index_values_output],
                         grid_input=(
@@ -219,7 +217,6 @@ def calc_weights(
                             vertices_output_y[index_vertices_output],
                         ),
                     )
-                    indices_input[index], indices_output[index], weights[index] = result
                 else:
                     raise NotImplementedError(f"order {order} not supported")
             else:
@@ -228,17 +225,17 @@ def calc_weights(
         else:
             raise NotImplementedError("Regridding operations greater than 2D are not supported")
 
-    return indices_input, indices_output, weights, shape_centers_output
+    return weights, shape_centers_output
 
 
 def regrid_from_weights(
-        weights: tuple[np.ndarray, np.ndarray, np.ndarray, tuple[int, ...]],
+        weights: tuple[np.ndarray, tuple[int, ...]],
         values_input: np.ndarray,
         values_output: None | np.ndarray = None,
         axis_input: None | int | tuple[int, ...] = None,
         axis_output: None | int | tuple[int, ...] = None,
 ):
-    indices_input, indices_output, weights, shape_centers_output = weights
+    weights, shape_centers_output = weights
 
     shape_weights = weights.shape
 
@@ -268,8 +265,6 @@ def regrid_from_weights(
 
     shape_orthogonal = np.broadcast_shapes(shape_input_orthogonal, shape_output_orthogonal, shape_weights)
 
-    indices_input = np.broadcast_to(indices_input, shape_orthogonal)
-    indices_output = np.broadcast_to(indices_output, shape_orthogonal)
     weights = np.broadcast_to(weights, shape_orthogonal)
 
     shape_input = list(shape_orthogonal)
@@ -305,8 +300,6 @@ def regrid_from_weights(
         index_values_output = tuple(index_values_output)
 
         _regrid_from_weights_2d(
-            indices_input=indices_input[index],
-            indices_output=indices_output[index],
             weights=weights[index],
             values_input=values_input[index_values_input],
             values_output=values_output[index_values_output],
@@ -317,8 +310,6 @@ def regrid_from_weights(
 
 @numba.njit(error_model="numpy")
 def _regrid_from_weights_2d(
-        indices_input: np.ndarray,
-        indices_output: np.ndarray,
         weights: np.ndarray,
         values_input: np.ndarray,
         values_output: np.ndarray,
@@ -328,11 +319,8 @@ def _regrid_from_weights_2d(
     values_output = values_output.reshape(-1)
 
     for i in range(len(weights)):
-
-        index_input = indices_input[i]
-        index_output = indices_output[i]
-
-        values_output[index_output] += weights[i] * values_input[index_input]
+        index_input, index_output, weight = weights[i]
+        values_output[int(index_output)] += weight * values_input[int(index_input)]
 
 
 @dataclasses.dataclass

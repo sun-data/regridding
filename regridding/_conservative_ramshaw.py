@@ -760,51 +760,29 @@ def _step_inside_static(
     i_input_right = int(i_input_right)
     i_output_right = int(i_output_right)
 
+    if axis == 0:
+        if input_is_sweep:
+            shape_input_x, shape_input_y = shape_input_y, shape_input_x
+            i_input_left, j_input_left = j_input_left, i_input_left
+            i_input_right, j_input_right = j_input_right, i_input_right
+        else:
+            shape_output_x, shape_output_y = shape_output_y, shape_output_x
+            i_output_left, j_output_left = j_output_left, i_output_left
+            i_output_right, j_output_right = j_output_right, i_output_right
+
     area_sweep = (point_sweep_1x * point_sweep_2y - point_sweep_2x * point_sweep_1y) / 2
 
     if 0 <= i_input_left < (shape_input_x - 1) and 0 <= j_input_left < (shape_input_y - 1):
         if 0 <= i_output_left < (shape_output_x - 1) and 0 <= j_output_left < (shape_output_y - 1):
             weight.append(area_sweep / area_input[i_input_left, j_input_left])
-            if axis == 0:
-                if input_is_sweep:
-                    index_input.append((shape_input_x - 1) * j_input_left + i_input_left)
-                    index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
-                else:
-                    index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
-                    index_output.append((shape_output_x - 1) * j_output_left + i_output_left)
-            else:
-                index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
-                index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
-
-            # index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
-            # if input_is_sweep and (axis == 0):
-            #     index_input.append((shape_input_x - 1) * j_input_left + i_input_left)
-            #     # index_input.append(shape_input_y * i_input_left + j_input_left)
-            # else:
-            #     index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
-            #     # index_input.append(shape_input_x * j_input_left + i_input_left)
+            index_input.append((shape_input_y - 1) * i_input_left + j_input_left)
+            index_output.append((shape_output_y - 1) * i_output_left + j_output_left)
 
     if 0 <= i_input_right < (shape_input_x - 1) and 0 <= j_input_right < (shape_input_y - 1):
         if 0 <= i_output_right < (shape_output_x - 1) and 0 <= j_output_right < (shape_output_y - 1):
             weight.append(-area_sweep / area_input[i_input_right, j_input_right])
-            if axis == 0:
-                if input_is_sweep:
-                    index_input.append((shape_input_x - 1) * j_input_right + i_input_right)
-                    index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
-                else:
-                    index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
-                    index_output.append((shape_output_x - 1) * j_output_right + i_output_right)
-            else:
-                index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
-                index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
-
-            # index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
-            # if input_is_sweep and (axis == 0):
-            #     index_input.append((shape_input_x - 1) * j_input_right + i_input_right)
-            #     # index_input.append(shape_input_y * i_input_right + j_input_right)
-            # else:
-            #     index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
-            #     # index_input.append(shape_input_x * j_input_right + i_input_right)
+            index_input.append((shape_input_y - 1) * i_input_right + j_input_right)
+            index_output.append((shape_output_y - 1) * i_output_right + j_output_right)
 
     # if 0 <= i_input_left < (shape_input_x - 1) and 0 <= j_input_left < (shape_input_y - 1):
     #     value_input_left = values_input[i_input_left, j_input_left]

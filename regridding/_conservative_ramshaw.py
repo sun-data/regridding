@@ -920,7 +920,7 @@ def _point_is_inside_polygon(
         # print("t", t)
         # print("u", u)
 
-        if 0 <= t <= 1:
+        if 0 <= t < 1:
             if u == 0:
                 return True
             elif u > 0:

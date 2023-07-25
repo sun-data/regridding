@@ -40,15 +40,15 @@ def regrid(
         The vertices of each bin in the input histogram.
         The number of elements in ``vertices``, ``len(vertices)``,
         should match the number of regridding axes, ``len(axis)``.
-        All elements of ``vertices`` should be broadcastable with the shape :math:`(...,M+1,...,N+1,...)`.
+        All elements of ``vertices`` should be broadcastable with the shape :math:`(...,M,...,N,...)`,
+        where :math:`M` and :math:`N` are the number of elements along each regridding axis.
     vertices_output
         The vertices of each new bin in the output histogram.
         The number of elements in ``vertices``, ``len(vertices)``,
         should match the number of regridding axes, ``len(axis)``.
     values_input
         The value of each bin in the input histogram.
-        The shape of values can be interpreted as :math:`(...,M,...,N,...)`, where :math:`M` and :math:`N` are the
-        number of elements along each regridding axis.
+        Should be broadcastable with :math:`(...,M-1,...,N-1,...)`.
     values_output
         An alternative output array to place the result.
         It must have the same shape as the expected output.

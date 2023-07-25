@@ -65,6 +65,58 @@ def regrid(
     Returns
     -------
         The regridded histogram
+
+    Examples
+    --------
+    Define an input curvilinear grid
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import regridding
+
+        x = np.linspace(-5, 5, num=66)
+        y = np.linspace(-5, 5, num=66)
+
+        x, y = np.meshgrid(x, y, indexing="ij")
+
+        angle = 0.4
+        x_input = x * np.cos(angle) - y * np.sin(angle) + 0.05 * x * x
+        y_input = x * np.sin(angle) + y * np.cos(angle) + 0.05 * y * y
+
+    Define a test patten
+
+    .. jupyter-execute::
+
+        pitch = 16
+        a_input = 0 * x[:~0,:~0]
+        a_input[::pitch, :] = 1
+        a_input[:, ::pitch] = 1
+        a_input[pitch//2::pitch, pitch//2::pitch] = 1
+
+        plt.figure();
+        plt.pcolormesh(x_input, y_input, a_input);
+
+    Define a new grid
+
+    .. jupyter-execute::
+
+        x_output = 2 * x
+        y_output = 2 * y
+
+    Regrid the test pattern onto the new grid
+
+    .. jupyter-execute::
+
+        a_output = regridding.regrid(
+            vertices_input=(x_input, y_input),
+            vertices_output=(x_output, y_output),
+            values_input=a_input,
+        )
+
+        plt.figure();
+        plt.pcolormesh(x_output, y_output, a_output);
     """
     weights = calc_weights(
         vertices_input=vertices_input,

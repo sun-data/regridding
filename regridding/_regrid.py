@@ -107,6 +107,9 @@ def calc_weights(
     axis_input = _normalize_axis(axis_input, ndim=ndim_input)
     axis_output = _normalize_axis(axis_output, ndim=ndim_output)
 
+    axis_input = sorted(axis_input, reverse=True)
+    axis_output = sorted(axis_output, reverse=True)
+
     if len(axis_output) != len(axis_input):
         raise ValueError(
             f"The number of axes in `axis_output`, {axis_output}, "
@@ -250,6 +253,9 @@ def regrid_from_weights(
 
     axis_input = _normalize_axis(axis_input, ndim=ndim_input)
     axis_output = _normalize_axis(axis_output, ndim=ndim_output)
+
+    axis_input = sorted(axis_input, reverse=True)
+    axis_output = sorted(axis_output, reverse=True)
 
     if len(axis_output) != len(axis_input):
         raise ValueError(

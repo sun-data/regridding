@@ -18,7 +18,7 @@ def _conservative_ramshaw(
         # values_output: np.ndarray,
         grid_input: tuple[np.ndarray, np.ndarray],
         grid_output: tuple[np.ndarray, np.ndarray],
-        epsilon: float = 1e-14,
+        epsilon: float = 1e-10,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     weights = numba.typed.List()

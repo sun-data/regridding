@@ -103,8 +103,7 @@ def _sweep_axis(
     if axis == 0:
         grid_sweep_y, grid_sweep_x = grid_sweep_x.T, grid_sweep_y.T
         grid_static_y, grid_static_x = grid_static_x, grid_static_y
-        if input_is_sweep:
-            area_input = area_input.T
+        # if input_is_sweep:
         #     values_input = values_input.T
         # else:
         #     values_output = values_output.T

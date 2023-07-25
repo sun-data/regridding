@@ -412,8 +412,7 @@ def _step_outside_static(
                     pass
                 else:
                     j_new = j
-                    point_sweep_2x = point_sweep_1x + u * (point_sweep_2x - point_sweep_1x)
-                    point_sweep_2y = point_sweep_1y + u * (point_sweep_2y - point_sweep_1y)
+                    u_min = u
 
                 # plt.scatter(point_sweep_2x, point_sweep_2y)
 
@@ -448,8 +447,7 @@ def _step_outside_static(
                     pass
                 else:
                     j_new = j
-                    point_sweep_2x = point_sweep_1x + u * (point_sweep_2x - point_sweep_1x)
-                    point_sweep_2y = point_sweep_1y + u * (point_sweep_2y - point_sweep_1y)
+                    u_min = u1
 
                 # break
 
@@ -462,6 +460,10 @@ def _step_outside_static(
     #         area_output[i_left, j] += area_sweep
     #     if 0 <= i_right < (shape_sweep_x - 1):
     #         area_output[i_right, j] -= area_sweep
+
+    if math.isfinite(u_min):
+        point_sweep_2x = point_sweep_1x + u_min * (point_sweep_2x - point_sweep_1x)
+        point_sweep_2y = point_sweep_1y + u_min * (point_sweep_2y - point_sweep_1y)
 
     # print("point_sweep_1", (point_sweep_1x, point_sweep_1y))
     # print("point_sweep_2", (point_sweep_2x, point_sweep_2y))
@@ -619,9 +621,6 @@ def _step_inside_static(
 
                 # intersection_found = True
 
-                point_sweep_2x = point_sweep_1x + u * (point_sweep_2x - point_sweep_1x)
-                point_sweep_2y = point_sweep_1y + u * (point_sweep_2y - point_sweep_1y)
-
                 # plt.scatter(point_sweep_2x, point_sweep_2y)
 
         elif math.isnan(u) or math.isnan(t):
@@ -658,8 +657,7 @@ def _step_inside_static(
                         pass
                     else:
                         j_new = j
-                        point_sweep_2x = point_sweep_1x + u2 * (point_sweep_2x - point_sweep_1x)
-                        point_sweep_2y = point_sweep_1y + u2 * (point_sweep_2y - point_sweep_1y)
+                        u_min = u2
                         # plt.scatter(point_sweep_2x, point_sweep_2y, zorder=10)
 
                 m_left = m
@@ -698,10 +696,13 @@ def _step_inside_static(
                     pass
                 else:
                     j_new = j
-                    point_sweep_2x = point_sweep_1x + u1 * (point_sweep_2x - point_sweep_1x)
-                    point_sweep_2y = point_sweep_1y + u1 * (point_sweep_2y - point_sweep_1y)
+                    u_min = u1
 
                 # break
+
+    if math.isfinite(u_min):
+        point_sweep_2x = point_sweep_1x + u_min * (point_sweep_2x - point_sweep_1x)
+        point_sweep_2y = point_sweep_1y + u_min * (point_sweep_2y - point_sweep_1y)
 
     i_left, i_right = i - 1, i
 

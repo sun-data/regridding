@@ -30,6 +30,7 @@ doc = [
     "graphviz",
     "sphinx-autodoc-typehints",
     "pydata-sphinx-theme",
+    "ipykernel",
     "jupyter-sphinx",
     "sphinx-favicon",
 ]

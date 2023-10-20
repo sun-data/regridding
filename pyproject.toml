@@ -35,7 +35,7 @@ doc = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/byrdie/regridding"
+Homepage = "https://github.com/sun-data/regridding"
 Documentation = "https://regridding.readthedocs.io/en/latest"
 
 [tool.setuptools_scm]

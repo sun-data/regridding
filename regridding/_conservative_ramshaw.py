@@ -185,6 +185,8 @@ def _sweep_axis(
 
         point_sweep_1x = grid_sweep_x[i, j]
         point_sweep_1y = grid_sweep_y[i, j]
+        point_sweep_2x = grid_sweep_x[i, j + 1]
+        point_sweep_2y = grid_sweep_y[i, j + 1]
 
         if _point_is_inside_polygon(
                 vertices_x=edges_border_static_x,
@@ -194,11 +196,14 @@ def _sweep_axis(
                 epsilon=epsilon,
         ):
             # print("initial point inside...")
-            m, n = _indices_of_point_brute(
+            m, n = _indices_of_line_brute(
                 grid_x=grid_static_x,
                 grid_y=grid_static_y,
-                point_x=point_sweep_1x,
-                point_y=point_sweep_1y,
+                point_1x=point_sweep_1x,
+                point_1y=point_sweep_1y,
+                point_2x=point_sweep_2x,
+                point_2y=point_sweep_2y,
+                epsilon=epsilon,
             )
             sweep_is_inside_static = True
         else:
@@ -851,11 +856,14 @@ def _grid_area_sweep(
 
 
 @numba.njit(inline="always", error_model="numpy")
-def _indices_of_point_brute(
+def _indices_of_line_brute(
         grid_x: np.ndarray,
         grid_y: np.ndarray,
-        point_x: float,
-        point_y: float,
+        point_1x: float,
+        point_1y: float,
+        point_2x: float,
+        point_2y: float,
+        epsilon: float,
 ) -> tuple[int, int]:
 
     shape_x, shape_y = grid_x.shape
@@ -884,10 +892,62 @@ def _indices_of_point_brute(
             if _point_is_inside_polygon(
                 vertices_x=vertices_x,
                 vertices_y=vertices_y,
-                point_x=point_x,
-                point_y=point_y,
+                point_x=point_1x,
+                point_y=point_1y,
+                epsilon=epsilon,
             ):
-                return i, j
+                num_intersections = 0
+
+                for v in range(len(vertices_x)):
+                    # print("v", v)
+
+                    index_vertex_1 = v - 1
+                    index_vertex_2 = v
+
+                    vertex_1x = vertices_x[index_vertex_1]
+                    vertex_1y = vertices_y[index_vertex_1]
+                    vertex_2x = vertices_x[index_vertex_2]
+                    vertex_2y = vertices_y[index_vertex_2]
+
+                    t, u = _two_line_segment_intersection_parameters(
+                        x1=vertex_1x, y1=vertex_1y,
+                        x2=vertex_2x, y2=vertex_2y,
+                        x3=point_1x, y3=point_1y,
+                        x4=point_2x, y4=point_2y,
+                    )
+                    # print(t, u)
+
+                    if (0 - epsilon) < t < (1 + epsilon):
+                        if (0 + epsilon) < u:
+                            # print("intersection found")
+
+                            num_intersections += 1
+
+                            if -epsilon < t < epsilon:
+                                # print("t is near zero")
+                                index_vertex_0 = v - 2
+                                vertex_0x = vertices_x[index_vertex_0]
+                                vertex_0y = vertices_y[index_vertex_0]
+                                direction_x = point_2x - point_1x
+                                direction_y = point_2y - point_1y
+                                normal_x = direction_y
+                                normal_y = -direction_x
+                                projection_0x = normal_x * (vertex_1x - vertex_0x)
+                                projection_0y = normal_y * (vertex_1y - vertex_0y)
+                                projection_1x = normal_x * (vertex_2x - vertex_1x)
+                                projection_1y = normal_y * (vertex_2y - vertex_1y)
+                                projection_0 = projection_0x + projection_0y
+                                projection_1 = projection_1x + projection_1y
+                                if (-epsilon < projection_0 < epsilon) or (-epsilon < projection_1 < epsilon):
+                                    pass
+                                elif math.copysign(1, projection_0) == math.copysign(1, projection_1):
+                                    # print("projection_0 and projection_1 have the same sign")
+                                    num_intersections -= 1
+
+                # print("num_intersections", num_intersections)
+
+                if (num_intersections % 2) == 1:
+                    return i, j
 
     return 0, 0
 

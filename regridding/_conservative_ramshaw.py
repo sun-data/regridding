@@ -534,6 +534,7 @@ def _step_inside_static(
     n_left = n_right = n
 
     u_min = np.inf
+    min_is_coincident = False
 
     for v in range(len(vertices_static_m)):
 
@@ -589,6 +590,9 @@ def _step_inside_static(
 
         if (0 - epsilon) < u < (1 + epsilon):
             if (0 - epsilon) < t < (1 + epsilon):
+
+                if min_is_coincident:
+                    continue
 
                 # print("intersection found")
 
@@ -656,23 +660,26 @@ def _step_inside_static(
                 direction_sweep_m = direction_m
                 direction_sweep_n = direction_n
 
-            if -epsilon < u1 < epsilon:
+            if u1 < epsilon:
                 # print("boop")
-                if (0 - epsilon) < u2 < (1 + epsilon):
-                    m_new = m + direction_sweep_m
-                    n_new = n + direction_sweep_n
-                    if (1 - epsilon) < u2 < (1 + epsilon):
-                        pass
-                    else:
-                        j_new = j
+                if (0 - epsilon) < u2:
+                    if u2 < (1 + epsilon):
+                        m_new = m + direction_sweep_m
+                        n_new = n + direction_sweep_n
+                        if (1 - epsilon) < u2 < (1 + epsilon):
+                            pass
+                        else:
+                            j_new = j
+
                         u_min = u2
-                        # plt.scatter(point_sweep_2x, point_sweep_2y, zorder=10)
+                        min_is_coincident = True
+                            # plt.scatter(point_sweep_2x, point_sweep_2y, zorder=10)
 
-                m_left = m
-                m_right = m + normal_m
+                    m_left = m
+                    m_right = m + normal_m
 
-                n_left = n
-                n_right = n + normal_n
+                    n_left = n
+                    n_right = n + normal_n
 
                 # plt.plot(
                 #     [point_sweep_1x, point_sweep_1x + normal_sweep_x],
@@ -704,8 +711,9 @@ def _step_inside_static(
                     pass
                 else:
                     j_new = j
-                    u_min = u1
 
+                u_min = u1
+                min_is_coincident = True
                 # break
 
     if math.isfinite(u_min):

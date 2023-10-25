@@ -191,6 +191,7 @@ def _sweep_axis(
                 vertices_y=edges_border_static_y,
                 point_x=point_sweep_1x,
                 point_y=point_sweep_1y,
+                epsilon=epsilon,
         ):
             # print("initial point inside...")
             m, n = _indices_of_point_brute(
@@ -897,6 +898,7 @@ def _point_is_inside_polygon(
         vertices_y: np.ndarray,
         point_x: float,
         point_y: float,
+        epsilon: float
 ) -> bool:
 
     x3 = point_x
@@ -906,33 +908,74 @@ def _point_is_inside_polygon(
 
     result = False
     for v in range(len(vertices_x)):
-        x1 = vertices_x[v - 1]
-        y1 = vertices_y[v - 1]
-        x2 = vertices_x[v]
-        y2 = vertices_y[v]
+        # print("    result", result)
+        # print("    v", v)
+        y1 = vertices_y[v - 1] - point_y
+        y2 = vertices_y[v] - point_y
 
-        t, u = _two_line_segment_intersection_parameters(
-            x1=x1, y1=y1,
-            x2=x2, y2=y2,
-            x3=x3, y3=y3,
-            x4=x4, y4=y4,
-        )
-        # print("t", t)
-        # print("u", u)
+        # print("    y1", y1)
+        # print("    y2", y2)
 
-        if 0 <= t < 1:
-            if u == 0:
+        y1_and_y2_have_different_signs = math.copysign(1, y1) != math.copysign(1, y2)
+        y1_is_zero = -epsilon < y1 < epsilon
+        y2_is_zero = -epsilon < y2 < epsilon
+        if y1_is_zero and y2_is_zero:
+            # print("    both y values are zero")
+            x1 = vertices_x[v - 1] - point_x
+            x2 = vertices_x[v] - point_x
+            if (-epsilon < x1 < epsilon) or (-epsilon < x2 < epsilon):
+                pass
+            elif math.copysign(1, x1) != math.copysign(1, x2):
+                # print("    x1 and x2 have different signs")
                 return True
-            elif u > 0:
-                result = not result
+        elif y1_and_y2_have_different_signs or y1_is_zero or y2_is_zero:
+            # print("    y values have different sign or degenerate")
 
-        # if u == 0:
-        #     print("point on edge")
-        #     return True
-        # elif u > 0:
-        #     if 0 <= t <= 1:
-        #         print("here")
-        #         result = not result
+            x1 = vertices_x[v - 1] - point_x
+            x2 = vertices_x[v] - point_x
+
+            # print("    x1", x1)
+            # print("    x2", x2)
+
+            if (x1 > epsilon) and (x2 > epsilon):
+                # print("    both x values are larger")
+                result = not result
+                if y1_is_zero:
+                    y0 = vertices_y[v - 2] - point_y
+                    if (-epsilon < y0 < epsilon) or (-epsilon < y2 <epsilon):
+                        pass
+                    elif math.copysign(1, y0) != math.copysign(1, y2):
+                        # print("    y0 and y2 have different signs")
+                        result = not result
+            elif (x1 < -epsilon) and (x2 < -epsilon):
+                # print("    both x values are smaller")
+                pass
+            else:
+                # print("    x values have different sign or degenerate")
+                t, u = _two_line_segment_intersection_parameters(
+                    x1=x1, y1=y1,
+                    x2=x2, y2=y2,
+                    x3=0, y3=0,
+                    x4=1, y4=0,
+                )
+                # print("    t", t)
+                # print("    u", u)
+
+                if (0 - epsilon) <= t < (1 + epsilon):
+                    if -epsilon < u < epsilon:
+                        # print("    point on border")
+                        return True
+                    elif u > 0:
+                        # print("    intersection detected")
+                        result = not result
+                        if -epsilon < t < epsilon:
+                            # print("     intersection with start point")
+                            y0 = vertices_y[v - 2] - point_y
+                            if (-epsilon < y0 < epsilon) or (-epsilon < y2 <epsilon):
+                                pass
+                            elif math.copysign(1, y0) != math.copysign(1, y2):
+                                # print("    y0 and y2 have different signs")
+                                result = not result
 
 
         # slope = (y0 - y1) / (x0 - x1)

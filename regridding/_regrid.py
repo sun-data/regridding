@@ -56,7 +56,7 @@ def regrid(
         The axes of the input histogram to regrid.
         If :class:`None`, regrid over all the axes of the input histogram.
     axis_output
-        The axes of ``vertices_new`` corresponding to the axes in ``axis``.
+        The axes of ``vertices_output`` corresponding to the axes in ``axis``.
     method
         The type of regridding to use. Currently, the only valid option is ``conservative``.
     order

@@ -418,7 +418,8 @@ def _step_outside_static(
                     pass
                 else:
                     j_new = j
-                    u_min = u
+
+                u_min = u
 
                 # plt.scatter(point_sweep_2x, point_sweep_2y)
 
@@ -453,7 +454,8 @@ def _step_outside_static(
                     pass
                 else:
                     j_new = j
-                    u_min = u1
+
+                u_min = u1
 
                 # break
 

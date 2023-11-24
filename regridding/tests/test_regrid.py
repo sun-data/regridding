@@ -39,7 +39,7 @@ def test_regrid_conservative_2d(
     values_output: None | np.ndarray,
     axis_input: None | int | tuple[int, ...],
     axis_output: None | int | tuple[int, ...],
-    order: int = 1,
+    order: int,
 ):
     result = regridding.regrid(
         vertices_input=vertices_input,

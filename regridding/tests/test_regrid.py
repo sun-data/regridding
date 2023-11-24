@@ -15,7 +15,7 @@ import regridding
             np.random.normal(size=(10, 11)),
             None,
         ),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     argnames="vertices_output, values_output, axis_output",
@@ -29,7 +29,7 @@ import regridding
             None,
             None,
         )
-    ]
+    ],
 )
 @pytest.mark.parametrize("order", [1])
 def test_regrid_conservative_2d(
@@ -53,5 +53,5 @@ def test_regrid_conservative_2d(
     )
 
     assert np.issubdtype(result.dtype, float)
-    assert result.shape == np.broadcast(*vertices_output).shape
+    assert result.shape == tuple(np.array(np.broadcast(*vertices_output).shape) - 1)
     assert result.sum() == values_input.sum()

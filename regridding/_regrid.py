@@ -101,6 +101,8 @@ def regrid(
         x_output = np.linspace(x_input.min(), x_input.max(), num_x // 2)
         y_output = np.linspace(y_input.min(), y_input.max(), num_y // 2)
 
+        x_output, y_output = np.meshgrid(x_output, y_output, indexing="ij")
+
     Regrid the test pattern onto the new grid
 
     .. jupyter-execute::

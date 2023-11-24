@@ -32,8 +32,10 @@ jobs:
           pip install pytest pytest-cov
           pytest
       - name: Test with Numba disabled
+        env:
+          NUMBA_DISABLE_JIT: 1
         run: |
-          NUMBA_DISABLE_JIT=1 pytest --cov=. --cov-report=xml
+          pytest --cov=. --cov-report=xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

@@ -69,8 +69,11 @@ def regrid(
         import matplotlib.pyplot as plt
         import regridding
 
-        x = np.linspace(-5, 5, num=66)
-        y = np.linspace(-5, 5, num=66)
+        num_x = 66
+        num_y = 66
+
+        x = np.linspace(-5, 5, num=num_x)
+        y = np.linspace(-5, 5, num=num_y)
 
         x, y = np.meshgrid(x, y, indexing="ij")
 
@@ -95,8 +98,8 @@ def regrid(
 
     .. jupyter-execute::
 
-        x_output = 2 * x
-        y_output = 2 * y
+        x_output = np.linspace(x_input.min(), x_input.max(), num_x // 2)
+        y_output = np.linspace(y_input.min(), y_input.max(), num_y // 2)
 
     Regrid the test pattern onto the new grid
 

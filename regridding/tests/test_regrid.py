@@ -12,7 +12,7 @@ import regridding
                 np.linspace(1, 1, num=11),
                 indexing="ij",
             ),
-            np.random.normal((10, 11)),
+            np.random.normal(size=(10, 11)),
             None,
         ),
     ]

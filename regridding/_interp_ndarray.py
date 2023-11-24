@@ -9,10 +9,10 @@ __all__ = [
 
 
 def ndarray_linear_interpolation(
-        a: np.ndarray,
-        indices: tuple[np.ndarray, ...],
-        axis: None | int | tuple[int, ...] = None,
-        axis_indices: None | int | tuple[int, ...] = None,
+    a: np.ndarray,
+    indices: tuple[np.ndarray, ...],
+    axis: None | int | tuple[int, ...] = None,
+    axis_indices: None | int | tuple[int, ...] = None,
 ):
     """
     Interpolate a :class:`numpy.ndarray` onto a new grid.
@@ -89,10 +89,14 @@ def ndarray_linear_interpolation(
         )
 
     axis_orthogonal_a = tuple(ax for ax in range(-ndim_a, 0) if ax not in axis)
-    axis_orthogonal_indices = tuple(ax for ax in range(-ndim_indices, 0) if ax not in axis_indices)
+    axis_orthogonal_indices = tuple(
+        ax for ax in range(-ndim_indices, 0) if ax not in axis_indices
+    )
 
     shape_orthogonal_a = tuple(shape_a[ax] for ax in axis_orthogonal_a)
-    shape_orthogonal_indices = tuple(shape_indices[ax] for ax in axis_orthogonal_indices)
+    shape_orthogonal_indices = tuple(
+        shape_indices[ax] for ax in axis_orthogonal_indices
+    )
 
     shape_orthogonal = np.broadcast_shapes(shape_orthogonal_a, shape_orthogonal_indices)
 
@@ -104,7 +108,9 @@ def ndarray_linear_interpolation(
         for ax in range(-ndim_broadcasted_a, 0)
     )
     shape_broadcasted_indices = tuple(
-        shape_indices[ax] if ax in axis_indices else shape_orthogonal[axis_orthogonal_indices.index(ax)]
+        shape_indices[ax]
+        if ax in axis_indices
+        else shape_orthogonal[axis_orthogonal_indices.index(ax)]
         for ax in range(-ndim_broadcasted_indices, 0)
     )
 
@@ -119,14 +125,15 @@ def ndarray_linear_interpolation(
             for ax in range(-ndim_broadcasted_a, 0)
         )
         index_indices = tuple(
-            slice(None) if ax in axis_indices else index[axis_orthogonal_indices.index(ax)]
+            slice(None)
+            if ax in axis_indices
+            else index[axis_orthogonal_indices.index(ax)]
             for ax in range(-ndim_broadcasted_indices, 0)
         )
         return index_a, index_indices
 
     if len(axis) == 1:
-
-        x, = indices
+        (x,) = indices
 
         for index in np.ndindex(*shape_orthogonal):
             index_a, index_indices = index_a_indices(index)
@@ -136,7 +143,6 @@ def ndarray_linear_interpolation(
             ).reshape(x[index_indices].shape)
 
     elif len(axis) == 2:
-
         x, y = indices
 
         for index in np.ndindex(*shape_orthogonal):
@@ -155,12 +161,11 @@ def ndarray_linear_interpolation(
 
 @numba.jit(nopython=True, parallel=True)
 def _ndarray_linear_interpolation_1d(
-        a: np.ndarray,
-        x: np.ndarray,
+    a: np.ndarray,
+    x: np.ndarray,
 ) -> np.ndarray:
-
     shape_output = x.shape
-    size_output, = shape_output
+    (size_output,) = shape_output
 
     result = np.empty(size_output)
 
@@ -172,13 +177,12 @@ def _ndarray_linear_interpolation_1d(
 
 @numba.jit(nopython=True, parallel=True)
 def _ndarray_linear_interpolation_2d(
-        a: np.ndarray,
-        x: np.ndarray,
-        y: np.ndarray,
+    a: np.ndarray,
+    x: np.ndarray,
+    y: np.ndarray,
 ) -> np.ndarray:
-
     shape_output = x.shape
-    size_output, = shape_output
+    (size_output,) = shape_output
 
     result = np.empty(size_output)
 
@@ -190,11 +194,10 @@ def _ndarray_linear_interpolation_2d(
 
 @numba.njit
 def _linear_interpolation(
-        a: np.ndarray,
-        x: float,
+    a: np.ndarray,
+    x: float,
 ) -> float:
-
-    shape_input_x, = a.shape
+    (shape_input_x,) = a.shape
 
     x_0 = int(math.floor(x))
 
@@ -215,11 +218,10 @@ def _linear_interpolation(
 
 @numba.njit
 def _bilinear_interpolation(
-        a: np.ndarray,
-        x: float,
-        y: float,
+    a: np.ndarray,
+    x: float,
+    y: float,
 ) -> float:
-
     shape_input_x, shape_input_y = a.shape
 
     x_00 = int(math.floor(x))
@@ -255,6 +257,3 @@ def _bilinear_interpolation(
     w_11 = dx * dy
 
     return (a_00 * w_00) + (a_01 * w_01) + (a_10 * w_10) + (a_11 * w_11)
-
-
-

@@ -4,7 +4,7 @@ import dataclasses
 from typing import Sequence
 import numpy as np
 import numba
-import regridding._conservative_ramshaw
+from ._conservative_ramshaw import _conservative_ramshaw
 from ._util import _normalize_axis
 
 __all__ = [
@@ -15,14 +15,14 @@ __all__ = [
 
 
 def regrid(
-        vertices_input: tuple[np.ndarray, ...],
-        vertices_output: tuple[np.ndarray, ...],
-        values_input: np.ndarray,
-        values_output: None | np.ndarray = None,
-        axis_input: None | int | tuple[int, ...] = None,
-        axis_output: None | int | tuple[int, ...] = None,
-        method: str = "conservative",
-        order: int = 1,
+    vertices_input: tuple[np.ndarray, ...],
+    vertices_output: tuple[np.ndarray, ...],
+    values_input: np.ndarray,
+    values_output: None | np.ndarray = None,
+    axis_input: None | int | tuple[int, ...] = None,
+    axis_output: None | int | tuple[int, ...] = None,
+    method: str = "conservative",
+    order: int = 1,
 ) -> np.ndarray:
     """
     Transfer a histogram defined on any curvilinear grid onto a new curvilinear grid.
@@ -135,16 +135,15 @@ def regrid(
 
 
 def calc_weights(
-        vertices_input: tuple[np.ndarray, ...],
-        vertices_output: tuple[np.ndarray, ...],
-        # values_input: np.ndarray,
-        # values_output: None | np.ndarray = None,
-        axis_input: None | int | tuple[int, ...] = None,
-        axis_output: None | int | tuple[int, ...] = None,
-        method: str = "conservative",
-        order: int = 1,
+    vertices_input: tuple[np.ndarray, ...],
+    vertices_output: tuple[np.ndarray, ...],
+    # values_input: np.ndarray,
+    # values_output: None | np.ndarray = None,
+    axis_input: None | int | tuple[int, ...] = None,
+    axis_output: None | int | tuple[int, ...] = None,
+    method: str = "conservative",
+    order: int = 1,
 ) -> tuple[np.ndarray, tuple[int, ...]]:
-
     # shape_values_input = values_input.shape
     shape_vertices_input = np.broadcast(*vertices_input).shape
     shape_vertices_output = np.broadcast(*vertices_output).shape
@@ -173,7 +172,6 @@ def calc_weights(
         )
 
     if len(vertices_output) != len(vertices_input):
-
         raise ValueError(
             f"The number of elements in `vertices_output`, {len(vertices_output)}, "
             f"should match the number of elements in `vertices_input`, {len(vertices_input)}"
@@ -184,13 +182,23 @@ def calc_weights(
     #     shape_vertices_input,
     # )
 
-    axis_input_orthogonal = tuple(ax for ax in _normalize_axis(None, ndim_input) if ax not in axis_input)
-    axis_output_orthogonal = tuple(ax for ax in _normalize_axis(None, ndim_output) if ax not in axis_output)
+    axis_input_orthogonal = tuple(
+        ax for ax in _normalize_axis(None, ndim_input) if ax not in axis_input
+    )
+    axis_output_orthogonal = tuple(
+        ax for ax in _normalize_axis(None, ndim_output) if ax not in axis_output
+    )
 
-    shape_input_orthogonal = tuple(shape_vertices_input[ax] for ax in axis_input_orthogonal)
-    shape_output_orthogonal = tuple(shape_vertices_output[ax] for ax in axis_output_orthogonal)
+    shape_input_orthogonal = tuple(
+        shape_vertices_input[ax] for ax in axis_input_orthogonal
+    )
+    shape_output_orthogonal = tuple(
+        shape_vertices_output[ax] for ax in axis_output_orthogonal
+    )
 
-    shape_orthogonal = np.broadcast_shapes(shape_input_orthogonal, shape_output_orthogonal)
+    shape_orthogonal = np.broadcast_shapes(
+        shape_input_orthogonal, shape_output_orthogonal
+    )
 
     shape_input = list(shape_orthogonal)
     for ax in axis_input:
@@ -220,14 +228,17 @@ def calc_weights(
     #
     #     values_output = np.zeros(bshape_values_output, dtype=values_input.dtype)
 
-    vertices_input = tuple(np.broadcast_to(component, shape_input) for component in vertices_input)
-    vertices_output = tuple(np.broadcast_to(component, shape_output) for component in vertices_output)
+    vertices_input = tuple(
+        np.broadcast_to(component, shape_input) for component in vertices_input
+    )
+    vertices_output = tuple(
+        np.broadcast_to(component, shape_output) for component in vertices_output
+    )
     # values_input = np.broadcast_to(values_input, bshape_values_input)
 
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
     for index in np.ndindex(*shape_orthogonal):
-
         index_vertices_input = list(index)
         for ax in axis_input:
             index_vertices_input.insert(ax, slice(None))
@@ -252,13 +263,12 @@ def calc_weights(
             raise NotImplementedError("1D regridding not supported")
 
         elif len(axis_input) == 2:
-
             vertices_input_x, vertices_input_y = vertices_input
             vertices_output_x, vertices_output_y = vertices_output
 
             if method == "conservative":
                 if order == 1:
-                    weights[index] = regridding._conservative_ramshaw._conservative_ramshaw(
+                    weights[index] = _conservative_ramshaw(
                         # values_input=values_input[index_values_input],
                         # values_output=values_output[index_values_output],
                         grid_input=(
@@ -276,17 +286,19 @@ def calc_weights(
                 raise NotImplementedError(f"method {method} not supported")
 
         else:
-            raise NotImplementedError("Regridding operations greater than 2D are not supported")
+            raise NotImplementedError(
+                "Regridding operations greater than 2D are not supported"
+            )
 
     return weights, shape_centers_output
 
 
 def regrid_from_weights(
-        weights: tuple[np.ndarray, tuple[int, ...]],
-        values_input: np.ndarray,
-        values_output: None | np.ndarray = None,
-        axis_input: None | int | tuple[int, ...] = None,
-        axis_output: None | int | tuple[int, ...] = None,
+    weights: tuple[np.ndarray, tuple[int, ...]],
+    values_input: np.ndarray,
+    values_output: None | np.ndarray = None,
+    axis_input: None | int | tuple[int, ...] = None,
+    axis_output: None | int | tuple[int, ...] = None,
 ):
     weights, shape_centers_output = weights
 
@@ -313,13 +325,23 @@ def regrid_from_weights(
             f"must match the number of axes in `axis_input`, {axis_input}"
         )
 
-    axis_input_orthogonal = tuple(ax for ax in _normalize_axis(None, ndim_input) if ax not in axis_input)
-    axis_output_orthogonal = tuple(ax for ax in _normalize_axis(None, ndim_output) if ax not in axis_output)
+    axis_input_orthogonal = tuple(
+        ax for ax in _normalize_axis(None, ndim_input) if ax not in axis_input
+    )
+    axis_output_orthogonal = tuple(
+        ax for ax in _normalize_axis(None, ndim_output) if ax not in axis_output
+    )
 
-    shape_input_orthogonal = tuple(shape_values_input[ax] for ax in axis_input_orthogonal)
-    shape_output_orthogonal = tuple(shape_values_output[ax] for ax in axis_output_orthogonal)
+    shape_input_orthogonal = tuple(
+        shape_values_input[ax] for ax in axis_input_orthogonal
+    )
+    shape_output_orthogonal = tuple(
+        shape_values_output[ax] for ax in axis_output_orthogonal
+    )
 
-    shape_orthogonal = np.broadcast_shapes(shape_input_orthogonal, shape_output_orthogonal, shape_weights)
+    shape_orthogonal = np.broadcast_shapes(
+        shape_input_orthogonal, shape_output_orthogonal, shape_weights
+    )
 
     weights = np.broadcast_to(weights, shape_orthogonal)
 
@@ -344,7 +366,6 @@ def regrid_from_weights(
             )
 
     for index in np.ndindex(*shape_orthogonal):
-
         index_values_input = list(index)
         for ax in axis_input:
             index_values_input.insert(ax, slice(None))
@@ -366,11 +387,10 @@ def regrid_from_weights(
 
 @numba.njit(error_model="numpy")
 def _regrid_from_weights_2d(
-        weights: np.ndarray,
-        values_input: np.ndarray,
-        values_output: np.ndarray,
+    weights: np.ndarray,
+    values_input: np.ndarray,
+    values_output: np.ndarray,
 ) -> None:
-
     values_input = values_input.reshape(-1)
     values_output = values_output.reshape(-1)
 
@@ -381,13 +401,8 @@ def _regrid_from_weights_2d(
 
 @dataclasses.dataclass
 class Regridder:
-
     index_input: np.ndarray
     index_output: np.ndarray
     shape_input: tuple[int, ...]
     shape_output: tuple[int, ...]
     weights: np.ndarray
-
-
-
-

@@ -5,20 +5,13 @@ from typing import Sequence
 import numpy as np
 import numba
 import regridding._conservative_ramshaw
+from ._util import _normalize_axis
 
 __all__ = [
     "regrid",
     "calc_weights",
     "regrid_from_weights",
 ]
-
-
-def _normalize_axis(axis: None | int | tuple[int, ...], ndim: int):
-    if axis is None:
-        axis = tuple(range(ndim))
-    axis = np.core.numeric.normalize_axis_tuple(axis, ndim=ndim)
-    axis = tuple(~(~np.array(axis) % ndim))
-    return axis
 
 
 def regrid(

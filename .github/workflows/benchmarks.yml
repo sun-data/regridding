@@ -33,6 +33,7 @@ jobs:
         uses: actions/configure-pages@v3
       - name: Run benchmarks
         run: |
+          asv machine --yes
           asv run
           asv publish
           ls

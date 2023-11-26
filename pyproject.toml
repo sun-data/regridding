@@ -34,6 +34,9 @@ doc = [
     "jupyter-sphinx",
     "sphinx-favicon",
 ]
+benchmark = [
+    "asv",
+]
 
 [project.urls]
 Homepage = "https://github.com/sun-data/regridding"

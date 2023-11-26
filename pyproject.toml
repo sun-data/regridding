@@ -35,7 +35,6 @@ doc = [
     "sphinx-favicon",
 ]
 benchmark = [
-    "virtualenv",
     "asv",
 ]
 

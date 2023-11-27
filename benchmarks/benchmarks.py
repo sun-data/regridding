@@ -55,3 +55,4 @@ time_regrid.param_names = (
     "method",
     "order",
 )
+time_regrid.timeout = 240

@@ -36,11 +36,11 @@ jobs:
           asv machine --yes
           asv run
           asv publish
-          ls
+          ls -a
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:
-          path: html/
+          path: .asv/html/
 
 
   # Deployment job

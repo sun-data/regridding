@@ -56,3 +56,4 @@ time_regrid.param_names = (
     "order",
 )
 time_regrid.timeout = 240
+time_regrid.setup = time_regrid

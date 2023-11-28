@@ -18,13 +18,6 @@ API Reference
 
 
 
-Bibliography
-============
-
-.. bibliography::
-
-
-
 Indices and tables
 ==================
 

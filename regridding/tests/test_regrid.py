@@ -9,7 +9,7 @@ import regridding
         (
             np.meshgrid(
                 np.linspace(-1, 1, num=10),
-                np.linspace(1, 1, num=11),
+                np.linspace(-1, 1, num=11),
                 indexing="ij",
             ),
             np.random.normal(size=(10, 11)),
@@ -23,7 +23,7 @@ import regridding
         (
             np.meshgrid(
                 1.1 * np.linspace(-1, 1, num=10) + 0.001,
-                1.2 * np.linspace(1, 1, num=11) + 0.001,
+                1.2 * np.linspace(-1, 1, num=11) + 0.001,
                 indexing="ij",
             ),
             None,

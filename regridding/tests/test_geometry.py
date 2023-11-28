@@ -60,6 +60,7 @@ def test_line_equation_2d(
         (0, 0, 1, 1, 1, 1, 2, 2, True),
         (-1, -1, 0, 0, 0, 0, 1, 1, True),
         (-1, 1, 0, 0, 0, 0, 1, 1, True),
+        (-1, -1, 0, 0, 1, 0, 0, 1, True),
     ],
 )
 def test_bounding_boxes_intersect_2d(

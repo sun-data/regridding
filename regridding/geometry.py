@@ -78,6 +78,15 @@ def bounding_boxes_intersect_2d(
     y_q2
         :math:`y`-coordinate of the second point of box :math:`q`
     """
+    if x_p1 > x_p2:
+        x_p1, x_p2 = x_p2, x_p1
+    if y_p1 > y_p2:
+        y_p1, y_p2 = y_p2, y_p1
+    if x_q1 > x_q2:
+        x_q1, x_q2 = x_q2, x_q1
+    if y_q1 > y_q2:
+        y_q1, y_q2 = y_q2, y_q1
+
     dx_p = x_p2 - x_p1
     dy_p = y_p2 - y_p1
     dx_q = x_q2 - x_q1

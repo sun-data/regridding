@@ -1,4 +1,5 @@
 import pytest
+import math
 import numpy as np
 import regridding
 
@@ -80,3 +81,53 @@ def test_bounding_boxes_intersect_2d(
         y_q2=y_q2,
     )
     assert result == result_expected
+
+
+@pytest.mark.parametrize(
+    argnames="x_p1,y_p1,x_p2,y_p2,x_q1,y_q1,x_q2,y_q2,sdet_expected,tdet_expected,det_expected",
+    argvalues=[
+        (0, 0, 1, 1, 2, 0, 3, 1, math.nan, math.nan, math.nan),
+        (-1, -1, 0, 0, 1, 0, 0, 1, math.nan, math.nan, math.nan),
+        (1, 0, 0, 1, -1, -1, 0, 0, math.nan, math.nan, math.nan),
+        (-1, -1, 1, 1, 1, -1, -1, 1, 4, 4, 8),
+        (0, 0, 0, 1, 0, 0, 1, 0, 0, 0, -1),
+    ],
+)
+def test_two_line_segment_intersection_parameters(
+    x_p1: float,
+    y_p1: float,
+    x_p2: float,
+    y_p2: float,
+    x_q1: float,
+    y_q1: float,
+    x_q2: float,
+    y_q2: float,
+    sdet_expected: float,
+    tdet_expected: float,
+    det_expected: float,
+):
+    sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
+        x_p1=x_p1,
+        y_p1=y_p1,
+        x_p2=x_p2,
+        y_p2=y_p2,
+        x_q1=x_q1,
+        y_q1=y_q1,
+        x_q2=x_q2,
+        y_q2=y_q2,
+    )
+
+    if math.isnan(sdet_expected):
+        assert math.isnan(sdet)
+    else:
+        assert sdet == sdet_expected
+
+    if math.isnan(tdet_expected):
+        assert math.isnan(tdet)
+    else:
+        assert tdet == tdet_expected
+
+    if math.isnan(det_expected):
+        assert math.isnan(det)
+    else:
+        assert det == det_expected

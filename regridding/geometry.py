@@ -1,8 +1,11 @@
+import math
 import numba
+import regridding
 
 __all__ = [
     "line_equation_2d",
     "bounding_boxes_intersect_2d",
+    "two_line_segment_intersection_parameters",
 ]
 
 
@@ -89,3 +92,97 @@ def bounding_boxes_intersect_2d(
     intersect_y = (2 * abs(y_p - y_q)) <= (dy_p + dy_q)
 
     return intersect_x and intersect_y
+
+
+@numba.njit(inline="always", error_model="numpy")
+def two_line_segment_intersection_parameters(
+    x_p1: float,
+    y_p1: float,
+    x_p2: float,
+    y_p2: float,
+    x_q1: float,
+    y_q1: float,
+    x_q2: float,
+    y_q2: float,
+) -> tuple[float, float, float]:
+    r"""
+    Computes the parameters
+    (:math:`\text{sdet}`, :math:`\text{tdet}`, and :math:`\text{det}`)
+    associated with the intersection of two 2D line segments,
+    :math:`p` and :math:`q`, as described in :cite:t:`GraphicsGemsIII`.
+
+    Parameters
+    ----------
+    x_p1
+        :math:`x` component of the first point in line :math:`p`
+    y_p1
+        :math:`y` component of the first point in line :math:`p`
+    x_p2
+        :math:`x` component of the second point in line :math:`p`
+    y_p2
+        :math:`y` component of the second point in line :math:`p`
+    x_q1
+        :math:`x` component of the first point in line :math:`q`
+    y_q1
+        :math:`y` component of the first point in line :math:`q`
+    x_q2
+        :math:`x` component of the second point in line :math:`q`
+    y_q2
+        :math:`x` component of the second point in line :math:`q`
+    """
+    bounding_boxes_intersect = bounding_boxes_intersect_2d(
+        x_p1=x_p1,
+        y_p1=y_p1,
+        x_p2=x_p2,
+        y_p2=y_p2,
+        x_q1=x_q1,
+        y_q1=y_q1,
+        x_q2=x_q2,
+        y_q2=y_q2,
+    )
+    if not bounding_boxes_intersect:
+        return math.nan, math.nan, math.nan
+
+    a = line_equation_2d(
+        x=x_q1,
+        y=y_q1,
+        x1=x_p1,
+        y1=y_p1,
+        x2=x_p2,
+        y2=y_p2,
+    )
+    b = line_equation_2d(
+        x=x_q2,
+        y=y_q2,
+        x1=x_p1,
+        y1=y_p1,
+        x2=x_p2,
+        y2=y_p2,
+    )
+    if regridding.math.sign(a) == regridding.math.sign(b):
+        return math.nan, math.nan, math.nan
+
+    c = line_equation_2d(
+        x=x_p1,
+        y=y_p1,
+        x1=x_q1,
+        y1=y_q1,
+        x2=x_q2,
+        y2=y_q2,
+    )
+    d = line_equation_2d(
+        x=x_p2,
+        y=y_p2,
+        x1=x_q1,
+        y1=y_q1,
+        x2=x_q2,
+        y2=y_q2,
+    )
+    if regridding.math.sign(c) == regridding.math.sign(d):
+        return math.nan, math.nan, math.nan
+
+    det = a - b
+    sdet = +a
+    tdet = -c
+
+    return sdet, tdet, det

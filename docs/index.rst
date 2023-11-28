@@ -10,6 +10,13 @@ Introduction
 
 
 
+Bibliography
+============
+
+.. bibliography::
+
+
+
 Indices and tables
 ==================
 

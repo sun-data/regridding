@@ -54,4 +54,4 @@ def test_regrid_conservative_2d(
 
     assert np.issubdtype(result.dtype, float)
     assert result.shape == tuple(np.array(np.broadcast(*vertices_output).shape) - 1)
-    assert result.sum() == values_input.sum()
+    assert np.isclose(result.sum(), values_input.sum())

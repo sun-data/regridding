@@ -1,7 +1,7 @@
 import numba
 
 __all__ = [
-    "sign"
+    "sign",
 ]
 
 

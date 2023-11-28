@@ -6,3 +6,10 @@
 [![PyPI version](https://badge.fury.io/py/regridding.svg)](https://badge.fury.io/py/regridding)
 
 Numba-accelerated multilinear and first-order conservative interpolation of Numpy arrays.
+
+## Installation
+
+`regridding` is published on the Python Package Index an can be installed using `pip`
+```
+pip install regridding
+```

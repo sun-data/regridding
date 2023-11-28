@@ -44,3 +44,6 @@ Homepage = "https://github.com/sun-data/regridding"
 Documentation = "https://regridding.readthedocs.io/en/latest"
 
 [tool.setuptools_scm]
+
+[tool.black]
+exclude = "_conservative_ramshaw.py"

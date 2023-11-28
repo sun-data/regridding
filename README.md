@@ -9,7 +9,7 @@ Numba-accelerated multilinear and first-order conservative interpolation of Nump
 
 ## Installation
 
-`regridding` is published on the Python Package Index an can be installed using `pip`
+`regridding` is published on the Python Package Index and can be installed using `pip`
 ```
 pip install regridding
 ```

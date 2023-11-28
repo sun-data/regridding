@@ -129,6 +129,12 @@ def two_line_segment_intersection_parameters(
         :math:`x` component of the second point in line :math:`q`
     y_q2
         :math:`x` component of the second point in line :math:`q`
+
+    References
+    ----------
+
+    .. footbibliography::
+
     """
     bounding_boxes_intersect = bounding_boxes_intersect_2d(
         x_p1=x_p1,

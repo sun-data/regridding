@@ -8,8 +8,8 @@ vertices_output = None
 def setup_find_indices_1d(num: int, method: str):
     global vertices_input
     global vertices_output
-    vertices_input = np.linspace(-1, 1, num=num)
-    vertices_output = np.linspace(-1.1, 1.1, num=num)
+    vertices_input = (np.linspace(-1, 1, num=num),)
+    vertices_output = (np.linspace(-1.1, 1.1, num=num),)
 
 
 def time_find_indices_1d(num: int, method: str):

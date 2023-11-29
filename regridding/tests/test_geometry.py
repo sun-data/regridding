@@ -194,3 +194,11 @@ def test_point_is_inside_red_cross(
         vertices_y=vertices_y,
     )
     assert result == result_expected
+
+    result_reversed = regridding.geometry.point_is_inside_polygon(
+        x=x,
+        y=y,
+        vertices_x=vertices_x[::-1],
+        vertices_y=vertices_y[::-1],
+    )
+    assert result_reversed == result_expected

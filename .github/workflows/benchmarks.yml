@@ -28,7 +28,7 @@ jobs:
           asv machine --yes
           asv run
       - name: Publish results to gh-pages branch
-        run:
+        run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           asv gh-pages

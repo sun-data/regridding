@@ -100,4 +100,3 @@ def _normalize_input_output_vertices(
         shape_output,
         shape_orthogonal,
     )
-

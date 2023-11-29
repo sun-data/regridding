@@ -15,4 +15,4 @@ def sign(x: float):
     x
         the value to find the sign of
     """
-    return (x > 0) - (x < 0)
+    return bool(x > 0) - bool(x < 0)

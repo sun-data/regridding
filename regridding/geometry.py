@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import numba
 import regridding
 
@@ -6,6 +7,7 @@ __all__ = [
     "line_equation_2d",
     "bounding_boxes_intersect_2d",
     "two_line_segment_intersection_parameters",
+    "point_is_inside_polygon",
 ]
 
 
@@ -201,3 +203,92 @@ def two_line_segment_intersection_parameters(
     tdet = -c
 
     return sdet, tdet, det
+
+
+@numba.njit(inline="always", error_model="numpy")
+def point_is_inside_polygon(
+    x: float,
+    y: float,
+    vertices_x: np.ndarray,
+    vertices_y: np.ndarray,
+) -> bool:
+    """
+    Check if a given point is inside or on the boundary of a polygon specified
+    by its vertices.
+
+    This function uses the extended winding number algorithm described by
+    :footcite:t:`Kumar2018`, which addresses boundary issues with the "classic"
+    winding number algorithm in :footcite:t:`Alciatore1995`.
+
+    Parameters
+    ----------
+    x
+        :math:`x` component of the test point
+    y
+        :math:`y` component of the test point
+    vertices_x
+        :math:`x` component of the polygon's vertices
+    vertices_y
+        :math:`y` component of the polygon's vertices
+
+    References
+    ----------
+
+    .. footbibliography::
+
+    """
+
+    vertices_x = vertices_x - x
+    vertices_y = vertices_y - y
+
+    w = 0
+
+    for v in range(len(vertices_x)):
+
+        i = v - 1
+
+        x0 = vertices_x[i + 0]
+        y0 = vertices_y[i + 0]
+        x1 = vertices_x[i + 1]
+        y1 = vertices_y[i + 1]
+
+        if regridding.math.sign(y0) != regridding.math.sign(y1):
+
+            x_intercept = x0 + y0 * (x1 - x0) / (y1 - y0)
+
+            if x_intercept > 0:
+                if (y0 == 0) and (x0 > 0):
+                    if y1 > 0:
+                        w = w + 0.5
+                    elif y1 < 0:
+                        w = w - 0.5
+                elif (y1 == 0) and (x1 > 0):
+                    if y0 < 0:
+                        w = w + 0.5
+                    elif y0 > 0:
+                        w = w - 0.5
+                elif y0 < 0:
+                    w = w + 1
+                elif y0 > 0:
+                    w = w - 1
+
+            elif x_intercept < 0:
+                if (y0 == 0) and (x0 < 0):
+                    if y1 < 0:
+                        w = w + 0.5
+                    elif y1 > 0:
+                        w = w - 0.5
+                elif (y1 == 0) and (x1 < 0):
+                    if y0 > 0:
+                        w = w + 0.5
+                    elif y0 < 0:
+                        w = w - 0.5
+                elif y0 > 0:
+                    w = w + 1
+                elif y0 < 0:
+                    w = w - 1
+
+    if w == 0:
+        return False
+    else:
+        return True

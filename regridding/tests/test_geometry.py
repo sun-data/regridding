@@ -135,3 +135,61 @@ def test_two_line_segment_intersection_parameters(
         assert math.isnan(det)
     else:
         assert det == det_expected
+
+
+@pytest.mark.parametrize(
+    argnames="x,y,result_expected",
+    argvalues=[
+        (8, 4, False),
+        (7, 4, False),
+        (6, 4, False),
+        (5, 4, True),
+        (4, 4, True),
+        (3.5, 4, True),
+        (3, 4, True),
+        (2, 4, True),
+        (1, 4, False),
+        (0, 4, False),
+        (-1, 4, False),
+        (-2, 4, False),
+        (-3, 4, False),
+        (-4, 4, False),
+        (-5, 4, False),
+        (-6, 4, False),
+        (-7, 4, False),
+        (-8, 4, False),
+        (3, 8, False),
+        (3, 7, False),
+        (3, 6, False),
+        (3, 5, True),
+        (3, 4, True),
+        (3, 3.5, True),
+        (3, 3, True),
+        (3, 2, True),
+        (3, 1, False),
+        (3, 0, False),
+        (3, -1, False),
+        (3, -2, False),
+        (3, -3, False),
+        (3, -4, False),
+        (3, -5, False),
+        (3, -6, False),
+        (3, -7, False),
+        (3, -8, False),
+    ],
+)
+def test_point_is_inside_red_cross(
+    x: float,
+    y: float,
+    result_expected: bool,
+):
+    vertices_x = np.array([2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 1, 1]) + 1
+    vertices_y = np.array([2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 2]) + 1
+
+    result = regridding.geometry.point_is_inside_polygon(
+        x=x,
+        y=y,
+        vertices_x=vertices_x,
+        vertices_y=vertices_y,
+    )
+    assert result == result_expected

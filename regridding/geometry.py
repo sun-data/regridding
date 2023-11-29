@@ -244,7 +244,6 @@ def point_is_inside_polygon(
     w = 0
 
     for v in range(len(vertices_x)):
-
         i = v - 1
 
         x0 = vertices_x[i + 0]
@@ -253,7 +252,6 @@ def point_is_inside_polygon(
         y1 = vertices_y[i + 1]
 
         if regridding.math.sign(y0) != regridding.math.sign(y1):
-
             x_intercept = x0 + y0 * (x1 - x0) / (y1 - y0)
 
             if x_intercept > 0:

@@ -47,7 +47,7 @@ Documentation = "https://regridding.readthedocs.io/en/latest"
 
 [tool.coverage.run]
 omit = [
-    "benchmarks",
+    "benchmarks/*",
 ]
 
 [tool.black]

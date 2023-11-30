@@ -57,10 +57,6 @@ def _find_indices_searchsorted_1d(
                 result_di = fill_value
             result_d[i] = result_di
 
-
-        # result_d = result_d - 1
-        # result_d[result_d < 0] = fill_value
-        # result_d[result_d >= num_m] = fill_value
         result[d] = result_d
 
     return (result,)

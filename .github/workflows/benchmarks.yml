@@ -32,5 +32,5 @@ jobs:
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
           git config --list
-          git fetch origin gh-pages
+          git fetch origin gh-pages:gh-pages
           asv gh-pages

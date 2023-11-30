@@ -7,11 +7,11 @@ values_input = None
 
 
 def setup_regrid_2d(
-    shape: tuple[int, int],
+    num: int,
     method: str,
     order: int,
 ):
-    num_x, num_y = shape
+    num_x = num_y = num
 
     x = np.linspace(-1, 1, num=num_x)
     y = np.linspace(-1, 1, num=num_y)
@@ -43,7 +43,7 @@ def setup_regrid_2d(
 
 
 def time_regrid_2d(
-    shape: tuple[int, int],
+    num: int,
     method: str,
     order: int,
 ):
@@ -58,12 +58,12 @@ def time_regrid_2d(
 
 time_regrid_2d.setup = setup_regrid_2d
 time_regrid_2d.params = (
-    [(100, 100), (200, 200), (300, 300), (400, 400)],
+    [100, 200, 300, 400, 500],
     ["conservative"],
     [1],
 )
 time_regrid_2d.param_names = (
-    "shape",
+    "number of edges per axis",
     "method",
     "order",
 )

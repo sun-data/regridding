@@ -5,7 +5,7 @@ import regridding
 
 
 @pytest.mark.parametrize(
-    argnames="vertices_input,vertices_output",
+    argnames="coordinates_input,coordinates_output",
     argvalues=[
         (
             (np.linspace(-1, 1, num=32),),
@@ -15,19 +15,19 @@ import regridding
 )
 @pytest.mark.parametrize("method", ["brute", "searchsorted"])
 def test_find_indices_1d(
-    vertices_input: tuple[np.ndarray],
-    vertices_output: tuple[np.ndarray],
+    coordinates_input: tuple[np.ndarray],
+    coordinates_output: tuple[np.ndarray],
     method: Literal["brute"],
 ):
     result = regridding.find_indices(
-        vertices_input=vertices_input,
-        vertices_output=vertices_output,
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
         method=method,
     )
 
-    (vertices_input_x,) = vertices_input
-    (vertices_output_x,) = vertices_output
+    (coordinates_input_x,) = coordinates_input
+    (coordinates_output_x,) = coordinates_output
     (result_x,) = result
 
-    assert np.all(vertices_input_x[result_x + 0] <= vertices_output_x)
-    assert np.all(vertices_input_x[result_x + 1] >= vertices_output_x)
+    assert np.all(coordinates_input_x[result_x + 0] <= coordinates_output_x)
+    assert np.all(coordinates_input_x[result_x + 1] >= coordinates_output_x)

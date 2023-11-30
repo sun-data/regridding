@@ -10,8 +10,8 @@ __all__ = [
 
 
 def find_indices(
-    vertices_input: tuple[np.ndarray, ...],
-    vertices_output: tuple[np.ndarray, ...],
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
     fill_value: None | int = None,
@@ -22,9 +22,9 @@ def find_indices(
 
     Parameters
     ----------
-    vertices_input
+    coordinates_input
         the source grid
-    vertices_output
+    coordinates_output
         the destination grid
     axis_input
         the axes in the source grid to search
@@ -37,16 +37,16 @@ def find_indices(
     """
 
     (
-        vertices_input,
-        vertices_output,
+        coordinates_input,
+        coordinates_output,
         axis_input,
         axis_output,
         shape_input,
         shape_output,
         shape_orthogonal,
     ) = _util._normalize_input_output_vertices(
-        vertices_input=vertices_input,
-        vertices_output=vertices_output,
+        vertices_input=coordinates_input,
+        vertices_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
     )
@@ -60,25 +60,25 @@ def find_indices(
     shape_input_numba = tuple(shape_input[ax] for ax in axis_input)
     shape_output_numba = tuple(shape_output[ax] for ax in axis_output)
 
-    vertices_input = tuple(
+    coordinates_input = tuple(
         np.moveaxis(v, axis_input, axis_input_numba).reshape(-1, *shape_input_numba)
-        for v in vertices_input
+        for v in coordinates_input
     )
-    vertices_output = tuple(
+    coordinates_output = tuple(
         np.moveaxis(v, axis_output, axis_output_numba).reshape(-1, *shape_output_numba)
-        for v in vertices_output
+        for v in coordinates_output
     )
 
     if method == "brute":
         indices_output = _find_indices_brute(
-            vertices_input=vertices_input,
-            vertices_output=vertices_output,
+            coordinates_input=coordinates_input,
+            coordinates_output=coordinates_output,
             fill_value=fill_value,
         )
     elif method == "searchsorted":
         indices_output = _find_indices_searchsorted(
-            vertices_input=vertices_input,
-            vertices_output=vertices_output,
+            coordinates_input=coordinates_input,
+            coordinates_output=coordinates_output,
             fill_value=fill_value,
         )
     else:

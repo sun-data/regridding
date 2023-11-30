@@ -1,26 +1,26 @@
 import numpy as np
 import regridding
 
-vertices_input = None
-vertices_output = None
+coordinates_input = None
+coordinates_output = None
 
 
 def setup_find_indices_1d(num: int, method: str):
-    global vertices_input
-    global vertices_output
-    vertices_input = (np.linspace(-1, 1, num=num),)
-    vertices_output = (np.linspace(-1.1, 1.1, num=num),)
+    global coordinates_input
+    global coordinates_output
+    coordinates_input = (np.linspace(-1, 1, num=num),)
+    coordinates_output = (np.linspace(-1.1, 1.1, num=num),)
     regridding.find_indices(
-        vertices_input=vertices_input,
-        vertices_output=vertices_output,
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
         method=method,
     )
 
 
 def time_find_indices_1d(num: int, method: str):
     regridding.find_indices(
-        vertices_input=vertices_input,
-        vertices_output=vertices_output,
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
         method=method,
     )
 

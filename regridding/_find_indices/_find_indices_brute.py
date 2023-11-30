@@ -3,19 +3,19 @@ import numba
 
 
 def _find_indices_brute(
-    vertices_input: tuple[np.ndarray, ...],
-    vertices_output: tuple[np.ndarray, ...],
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
     fill_value: None | int = None,
 ) -> tuple[np.ndarray, ...]:
-    if len(vertices_input) == 1:
+    if len(coordinates_input) == 1:
         result = _find_indices_brute_1d(
-            vertices_input=vertices_input,
-            vertices_output=vertices_output,
+            coordinates_input=coordinates_input,
+            coordinates_output=coordinates_output,
             fill_value=fill_value,
         )
     else:
         raise ValueError(
-            f"{len(vertices_input)}-dimensional brute-force search not supported"
+            f"{len(coordinates_input)}-dimensional brute-force search not supported"
         )
 
     return result
@@ -23,12 +23,12 @@ def _find_indices_brute(
 
 @numba.njit(inline="always")
 def _find_indices_brute_1d(
-    vertices_input: tuple[np.ndarray],
-    vertices_output: tuple[np.ndarray],
+    coordinates_input: tuple[np.ndarray],
+    coordinates_output: tuple[np.ndarray],
     fill_value: int,
 ) -> tuple[np.ndarray]:
-    (x_input,) = vertices_input
-    (x_output,) = vertices_output
+    (x_input,) = coordinates_input
+    (x_output,) = coordinates_output
 
     num_d, num_m = x_input.shape
     num_d, num_i = x_output.shape

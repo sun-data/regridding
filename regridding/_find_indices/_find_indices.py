@@ -2,6 +2,7 @@ from typing import Literal
 import numpy as np
 from regridding import _util
 from ._find_indices_brute import _find_indices_brute
+from ._find_indices_searchsorted import _find_indices_searchsorted
 
 __all__ = [
     "find_indices",
@@ -14,7 +15,7 @@ def find_indices(
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
     fill_value: None | int = None,
-    method: Literal["brute"] = "brute",
+    method: Literal["brute"] | Literal["searchsorted"] = "brute",
 ):
     """
     Find the index of the input cell which contains the output vertex.
@@ -70,6 +71,12 @@ def find_indices(
 
     if method == "brute":
         indices_output = _find_indices_brute(
+            vertices_input=vertices_input,
+            vertices_output=vertices_output,
+            fill_value=fill_value,
+        )
+    elif method == "searchsorted":
+        indices_output = _find_indices_searchsorted(
             vertices_input=vertices_input,
             vertices_output=vertices_output,
             fill_value=fill_value,

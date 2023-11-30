@@ -13,7 +13,7 @@ import regridding
         ),
     ],
 )
-@pytest.mark.parametrize("method", ["brute"])
+@pytest.mark.parametrize("method", ["brute", "searchsorted"])
 def test_find_indices_1d(
     vertices_input: tuple[np.ndarray],
     vertices_output: tuple[np.ndarray],

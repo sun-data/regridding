@@ -16,7 +16,7 @@ def find_indices(
     axis_output: None | int | tuple[int, ...] = None,
     fill_value: None | int = None,
     method: Literal["brute"] | Literal["searchsorted"] = "brute",
-):
+) -> tuple[np.ndarray, ...]:
     """
     Find the index of the input cell which contains the output vertex.
 

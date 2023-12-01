@@ -12,9 +12,9 @@ def _normalize_axis(
     return axis
 
 
-def _normalize_input_output_vertices(
-    vertices_input: tuple[np.ndarray, ...],
-    vertices_output: tuple[np.ndarray, ...],
+def _normalize_input_output_coordinates(
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
 ) -> tuple[
@@ -26,11 +26,11 @@ def _normalize_input_output_vertices(
     tuple[int, ...],
     tuple[int, ...],
 ]:
-    shape_vertices_input = np.broadcast(*vertices_input).shape
-    shape_vertices_output = np.broadcast(*vertices_output).shape
+    shape_coordinates_input = np.broadcast(*coordinates_input).shape
+    shape_coordinates_output = np.broadcast(*coordinates_output).shape
 
-    ndim_input = len(shape_vertices_input)
-    ndim_output = len(shape_vertices_output)
+    ndim_input = len(shape_coordinates_input)
+    ndim_output = len(shape_coordinates_output)
 
     axis_input = _normalize_axis(axis_input, ndim=ndim_input)
     axis_output = _normalize_axis(axis_output, ndim=ndim_output)
@@ -44,16 +44,16 @@ def _normalize_input_output_vertices(
             f"must match the number of axes in `axis_input`, {axis_input}"
         )
 
-    if len(vertices_input) != len(axis_input):
+    if len(coordinates_input) != len(axis_input):
         raise ValueError(
-            f"The number of elements in `vertices_input`, {len(vertices_input)}, "
+            f"The number of elements in `coordinates_input`, {len(coordinates_input)}, "
             f"should match the number of axes in `axis_input`, {axis_input}"
         )
 
-    if len(vertices_output) != len(vertices_input):
+    if len(coordinates_output) != len(coordinates_input):
         raise ValueError(
-            f"The number of elements in `vertices_output`, {len(vertices_output)}, "
-            f"should match the number of elements in `vertices_input`, {len(vertices_input)}"
+            f"The number of elements in `coordinates_output`, {len(coordinates_output)}, "
+            f"should match the number of elements in `coordinates_input`, {len(coordinates_input)}"
         )
 
     axis_input_orthogonal = tuple(
@@ -64,10 +64,10 @@ def _normalize_input_output_vertices(
     )
 
     shape_input_orthogonal = tuple(
-        shape_vertices_input[ax] for ax in axis_input_orthogonal
+        shape_coordinates_input[ax] for ax in axis_input_orthogonal
     )
     shape_output_orthogonal = tuple(
-        shape_vertices_output[ax] for ax in axis_output_orthogonal
+        shape_coordinates_output[ax] for ax in axis_output_orthogonal
     )
 
     shape_orthogonal = np.broadcast_shapes(
@@ -76,24 +76,24 @@ def _normalize_input_output_vertices(
 
     shape_input = list(shape_orthogonal)
     for ax in axis_input:
-        shape_input.insert(ax, shape_vertices_input[ax])
+        shape_input.insert(ax, shape_coordinates_input[ax])
     shape_input = tuple(shape_input)
 
     shape_output = list(shape_orthogonal)
     for ax in axis_output:
-        shape_output.insert(ax, shape_vertices_output[ax])
+        shape_output.insert(ax, shape_coordinates_output[ax])
     shape_output = tuple(shape_output)
 
-    vertices_input = tuple(
-        np.broadcast_to(component, shape_input) for component in vertices_input
+    coordinates_input = tuple(
+        np.broadcast_to(coord, shape_input) for coord in coordinates_input
     )
-    vertices_output = tuple(
-        np.broadcast_to(component, shape_output) for component in vertices_output
+    coordinates_output = tuple(
+        np.broadcast_to(coord, shape_output) for coord in coordinates_output
     )
 
     return (
-        vertices_input,
-        vertices_output,
+        coordinates_input,
+        coordinates_output,
         axis_input,
         axis_output,
         shape_input,

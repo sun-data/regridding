@@ -44,9 +44,9 @@ def find_indices(
         shape_input,
         shape_output,
         shape_orthogonal,
-    ) = _util._normalize_input_output_vertices(
-        vertices_input=coordinates_input,
-        vertices_output=coordinates_output,
+    ) = _util._normalize_input_output_coordinates(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
     )

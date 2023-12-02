@@ -37,6 +37,7 @@ jobs:
           asv run
       - name: Checkout benchmarks remote branch
         run: |
+          git fetch origin
           git switch benchmarks
           git rebase origin/main
       - name: Commit new results to the benchmarks branch

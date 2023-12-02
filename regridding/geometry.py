@@ -61,6 +61,8 @@ def bounding_boxes_intersect_2d(
     """
     Test if two bounding boxes, :math:`p` and :math:`q`, intersect.
 
+    If the edges of the two boxes are touching, it's counted as an intersection.
+
     Parameters
     ----------
     x_p1

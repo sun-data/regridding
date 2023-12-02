@@ -12,6 +12,7 @@ __all__ = []
     # parallel=True,
     # inline="always",
     # boundscheck=True,
+    cache=True,
 )
 def _conservative_ramshaw(
         # values_input: np.ndarray,

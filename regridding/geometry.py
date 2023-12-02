@@ -202,7 +202,27 @@ def two_line_segment_intersection_parameters(
     Computes the parameters
     (:math:`\text{sdet}`, :math:`\text{tdet}`, and :math:`\text{det}`)
     associated with the intersection of two 2D line segments,
-    :math:`p` and :math:`q`, as described in :footcite:t:`GraphicsGemsIII`.
+    :math:`p` and :math:`q`.
+
+    This function uses the method described in :footcite:t:`GraphicsGemsIII`.
+    :math:`\text{sdet}`, :math:`\text{tdet}`, and :math:`\text{det}` are expected
+    to be used to compute the quantities
+
+    .. math::
+
+        s &= \text{sdet} / \text{det}
+        t &= \text{tdet} / \text{det},
+
+    which can be used to compute the intersection :math:`(x, y)` using the
+    parametric equations of the lines:
+
+    .. math::
+
+        x = (1 - s) * x_{\text{q1}} + s * x_{\text{q2}} = (1 - t) * x_{\text{p1}} + t * x_{\text{p2}}
+        y = (1 - s) * y_{\text{q1}} + s * y_{\text{q2}} = (1 - t) * y_{\text{p1}} + t * y_{\text{p2}}.
+
+    The quantities :math:`s` and :math:`t` are not computed directly
+    because doing so leads to a loss of precision.
 
     Parameters
     ----------

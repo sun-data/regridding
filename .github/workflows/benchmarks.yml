@@ -35,8 +35,20 @@ jobs:
         run: |
           asv machine --yes
           asv run
+      - name: Checkout benchmarks remote branch
+        run: |
+          git switch benchmarks
+          git rebase origin/main
+      - name: Commit new results to the benchmarks branch
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .asv/results
+          git commit -m "benchmark results" .asv/results
+          git push
+      - name: Build HTML website from benchmark results
+        run: |
           asv publish
-          ls -a
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v2
         with:

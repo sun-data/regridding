@@ -1,3 +1,7 @@
+"""
+Numba-compiled computational geometry routines needed for regridding operations.
+"""
+
 import math
 import numpy as np
 import numba

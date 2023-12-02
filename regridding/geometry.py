@@ -88,7 +88,7 @@ def bounding_boxes_intersect_2d(
     box :math:`P`, and plot the boxes as filled if they intersect,
     and unfilled if they don't intersect.
 
-    .. jupyter-execute
+    .. jupyter-execute::
 
         import matplotlib as mpl
         import matplotlib.pyplot as plt

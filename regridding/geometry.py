@@ -214,7 +214,7 @@ def two_line_segment_intersection_parameters(
 
     .. math::
 
-        s &= \text{sdet} / \text{det}
+        s &= \text{sdet} / \text{det} \\
         t &= \text{tdet} / \text{det},
 
     which can be used to compute the intersection :math:`(x, y)` using the
@@ -222,8 +222,8 @@ def two_line_segment_intersection_parameters(
 
     .. math::
 
-        x = (1 - s) * x_{\text{q1}} + s * x_{\text{q2}} = (1 - t) * x_{\text{p1}} + t * x_{\text{p2}}
-        y = (1 - s) * y_{\text{q1}} + s * y_{\text{q2}} = (1 - t) * y_{\text{p1}} + t * y_{\text{p2}}.
+        x &= (1 - s) * x_{\text{q1}} + s * x_{\text{q2}} = (1 - t) * x_{\text{p1}} + t * x_{\text{p2}} \\
+        y &= (1 - s) * y_{\text{q1}} + s * y_{\text{q2}} = (1 - t) * y_{\text{p1}} + t * y_{\text{p2}}.
 
     The quantities :math:`s` and :math:`t` are not computed directly
     because doing so leads to a loss of precision.

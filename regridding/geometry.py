@@ -260,7 +260,7 @@ def two_line_segment_intersection_parameters(
         y_q2=y_q2,
     )
     if not bounding_boxes_intersect:
-        return math.nan, math.nan, math.nan
+        return math.inf, math.inf, 1
 
     a = line_equation_2d(
         x=x_q1,
@@ -278,8 +278,9 @@ def two_line_segment_intersection_parameters(
         x2=x_p2,
         y2=y_p2,
     )
-    if regridding.math.sign(a) == regridding.math.sign(b):
-        return math.nan, math.nan, math.nan
+    if (a != 0) and (b != 0):
+        if regridding.math.sign(a) == regridding.math.sign(b):
+            return math.inf, math.inf, 1
 
     c = line_equation_2d(
         x=x_p1,
@@ -297,8 +298,9 @@ def two_line_segment_intersection_parameters(
         x2=x_q2,
         y2=y_q2,
     )
-    if regridding.math.sign(c) == regridding.math.sign(d):
-        return math.nan, math.nan, math.nan
+    if (c != 0) and (d != 0):
+        if regridding.math.sign(c) == regridding.math.sign(d):
+            return math.inf, math.inf, 1
 
     det = a - b
     sdet = +a

@@ -91,11 +91,15 @@ def test_bounding_boxes_intersect_2d(
 @pytest.mark.parametrize(
     argnames="x_p1,y_p1,x_p2,y_p2,x_q1,y_q1,x_q2,y_q2,sdet_expected,tdet_expected,det_expected",
     argvalues=[
-        (0, 0, 1, 1, 2, 0, 3, 1, math.nan, math.nan, math.nan),
-        (-1, -1, 0, 0, 1, 0, 0, 1, math.nan, math.nan, math.nan),
-        (1, 0, 0, 1, -1, -1, 0, 0, math.nan, math.nan, math.nan),
+        (0, 0, 1, 1, 2, 0, 3, 1, math.inf, math.inf, 1),
+        (-1, -1, 0, 0, 1, 0, 0, 1, math.inf, math.inf, 1),
+        (1, 0, 0, 1, -1, -1, 0, 0, math.inf, math.inf, 1),
         (-1, -1, 1, 1, 1, -1, -1, 1, 4, 4, 8),
         (0, 0, 0, 1, 0, 0, 1, 0, 0, 0, -1),
+        (0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0),
+        (0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0),
+        (0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0),
+        (0, 0, 2, 2, 1, 1, 3, 3, 0, 0, 0),
     ],
 )
 def test_two_line_segment_intersection_parameters(

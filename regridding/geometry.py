@@ -79,6 +79,86 @@ def bounding_boxes_intersect_2d(
         :math:`x`-coordinate of the second point of box :math:`q`
     y_q2
         :math:`y`-coordinate of the second point of box :math:`q`
+
+    Examples
+    --------
+
+    Create 4 boxes :math:`P`, :math:`Q`, :math:`R`, and :math:`S`.
+    Check if boxes :math:`Q`, :math:`R`, and :math:`S` intersect with
+    box :math:`P`, and plot the boxes as filled if they intersect,
+    and unfilled if they don't intersect.
+
+    .. jupyter-execute
+
+        import matplotlib as mpl
+        import matplotlib.pyplot as plt
+        import regridding
+
+        # box P
+        x_p1 = 0
+        y_p1 = 0
+        x_p2 = 1
+        y_p2 = 1
+
+        # box Q
+        x_q1 = 1.1
+        y_q1 = 1.1
+        x_q2 = 2.1
+        y_q2 = 2.1
+
+        # box R
+        x_r1 = 1
+        y_r1 = 1
+        x_r2 = 2
+        y_r2 = 2
+
+        # box S
+        x_s1 = 0.9
+        y_s1 = 0.9
+        x_s2 = 1.9
+        y_s2 = 1.9
+
+        p_and_q_intersect = regridding.geometry.bounding_boxes_intersect_2d(
+            x_p1=x_p1, y_p1=y_p1,
+            x_p2=x_p2, y_p2=y_p2,
+            x_q1=x_q1, y_q1=y_q1,
+            x_q2=x_q2, y_q2=y_q2,
+        )
+
+        p_and_r_intersect = regridding.geometry.bounding_boxes_intersect_2d(
+            x_p1=x_p1, y_p1=y_p1,
+            x_p2=x_p2, y_p2=y_p2,
+            x_q1=x_r1, y_q1=y_r1,
+            x_q2=x_r2, y_q2=y_r2,
+        )
+
+        p_and_s_intersect = regridding.geometry.bounding_boxes_intersect_2d(
+            x_p1=x_p1, y_p1=y_p1,
+            x_p2=x_p2, y_p2=y_p2,
+            x_q1=x_s1, y_q1=y_s1,
+            x_q2=x_s2, y_q2=y_s2,
+        )
+
+        fig, axs = plt.subplots(ncols=3, sharex=True, sharey=True, figsize=(9, 3), constrained_layout=True)
+        axs[0].add_patch(
+            mpl.patches.Rectangle(xy=(x_p1, y_p1), width=x_p2 - x_p1, height=y_p2 - y_p1, fill=p_and_q_intersect)
+        )
+        axs[0].add_patch(
+            mpl.patches.Rectangle(xy=(x_q1, y_q1), width=x_q2 - x_q1, height=y_q2 - y_q1, fill=p_and_q_intersect)
+        )
+        axs[1].add_patch(
+            mpl.patches.Rectangle(xy=(x_p1, y_p1), width=x_p2 - x_p1, height=y_p2 - y_p1, fill=p_and_r_intersect)
+        )
+        axs[1].add_patch(
+            mpl.patches.Rectangle(xy=(x_r1, y_r1), width=x_r2 - x_r1, height=y_r2 - y_r1, fill=p_and_r_intersect)
+        )
+        axs[2].add_patch(
+            mpl.patches.Rectangle(xy=(x_p1, y_p1), width=x_p2 - x_p1, height=y_p2 - y_p1, fill=p_and_s_intersect)
+        )
+        axs[2].add_patch(
+            mpl.patches.Rectangle(xy=(x_s1, y_s1), width=x_s2 - x_s1, height=y_s2 - y_s1, fill=p_and_s_intersect)
+        )
+        axs[0].autoscale_view();
     """
     if x_p1 > x_p2:
         x_p1, x_p2 = x_p2, x_p1

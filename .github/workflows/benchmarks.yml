@@ -42,8 +42,9 @@ jobs:
       - name: Run benchmarks
         run: |
           git fetch origin main:main
-          asv machine --machine github-actions-runner --yes
-          asv run main^!
+          asv machine --yes
+          asv machine --machine github-actions-runner
+          asv run --machine github-actions-runner main^!
       - name: Commit new results to the benchmarks branch
         run: |
           git add .asv/results

@@ -30,6 +30,7 @@ jobs:
         run: |
           git fetch origin
           git checkout origin/main asv.conf.json
+          git checkout origin/main benchmarks
           ls
       - name: Set up Python
         uses: actions/setup-python@v4

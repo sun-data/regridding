@@ -43,6 +43,7 @@ jobs:
         uses: actions/configure-pages@v3
       - name: Run benchmarks
         run: |
+          git fetch origin main:main
           asv machine --yes
           asv run main^!
       - name: Commit new results to the benchmarks branch

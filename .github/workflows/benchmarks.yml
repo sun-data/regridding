@@ -24,6 +24,8 @@ jobs:
           fetch-depth: 0
       - name: Rebase onto main
         run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
           git fetch origin
           git rebase origin/main
       - name: Set up Python
@@ -45,8 +47,6 @@ jobs:
           asv run main^!
       - name: Commit new results to the benchmarks branch
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
           git add .asv/results
           git commit -m "benchmark results" .asv/results
           git push

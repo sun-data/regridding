@@ -247,6 +247,48 @@ def two_line_segment_intersection_parameters(
     y_q2
         :math:`x` component of the second point in line :math:`q`
 
+    Examples
+    --------
+
+    Plot two lines and their intersection
+
+    .. jupyter-execute::
+
+        import matplotlib.pyplot as plt
+        import regridding
+
+        # line P
+        x_p1 = 0
+        y_p1 = 0
+        x_p2 = 2
+        y_p2 = 2
+
+        # line Q
+        x_q1 = 0
+        y_q1 = 1
+        x_q2 = 2
+        y_q2 = 0
+
+        sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
+            x_p1=x_p1, y_p1=y_p1,
+            x_p2=x_p2, y_p2=y_p2,
+            x_q1=x_q1, y_q1=y_q1,
+            x_q2=x_q2, y_q2=y_q2,
+        )
+
+        s = sdet / det
+
+        x = (1 - s) * x_p1 + s * x_p2
+        y = (1 - s) * y_p1 + s * y_p2
+
+        plt.figure()
+        plt.plot([x_p1, x_p2], [y_p1, y_p2], label="line $p$")
+        plt.plot([x_q1, x_q2], [y_q1, y_q2], label="line $q$")
+        plt.scatter(x, y, color="black", zorder=10, label="intersection")
+        plt.legend();
+
+    |
+
     References
     ----------
 

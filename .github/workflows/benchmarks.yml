@@ -22,12 +22,10 @@ jobs:
         with:
           ref: benchmarks
           fetch-depth: 0
-      - name: Rebase onto main
+      - name: Configure Github Actions git user
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git fetch origin
-          git rebase origin/main
       - name: Set up Python
         uses: actions/setup-python@v4
         with:

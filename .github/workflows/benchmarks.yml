@@ -20,7 +20,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: benchmarks
           fetch-depth: 0
+      - name: Rebase onto main
+        run: |
+          git fetch origin
+          git rebase origin/main
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -37,12 +42,7 @@ jobs:
       - name: Run benchmarks
         run: |
           asv machine --yes
-          asv run
-      - name: Checkout benchmarks remote branch
-        run: |
-          git fetch origin
-          git switch benchmarks
-          git rebase origin/main
+          asv run main^!
       - name: Commit new results to the benchmarks branch
         run: |
           git config --local user.email "action@github.com"

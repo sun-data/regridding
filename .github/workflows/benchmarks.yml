@@ -17,7 +17,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout benchmarks branch
         uses: actions/checkout@v4
         with:
           ref: benchmarks
@@ -26,6 +26,11 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+      - name: Checkout asv.conv.json from main
+        run: |
+          git fetch origin
+          git checkout origin/main asv.conf.json
+          ls
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -40,7 +45,6 @@ jobs:
         uses: actions/configure-pages@v3
       - name: Run benchmarks
         run: |
-          git fetch origin main:main
           asv machine --yes
           asv machine --machine github-actions-runner
           asv run --machine github-actions-runner main^!

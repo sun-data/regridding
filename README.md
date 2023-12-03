@@ -16,3 +16,8 @@ Numba-accelerated multilinear and first-order conservative interpolation of Nump
 ```
 pip install regridding
 ```
+
+## Features
+
+ - 1D linear interpolation
+ - 2D first-order conservative resampling of logically-rectangular curvilinear grids

@@ -1,8 +1,8 @@
 import numpy as np
 import regridding
 
-vertices_input = None
-vertices_output = None
+coordinates_input = None
+coordinates_output = None
 values_input = None
 
 
@@ -25,17 +25,17 @@ def setup_regrid_2d(
     y_output = np.linspace(y_input.min(), y_input.max(), num=num_y)
     x_output, y_output = np.meshgrid(x_output, y_output, indexing="ij")
 
-    global vertices_input
-    global vertices_output
+    global coordinates_input
+    global coordinates_output
     global values_input
 
-    vertices_input = (x_input, y_input)
-    vertices_output = (x_output, y_output)
+    coordinates_input = (x_input, y_input)
+    coordinates_output = (x_output, y_output)
     values_input = np.random.uniform(0, 1, size=(num_x - 1, num_y - 1))
 
     regridding.regrid(
-        vertices_input=vertices_input,
-        vertices_output=vertices_output,
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
         values_input=values_input,
         method=method,
         order=order,
@@ -48,8 +48,8 @@ def time_regrid_2d(
     order: int,
 ):
     regridding.regrid(
-        vertices_input=vertices_input,
-        vertices_output=vertices_output,
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
         values_input=values_input,
         method=method,
         order=order,

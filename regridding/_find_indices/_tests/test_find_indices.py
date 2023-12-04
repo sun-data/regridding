@@ -11,6 +11,10 @@ import regridding
             (np.linspace(-1, 1, num=32),),
             (np.linspace(-1, 1, num=64),),
         ),
+        (
+            (np.linspace(-1, 1, num=32),),
+            (np.linspace(-2, 2, num=64),),
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -36,5 +40,12 @@ def test_find_indices_1d(
     (coordinates_output_x,) = coordinates_output
     (result_x,) = result
 
-    assert np.all(coordinates_input_x[result_x + 0] <= coordinates_output_x)
-    assert np.all(coordinates_input_x[result_x + 1] >= coordinates_output_x)
+    where = coordinates_output_x <= coordinates_input_x.max()
+    where &= coordinates_output_x > coordinates_input_x.min()
+
+    assert np.all(
+        coordinates_input_x[result_x[where] + 0] <= coordinates_output_x[where]
+    )
+    assert np.all(
+        coordinates_input_x[result_x[where] + 1] >= coordinates_output_x[where]
+    )

@@ -15,6 +15,15 @@ import regridding
             None,
             np.square(np.linspace(-1, 1, num=11)),
         ),
+        (
+            (np.linspace(-1, 1, num=11),),
+            (np.linspace(-1, 1, num=11),),
+            np.square(np.linspace(-1, 1, num=11)),
+            np.empty(shape=11),
+            None,
+            None,
+            np.square(np.linspace(-1, 1, num=11)),
+        ),
     ],
 )
 def test_regrid_multilinear_1d(

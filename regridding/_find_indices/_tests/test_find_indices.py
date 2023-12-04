@@ -24,7 +24,7 @@ import regridding
 def test_find_indices_1d(
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
-    method: Literal["brute","searchsorted"],
+    method: Literal["brute", "searchsorted"],
 ):
     result = regridding.find_indices(
         coordinates_input=coordinates_input,

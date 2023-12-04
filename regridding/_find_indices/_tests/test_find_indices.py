@@ -11,6 +11,11 @@ import regridding
             (np.linspace(-1, 1, num=32),),
             (np.linspace(-1, 1, num=64),),
         ),
+        pytest.param(
+            10 * (np.linspace(-1, 1, num=32),),
+            10 * (np.linspace(-1, 1, num=64),),
+            marks=pytest.mark.xfail,
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -18,13 +23,13 @@ import regridding
     argvalues=[
         "brute",
         "searchsorted",
-        pytest.param("invalid method", marks=pytest.mark.xfail)
+        pytest.param("invalid method", marks=pytest.mark.xfail),
     ],
 )
 def test_find_indices_1d(
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
-    method: Literal["brute"],
+    method: Literal["brute","searchsorted"],
 ):
     result = regridding.find_indices(
         coordinates_input=coordinates_input,

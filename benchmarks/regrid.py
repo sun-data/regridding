@@ -56,11 +56,9 @@ time_regrid_2d.setup = setup_regrid_2d
 time_regrid_2d.params = (
     [100, 200, 300, 400, 500],
     ["conservative"],
-    [1],
 )
 time_regrid_2d.param_names = (
     "number of edges per axis",
     "method",
-    "order",
 )
 time_regrid_2d.timeout = 480

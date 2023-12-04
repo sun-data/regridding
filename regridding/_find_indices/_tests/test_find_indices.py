@@ -13,7 +13,14 @@ import regridding
         ),
     ],
 )
-@pytest.mark.parametrize("method", ["brute", "searchsorted"])
+@pytest.mark.parametrize(
+    argnames="method",
+    argvalues=[
+        "brute",
+        "searchsorted",
+        pytest.param("invalid method", marks=pytest.mark.xfail)
+    ],
+)
 def test_find_indices_1d(
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],

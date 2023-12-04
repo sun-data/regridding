@@ -11,11 +11,6 @@ import regridding
             (np.linspace(-1, 1, num=32),),
             (np.linspace(-1, 1, num=64),),
         ),
-        pytest.param(
-            10 * (np.linspace(-1, 1, num=32),),
-            10 * (np.linspace(-1, 1, num=64),),
-            marks=pytest.mark.xfail,
-        ),
     ],
 )
 @pytest.mark.parametrize(

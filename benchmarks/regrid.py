@@ -9,7 +9,6 @@ values_input = None
 def setup_regrid_2d(
     num: int,
     method: str,
-    order: int,
 ):
     num_x = num_y = num
 
@@ -38,21 +37,18 @@ def setup_regrid_2d(
         coordinates_output=coordinates_output,
         values_input=values_input,
         method=method,
-        order=order,
     )
 
 
 def time_regrid_2d(
     num: int,
     method: str,
-    order: int,
 ):
     regridding.regrid(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
         values_input=values_input,
         method=method,
-        order=order,
     )
 
 

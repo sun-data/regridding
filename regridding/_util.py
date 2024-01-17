@@ -75,12 +75,14 @@ def _normalize_input_output_coordinates(
     )
 
     shape_input = list(shape_orthogonal)
-    for ax in axis_input:
+    for ax in reversed(axis_input):
+        ax = ax % ndim_input
         shape_input.insert(ax, shape_coordinates_input[ax])
     shape_input = tuple(shape_input)
 
     shape_output = list(shape_orthogonal)
-    for ax in axis_output:
+    for ax in reversed(axis_output):
+        ax = ax % ndim_input
         shape_output.insert(ax, shape_coordinates_output[ax])
     shape_output = tuple(shape_output)
 

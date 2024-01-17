@@ -86,7 +86,7 @@ def find_indices(
 
     indices_output = tuple(
         np.moveaxis(
-            a=i.reshape(*shape_orthogonal, *shape_output),
+            a=i.reshape(*shape_orthogonal, *shape_output_numba),
             source=axis_output_numba,
             destination=axis_output,
         )

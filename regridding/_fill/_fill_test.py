@@ -21,7 +21,7 @@ _num_t = 13
             (~1, ~0),
         ),
         (
-            np.sqrt(np.random.uniform(-.1, 1, size=(_num_x, _num_t, _num_y))),
+            np.sqrt(np.random.uniform(-0.1, 1, size=(_num_x, _num_t, _num_y))),
             None,
             (0, ~0),
         ),

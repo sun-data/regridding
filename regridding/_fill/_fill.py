@@ -82,6 +82,7 @@ def fill(
         axs[2].imshow(a - b, **kwargs_imshow);
         axs[0].set_title("original array");
         axs[1].set_title("filled array");
+        axs[2].set_title("difference");
     """
 
     if where is None:

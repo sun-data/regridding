@@ -21,8 +21,8 @@ _num_t = 13
             (~1, ~0),
         ),
         (
-            np.random.uniform(0, 1, size=(_num_x, _num_t, _num_y)),
-            np.random.uniform(0, 1, size=(_num_x, _num_t, _num_y)) > 0.9,
+            np.sqrt(np.random.uniform(-.1, 1, size=(_num_x, _num_t, _num_y))),
+            None,
             (0, ~0),
         ),
     ],
@@ -41,6 +41,8 @@ def test_fill_gauss_sidel_2d(
         method="gauss_seidel",
         num_iterations=num_iterations,
     )
+    if where is None:
+        where = np.isnan(a)
 
     assert np.allclose(result[~where], a[~where])
     assert np.all(result[where] != 0)

@@ -1,6 +1,6 @@
 from typing import Sequence, Literal
 import numpy as np
-from ._gauss_sidel import fill_gauss_sidel
+from ._gauss_seidel import fill_gauss_seidel
 
 __all__ = [
     "fill",
@@ -11,7 +11,7 @@ def fill(
     a: np.ndarray,
     where: None | np.ndarray = None,
     axis: None | int | Sequence[int] = None,
-    method: Literal["gauss_sidel"] = "gauss_sidel",
+    method: Literal["gauss_seidel"] = "gauss_seidel",
     **kwargs,
 ) -> np.ndarray:
     """
@@ -29,18 +29,18 @@ def fill(
         If :obj:`None` (the default), interpolate along all the axes of `a`.
     method
         The interpolation method to use.
-        The only option is "gauss_sidel", which uses the Gauss-Sidel relaxation
+        The only option is "gauss_seidel", which uses the Gauss-Seidel relaxation
         technique to interpolate the valid data points.
     kwargs
         Additional method-specific keyword arguments.
-        For the Gauss-Sidel method, the valid keyword arguments are:
-        - ``num_iterations=100``, the number of red-black Gauss-Sidel iterations to perform.
+        For the Gauss-Seidel method, the valid keyword arguments are:
+        - ``num_iterations=100``, the number of red-black Gauss-Seidel iterations to perform.
 
     Examples
     --------
 
     Set random elements of an array to NaN, and then fill in the missing elements
-    using the Gauss-Sidel relaxation method.
+    using the Gauss-Seidel relaxation method.
 
     .. jupyter-execute::
 
@@ -63,8 +63,8 @@ def fill(
         a_missing = a.copy()
         a_missing[where] = np.nan
 
-        # Fill the missing elements using Gauss-Sidel relaxation
-        b = regridding.fill(a_missing, method="gauss_sidel", num_iterations=11)
+        # Fill the missing elements using Gauss-Seidel relaxation
+        b = regridding.fill(a_missing, method="gauss_seidel", num_iterations=11)
 
         # Plot the results
         fig, axs = plt.subplots(
@@ -87,8 +87,8 @@ def fill(
     if where is None:
         where = np.isnan(a)
 
-    if method == "gauss_sidel":
-        return fill_gauss_sidel(
+    if method == "gauss_seidel":
+        return fill_gauss_seidel(
             a=a,
             where=where,
             axis=axis,

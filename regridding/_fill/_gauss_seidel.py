@@ -4,11 +4,11 @@ import numba
 import regridding._util
 
 __all__ = [
-    "fill_gauss_sidel",
+    "fill_gauss_seidel",
 ]
 
 
-def fill_gauss_sidel(
+def fill_gauss_seidel(
     a: np.ndarray,
     where: np.ndarray,
     axis: None | int | Sequence[int],
@@ -36,7 +36,7 @@ def fill_gauss_sidel(
     where = where.reshape(-1, *shape_numba)
 
     if len(axis) == 2:
-        result = _fill_gauss_sidel_2d(
+        result = _fill_gauss_seidel_2d(
             a=a,
             where=where,
             num_iterations=num_iterations,
@@ -53,7 +53,7 @@ def fill_gauss_sidel(
 
 
 @numba.njit(parallel=True)
-def _fill_gauss_sidel_2d(
+def _fill_gauss_seidel_2d(
     a: np.ndarray,
     where: np.ndarray,
     num_iterations: int,
@@ -64,7 +64,7 @@ def _fill_gauss_sidel_2d(
     for t in numba.prange(num_t):
         for k in range(num_iterations):
             for is_odd in [False, True]:
-                _iteration_gauss_sidel_2d(
+                _iteration_gauss_seidel_2d(
                     a=a,
                     where=where,
                     t=t,
@@ -77,7 +77,7 @@ def _fill_gauss_sidel_2d(
 
 
 @numba.njit(fastmath=True)
-def _iteration_gauss_sidel_2d(
+def _iteration_gauss_seidel_2d(
     a: np.ndarray,
     where: np.ndarray,
     t: int,

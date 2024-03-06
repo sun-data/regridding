@@ -108,9 +108,11 @@ def ndarray_linear_interpolation(
         for ax in range(-ndim_broadcasted_a, 0)
     )
     shape_broadcasted_indices = tuple(
-        shape_indices[ax]
-        if ax in axis_indices
-        else shape_orthogonal[axis_orthogonal_indices.index(ax)]
+        (
+            shape_indices[ax]
+            if ax in axis_indices
+            else shape_orthogonal[axis_orthogonal_indices.index(ax)]
+        )
         for ax in range(-ndim_broadcasted_indices, 0)
     )
 
@@ -125,9 +127,11 @@ def ndarray_linear_interpolation(
             for ax in range(-ndim_broadcasted_a, 0)
         )
         index_indices = tuple(
-            slice(None)
-            if ax in axis_indices
-            else index[axis_orthogonal_indices.index(ax)]
+            (
+                slice(None)
+                if ax in axis_indices
+                else index[axis_orthogonal_indices.index(ax)]
+            )
             for ax in range(-ndim_broadcasted_indices, 0)
         )
         return index_a, index_indices

@@ -94,5 +94,5 @@ def fill(
             axis=axis,
             **kwargs,
         )
-    else:
+    else:  # pragma: nocover
         raise ValueError("Unrecognized method '{method}'")

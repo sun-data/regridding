@@ -20,6 +20,11 @@ _num_t = 13
             np.random.uniform(0, 1, size=(_num_t, _num_x, _num_y)) > 0.9,
             (~1, ~0),
         ),
+        (
+            np.random.uniform(0, 1, size=(_num_x, _num_t, _num_y)),
+            np.random.uniform(0, 1, size=(_num_x, _num_t, _num_y)) > 0.9,
+            (0, ~0),
+        ),
     ],
 )
 @pytest.mark.parametrize("num_iterations", [11])
@@ -33,7 +38,7 @@ def test_fill_gauss_sidel_2d(
         a=a,
         where=where,
         axis=axis,
-        method="gauss_sidel",
+        method="gauss_seidel",
         num_iterations=num_iterations,
     )
 

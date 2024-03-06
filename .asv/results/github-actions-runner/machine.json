@@ -3,7 +3,7 @@
     "cpu": "AMD EPYC 7763 64-Core Processor",
     "machine": "github-actions-runner",
     "num_cpu": "4",
-    "os": "Linux 6.2.0-1018-azure",
-    "ram": "16365028",
+    "os": "Linux 6.5.0-1015-azure",
+    "ram": "16364592",
     "version": 1
 }

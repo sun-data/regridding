@@ -88,7 +88,7 @@ def _weights_from_indices_multilinear(
     return weights, shape_input, shape_output
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=False)
 def _weights_from_indices_multilinear_1d(
     indices_output: tuple[np.ndarray],
     coordinates_input: tuple[np.ndarray],
@@ -103,7 +103,7 @@ def _weights_from_indices_multilinear_1d(
 
     weights = numba.typed.List()
 
-    for d in numba.prange(num_d):
+    for d in range(num_d):
         weights_d = numba.typed.List()
         for _ in range(0):
             weights_d.append((0.0, 0.0, 0.0))

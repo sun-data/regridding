@@ -37,7 +37,7 @@ doc = [
     "sphinx-favicon",
 ]
 benchmark = [
-    "asv",
+    "asv<=0.6.1",
 ]
 
 [project.urls]

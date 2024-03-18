@@ -55,7 +55,16 @@ def _weights_conservative(
         elif len(axis_input) == 2:
             coordinates_input_x, coordinates_input_y = coordinates_input
             coordinates_output_x, coordinates_output_y = coordinates_output
-
+            print(f'{index_vertices_input=}')
+            print(f'{index_vertices_output=}')
+            print(f'{coordinates_input_x[index_vertices_input]=}')
+            print(f'{coordinates_input_y[index_vertices_input]=}')
+            print(f'{coordinates_output_x[index_vertices_output]=}')
+            print(f'{coordinates_output_y[index_vertices_output]=}')
+            print(f'{coordinates_input_x[index_vertices_input].shape=}')
+            print(f'{coordinates_input_y[index_vertices_input].shape=}')
+            print(f'{coordinates_output_x[index_vertices_output].shape=}')
+            print(f'{coordinates_output_y[index_vertices_output].shape=}')
             weights[index] = _conservative_ramshaw(
                 grid_input=(
                     coordinates_input_x[index_vertices_input],

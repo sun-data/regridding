@@ -4,6 +4,7 @@ import regridding
 
 
 @pytest.mark.parametrize(
+    # add two cases (coords broadcast against values, and vice versa)
     argnames="coordinates_input,coordinates_output,values_input,values_output,axis_input,axis_output,result_expected",
     argvalues=[
         (

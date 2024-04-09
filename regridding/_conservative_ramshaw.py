@@ -7,13 +7,13 @@ import numba
 __all__ = []
 
 
-# @numba.njit(
-#     error_model="numpy",
-#     # parallel=True,
-#     # inline="always",
-#     # boundscheck=True,
-#     # cache=True,
-# )
+@numba.njit(
+    error_model="numpy",
+    # parallel=True,
+    # inline="always",
+    # boundscheck=True,
+    # cache=True,
+)
 def _conservative_ramshaw(
         # values_input: np.ndarray,
         # values_output: np.ndarray,
@@ -32,9 +32,6 @@ def _conservative_ramshaw(
     shape_input = input_x.shape
     # shape_output = np.broadcast_shapes(output_x.shape, output_y.shape)
 
-    grids_sweep = grid_input, grid_output
-    grids_static = grid_output, grid_input
-    grids_input = "sweep", "static"
     axes = 0, 1
 
     # k = slice(None, -1)
@@ -55,23 +52,39 @@ def _conservative_ramshaw(
 
     # values_input = values_input / area_input
 
-    for grid_sweep, grid_static, grid_input in zip(grids_sweep, grids_static, grids_input):
-        grid_static_x, grid_static_y = grid_static
-        grid_sweep_x, grid_sweep_y = grid_sweep
-        for axis in axes:
-            _sweep_axis(
-                # values_input=values_input,
-                # values_output=values_output,
-                area_input=area_input,
-                grid_sweep_x=grid_sweep_x,
-                grid_sweep_y=grid_sweep_y,
-                grid_static_x=grid_static_x,
-                grid_static_y=grid_static_y,
-                axis=axis,
-                grid_input=grid_input,
-                epsilon=epsilon,
-                weights=weights,
-            )
+    grid_static_x, grid_static_y = grid_output
+    grid_sweep_x, grid_sweep_y = grid_input
+    for axis in axes:
+        _sweep_axis(
+            # values_input=values_input,
+            # values_output=values_output,
+            area_input=area_input,
+            grid_sweep_x=grid_sweep_x,
+            grid_sweep_y=grid_sweep_y,
+            grid_static_x=grid_static_x,
+            grid_static_y=grid_static_y,
+            axis=axis,
+            grid_input="sweep",
+            epsilon=epsilon,
+            weights=weights,
+        )
+
+    grid_static_x, grid_static_y = grid_input
+    grid_sweep_x, grid_sweep_y = grid_output
+    for axis in axes:
+        _sweep_axis(
+            # values_input=values_input,
+            # values_output=values_output,
+            area_input=area_input,
+            grid_sweep_x=grid_sweep_x,
+            grid_sweep_y=grid_sweep_y,
+            grid_static_x=grid_static_x,
+            grid_static_y=grid_static_y,
+            axis=axis,
+            grid_input="static",
+            epsilon=epsilon,
+            weights=weights,
+        )
 
     # return values_output
     return weights

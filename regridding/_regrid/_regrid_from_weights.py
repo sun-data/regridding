@@ -53,30 +53,30 @@ def regrid_from_weights(
     """
 
     # pad coordinate shapes for broadcasting against values shape according to axis input
-    padded_shape_input = []
-    padded_shape_output = []
-    for i in range(values_input.ndim):
-        if i in axis_input:
-            j = np.where(np.array(axis_input) == i)[0][0]
-            padded_shape_input.append(shape_input[j])
-            padded_shape_output.append(shape_output[j])
-        else:
-            padded_shape_input.append(1)
-            padded_shape_output.append(1)
-
-    print(f'{padded_shape_input=}')
-    print(f'{padded_shape_output=}')
-
-    shape_input = np.broadcast_shapes(padded_shape_input, values_input.shape)
-    print(f'{shape_input=}')
-    values_input = np.broadcast_to(values_input, shape=shape_input, subok=True)
+    # print(f'{values_input.shape=}')
+    # padded_shape_input = []
+    # padded_shape_output = []
+    # for i in range(values_input.ndim):
+    #     if i in axis_input:
+    #         j = np.where(np.array(axis_input) == i)[0][0]
+    #         padded_shape_input.append(shape_input[j])
+    #         padded_shape_output.append(shape_output[j])
+    #     else:
+    #         padded_shape_input.append(1)
+    #         padded_shape_output.append(1)
+    #
+    # print(f'{padded_shape_input=}')
+    # print(f'{padded_shape_output=}')
+    #
+    # shape_input = np.broadcast_shapes(padded_shape_input, values_input.shape)
+    # print(f'{shape_input=}')
+    # values_input = np.broadcast_to(values_input, shape=shape_input, subok=True)
     ndim_input = len(shape_input)
     axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
-    print(f'{axis_input=}')
 
     if values_output is None:
         shape_output = np.broadcast_shapes(
-            padded_shape_output,
+            shape_output,
             tuple(
                 shape_input[ax] if ax not in axis_input else 1
                 for ax in _util._normalize_axis(None, ndim_input)
@@ -88,9 +88,6 @@ def regrid_from_weights(
         if values_output.shape != shape_output:
             raise ValueError(f"")
         values_output.fill(0)
-
-    print(f'{values_input.shape=}')
-    print(f'{values_output.shape=}')
 
     ndim_output = len(shape_output)
     axis_output = _util._normalize_axis(axis_output, ndim=ndim_output)
@@ -110,10 +107,7 @@ def regrid_from_weights(
     values_input = values_input.reshape(-1, *shape_input_numba)
     values_output = values_output.reshape(-1, *shape_output_numba)
 
-    weights = numba.typed.List(np.broadcast_to(weights, values_input.shape[0]).reshape(-1))
-
-    print(f'{len(weights)=}')
-    print(f'{weights=}')
+    weights = numba.typed.List(weights.reshape(-1))
 
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
@@ -140,9 +134,6 @@ def _regrid_from_weights(
         values_input: np.ndarray,
         values_output: np.ndarray,
 ) -> None:
-    # print(f'{weights=}')
-    # print(f'{values_input.shape=}')
-    # print(f'{values_output.shape=}')
 
     for d in numba.prange(len(weights)):
         weights_d = weights[d]

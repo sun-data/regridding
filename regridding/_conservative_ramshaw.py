@@ -15,8 +15,6 @@ __all__ = []
     # cache=True,
 )
 def _conservative_ramshaw(
-        # values_input: np.ndarray,
-        # values_output: np.ndarray,
         grid_input: tuple[np.ndarray, np.ndarray],
         grid_output: tuple[np.ndarray, np.ndarray],
         epsilon: float = 1e-10,
@@ -27,10 +25,8 @@ def _conservative_ramshaw(
         weights.append((0., 0., 0.))
 
     input_x, input_y = grid_input
-    # output_x, output_y = grid_output
 
     shape_input = input_x.shape
-    # shape_output = np.broadcast_shapes(output_x.shape, output_y.shape)
 
     axes = 0, 1
 

@@ -52,27 +52,14 @@ def regrid_from_weights(
     :func:`regridding.regrid_from_weights`
     """
 
-    # pad coordinate shapes for broadcasting against values shape according to axis input
-    # print(f'{values_input.shape=}')
-    # padded_shape_input = []
-    # padded_shape_output = []
-    # for i in range(values_input.ndim):
-    #     if i in axis_input:
-    #         j = np.where(np.array(axis_input) == i)[0][0]
-    #         padded_shape_input.append(shape_input[j])
-    #         padded_shape_output.append(shape_output[j])
-    #     else:
-    #         padded_shape_input.append(1)
-    #         padded_shape_output.append(1)
-    #
-    # print(f'{padded_shape_input=}')
-    # print(f'{padded_shape_output=}')
-    #
-    # shape_input = np.broadcast_shapes(padded_shape_input, values_input.shape)
-    # print(f'{shape_input=}')
-    # values_input = np.broadcast_to(values_input, shape=shape_input, subok=True)
+    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
+
     ndim_input = len(shape_input)
     axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
+
+    shape_orthogonal = (1 if i in axis_input else shape_input[i] for i in range(-len(shape_input), 0))
+    weights = np.broadcast_to(np.array(weights), shape_orthogonal)
+    values_input = np.broadcast_to(values_input, shape_input)
 
     if values_output is None:
         shape_output = np.broadcast_shapes(

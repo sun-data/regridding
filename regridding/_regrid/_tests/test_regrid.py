@@ -2,6 +2,29 @@ import pytest
 import numpy as np
 import regridding
 
+x = np.linspace(-1, 1, num=10)
+y = np.linspace(-1, 1, num=11)
+x_broadcasted, y_broadcasted = np.meshgrid(
+    x,
+    y,
+    indexing="ij",
+)
+
+new_y = np.linspace(-1, 1, num=5)
+new_x = np.linspace(-1, 1, num=6)
+
+new_x_broadcasted, new_y_broadcasted = np.meshgrid(
+    x,
+    new_y,
+    indexing="ij",
+)
+
+new_x_broadcasted_2, new_y_broadcasted_2 = np.meshgrid(
+    new_x,
+    y,
+    indexing="ij",
+)
+
 
 @pytest.mark.parametrize(
     # add two cases (coords broadcast against values, and vice versa)
@@ -25,6 +48,33 @@ import regridding
             None,
             np.square(np.linspace(-1, 1, num=11)),
         ),
+        (
+            (y,),
+            (new_y,),
+            x_broadcasted + y_broadcasted,
+            None,
+            (~0,),
+            (~0,),
+            new_x_broadcasted + new_y_broadcasted,
+        ),
+        (
+            (x[..., np.newaxis],),
+            (new_x[..., np.newaxis],),
+            x_broadcasted + y_broadcasted,
+            None,
+            (0,),
+            (0,),
+            new_x_broadcasted_2 + new_y_broadcasted_2,
+        ),
+        (
+            (x[..., np.newaxis],),
+            (0.1 * new_x[..., np.newaxis] + 0.001 * new_y,),
+            x[..., np.newaxis],
+            None,
+            (0,),
+            (0,),
+            0.1 * new_x[..., np.newaxis] + 0.001 * new_y,
+        ),
     ],
 )
 def test_regrid_multilinear_1d(
@@ -47,35 +97,28 @@ def test_regrid_multilinear_1d(
     )
     assert isinstance(result, np.ndarray)
     assert np.issubdtype(result.dtype, float)
-    assert np.all(result == result_expected)
+    assert np.allclose(result, result_expected)
 
 
 @pytest.mark.parametrize(
-    argnames="coordinates_input, values_input, axis_input",
+    argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output",
     argvalues=[
         (
-            np.meshgrid(
-                np.linspace(-1, 1, num=10),
-                np.linspace(-1, 1, num=11),
-                indexing="ij",
-            ),
+            (x_broadcasted,y_broadcasted),
             np.random.normal(size=(10 - 1, 11 - 1)),
             None,
+            (1.1* x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
+            None,
+            None,
         ),
-    ],
-)
-@pytest.mark.parametrize(
-    argnames="coordinates_output, values_output, axis_output",
-    argvalues=[
         (
-            np.meshgrid(
-                1.1 * np.linspace(-1, 1, num=10) + 0.001,
-                1.2 * np.linspace(-1, 1, num=11) + 0.001,
-                indexing="ij",
-            ),
+            (x_broadcasted[...,np.newaxis] + np.array([0,.001]),y_broadcasted[...,np.newaxis] + np.array([0,.001])),
+            np.random.normal(size=(x.shape[0] - 1, y.shape[0] - 1, 2)),
+            (0, 1),
+            (1.1*(x_broadcasted[...,np.newaxis] + np.array([0,.001]))+.01,1.2*(y_broadcasted[...,np.newaxis] + np.array([0,.01]))+.001),
             None,
-            None,
-        )
+            (0, 1),
+        ),
     ],
 )
 def test_regrid_conservative_2d(
@@ -96,6 +139,14 @@ def test_regrid_conservative_2d(
         method="conservative",
     )
 
+    result_shape = np.array(np.broadcast(*coordinates_output).shape)
+
+    if axis_input is None:
+        result_shape = result_shape - 1
+    else:
+        for ax in axis_input:
+            result_shape[ax] = result_shape[ax]-1
+
     assert np.issubdtype(result.dtype, float)
-    assert result.shape == tuple(np.array(np.broadcast(*coordinates_output).shape) - 1)
+    assert result.shape == tuple(result_shape)
     assert np.isclose(result.sum(), values_input.sum())

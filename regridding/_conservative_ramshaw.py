@@ -52,8 +52,6 @@ def _conservative_ramshaw(
     grid_sweep_x, grid_sweep_y = grid_input
     for axis in axes:
         _sweep_axis(
-            # values_input=values_input,
-            # values_output=values_output,
             area_input=area_input,
             grid_sweep_x=grid_sweep_x,
             grid_sweep_y=grid_sweep_y,
@@ -69,8 +67,6 @@ def _conservative_ramshaw(
     grid_sweep_x, grid_sweep_y = grid_output
     for axis in axes:
         _sweep_axis(
-            # values_input=values_input,
-            # values_output=values_output,
             area_input=area_input,
             grid_sweep_x=grid_sweep_x,
             grid_sweep_y=grid_sweep_y,

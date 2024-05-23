@@ -70,7 +70,6 @@ def regrid_from_weights(
             ),
         )
         values_output = np.zeros_like(values_input, shape=shape_output)
-
     else:
         if values_output.shape != shape_output:
             raise ValueError(f"")

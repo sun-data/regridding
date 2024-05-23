@@ -27,7 +27,6 @@ new_x_broadcasted_2, new_y_broadcasted_2 = np.meshgrid(
 
 
 @pytest.mark.parametrize(
-    # add two cases (coords broadcast against values, and vice versa)
     argnames="coordinates_input,coordinates_output,values_input,values_output,axis_input,axis_output,result_expected",
     argvalues=[
         (
@@ -104,18 +103,24 @@ def test_regrid_multilinear_1d(
     argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output",
     argvalues=[
         (
-            (x_broadcasted,y_broadcasted),
+            (x_broadcasted, y_broadcasted),
             np.random.normal(size=(10 - 1, 11 - 1)),
             None,
-            (1.1* x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
+            (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
             None,
             None,
         ),
         (
-            (x_broadcasted[...,np.newaxis] + np.array([0,.001]),y_broadcasted[...,np.newaxis] + np.array([0,.001])),
+            (
+                x_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+                y_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+            ),
             np.random.normal(size=(x.shape[0] - 1, y.shape[0] - 1, 2)),
             (0, 1),
-            (1.1*(x_broadcasted[...,np.newaxis] + np.array([0,.001]))+.01,1.2*(y_broadcasted[...,np.newaxis] + np.array([0,.01]))+.001),
+            (
+                1.1 * (x_broadcasted[..., np.newaxis] + np.array([0, 0.001])) + 0.01,
+                1.2 * (y_broadcasted[..., np.newaxis] + np.array([0, 0.01])) + 0.001,
+            ),
             None,
             (0, 1),
         ),
@@ -145,7 +150,7 @@ def test_regrid_conservative_2d(
         result_shape = result_shape - 1
     else:
         for ax in axis_input:
-            result_shape[ax] = result_shape[ax]-1
+            result_shape[ax] = result_shape[ax] - 1
 
     assert np.issubdtype(result.dtype, float)
     assert result.shape == tuple(result_shape)

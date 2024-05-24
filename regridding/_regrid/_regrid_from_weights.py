@@ -52,7 +52,7 @@ def regrid_from_weights(
     :func:`regridding.regrid_from_weights`
     """
 
-    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
+    shape_input = np.broadcast_shapes(values_input.shape, shape_input, subok=True)
 
     ndim_input = len(shape_input)
     axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)

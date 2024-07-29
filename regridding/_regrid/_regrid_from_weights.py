@@ -52,10 +52,16 @@ def regrid_from_weights(
     :func:`regridding.regrid_from_weights`
     """
 
-    shape_input = np.broadcast_shapes(shape_input, values_input.shape)
-    values_input = np.broadcast_to(values_input, shape=shape_input, subok=True)
+    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
+
     ndim_input = len(shape_input)
     axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
+
+    shape_orthogonal = (
+        1 if i in axis_input else shape_input[i] for i in range(-len(shape_input), 0)
+    )
+    weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
+    values_input = np.broadcast_to(values_input, shape_input, subok=True)
 
     if values_output is None:
         shape_output = np.broadcast_shapes(
@@ -85,9 +91,10 @@ def regrid_from_weights(
 
     shape_output_tmp = values_output.shape
 
-    weights = numba.typed.List(weights.reshape(-1))
     values_input = values_input.reshape(-1, *shape_input_numba)
     values_output = values_output.reshape(-1, *shape_output_numba)
+
+    weights = numba.typed.List(weights.reshape(-1))
 
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
@@ -105,17 +112,17 @@ def regrid_from_weights(
     return values_output
 
 
-@numba.njit()
+@numba.njit(parallel=True)
 def _regrid_from_weights(
     weights: numba.typed.List,
     values_input: np.ndarray,
     values_output: np.ndarray,
 ) -> None:
+
     for d in numba.prange(len(weights)):
         weights_d = weights[d]
         values_input_d = values_input[d].reshape(-1)
         values_output_d = values_output[d].reshape(-1)
-
         for w in range(len(weights_d)):
             i_input, i_output, weight = weights_d[w]
             values_output_d[int(i_output)] += weight * values_input_d[int(i_input)]

@@ -39,15 +39,16 @@ def _weights_conservative(
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
     for index in np.ndindex(*shape_orthogonal):
-        index_vertices_input = list(index)
-        for ax in axis_input:
-            index_vertices_input.insert(ax, slice(None))
-        index_vertices_input = tuple(index_vertices_input)
+        index_vertices_input = list(reversed(index))
 
-        index_vertices_output = list(index)
+        for ax in axis_input:
+            index_vertices_input.insert(~ax, slice(None))
+        index_vertices_input = tuple(reversed(index_vertices_input))
+
+        index_vertices_output = list(reversed(index))
         for ax in axis_output:
-            index_vertices_output.insert(ax, slice(None))
-        index_vertices_output = tuple(index_vertices_output)
+            index_vertices_output.insert(~ax, slice(None))
+        index_vertices_output = tuple(reversed(index_vertices_output))
 
         if len(axis_input) == 1:
             raise NotImplementedError("1D regridding not supported")
@@ -55,7 +56,6 @@ def _weights_conservative(
         elif len(axis_input) == 2:
             coordinates_input_x, coordinates_input_y = coordinates_input
             coordinates_output_x, coordinates_output_y = coordinates_output
-
             weights[index] = _conservative_ramshaw(
                 grid_input=(
                     coordinates_input_x[index_vertices_input],

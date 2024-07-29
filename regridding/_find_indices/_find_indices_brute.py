@@ -33,7 +33,7 @@ def _find_indices_brute_1d(
     num_d, num_m = x_input.shape
     num_d, num_i = x_output.shape
 
-    result = np.empty(shape=x_output.shape, dtype=int)
+    result = np.empty(shape=x_output.shape, dtype=np.int64)
 
     for d in numba.prange(num_d):
         x_input_d = x_input[d]

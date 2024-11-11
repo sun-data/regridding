@@ -120,6 +120,7 @@ def _regrid_from_weights(
 ) -> None:
 
     for d in numba.prange(len(weights)):
+        d = numba.types.int64(d)
         weights_d = weights[d]
         values_input_d = values_input[d].reshape(-1)
         values_output_d = values_output[d].reshape(-1)

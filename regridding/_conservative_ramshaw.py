@@ -185,6 +185,7 @@ def _sweep_axis(
         weight.append(w)
 
     for i in numba.prange(shape_sweep_x):
+        i = numba.types.int64(i)
 
         sweep_is_inside_static = False
         j = 0
@@ -846,6 +847,7 @@ def _grid_area_sweep(
     shape_output_x, shape_output_y = grid_x.shape
 
     for i in numba.prange(shape_output_x):
+        i = numba.types.int64(i)
 
         for j in range(shape_output_y - 1):
 

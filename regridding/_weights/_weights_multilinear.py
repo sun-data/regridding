@@ -33,6 +33,7 @@ def _weights_from_indices_multilinear(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
+    fill_value = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     (
         coordinates_input,
@@ -48,6 +49,9 @@ def _weights_from_indices_multilinear(
         axis_input=axis_input,
         axis_output=axis_output,
     )
+
+    if fill_value is None:
+        fill_value = np.iinfo(int).max
 
     axis_input_numba = ~np.arange(len(axis_input))[::-1]
     axis_output_numba = ~np.arange(len(axis_output))[::-1]
@@ -73,6 +77,7 @@ def _weights_from_indices_multilinear(
             indices_output=indices_output,
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
+            fill_value=fill_value,
         )
     else:
         raise ValueError(
@@ -93,6 +98,7 @@ def _weights_from_indices_multilinear_1d(
     indices_output: tuple[np.ndarray],
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
+    fill_value: int = None
 ) -> np.ndarray:
     (i_output,) = indices_output
     (x_input,) = coordinates_input
@@ -110,17 +116,18 @@ def _weights_from_indices_multilinear_1d(
 
         for i in numba.prange(num_i_output):
             i0 = i_output[d, i]
-            i1 = i0 + 1
+            if i0 != fill_value:
+                i1 = i0 + 1
 
-            x0 = x_input[d, i0]
-            x1 = x_input[d, i1]
-            x = x_output[d, i]
+                x0 = x_input[d, i0]
+                x1 = x_input[d, i1]
+                x = x_output[d, i]
 
-            w1 = (x - x0) / (x1 - x0)
-            w0 = 1 - w1
+                w1 = (x - x0) / (x1 - x0)
+                w0 = 1 - w1
 
-            weights_d.append((i0, i, w0))
-            weights_d.append((i1, i, w1))
+                weights_d.append((i0, i, w0))
+                weights_d.append((i1, i, w1))
 
         weights.append(weights_d)
 

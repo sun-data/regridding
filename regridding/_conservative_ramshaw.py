@@ -8,11 +8,11 @@ __all__ = []
 
 
 @numba.njit(
+    cache=True,
     error_model="numpy",
     # parallel=True,
     # inline="always",
     # boundscheck=True,
-    # cache=True,
 )
 def _conservative_ramshaw(
         grid_input: tuple[np.ndarray, np.ndarray],
@@ -82,7 +82,7 @@ def _conservative_ramshaw(
     return weights
 
 
-@numba.njit(error_model="numpy", parallel=True)
+@numba.njit(cache=True, error_model="numpy", parallel=True)
 def _sweep_axis(
         # values_input: np.ndarray,
         # values_output: np.ndarray,
@@ -328,7 +328,7 @@ def _sweep_axis(
         # weights += weight[i]
 
 
-@numba.njit(inline="always")
+@numba.njit(cache=True, inline="always")
 def _step_outside_static(
         # area_output: np.ndarray,
         grid_static_x: np.ndarray,
@@ -489,7 +489,7 @@ def _step_outside_static(
     return point_sweep_2x, point_sweep_2y, j_new, m_new, n_new, sweep_is_inside_static
 
 
-@numba.njit(inline="always")
+@numba.njit(cache=True, inline="always")
 def _step_inside_static(
         # values_input: np.ndarray,
         # values_output: np.ndarray,
@@ -827,7 +827,7 @@ def _step_inside_static(
     return point_sweep_2x, point_sweep_2y, j_new, m_new, n_new
 
 
-@numba.njit(inline="always")
+@numba.njit(cache=True, inline="always")
 def _grid_area_sweep(
         out: np.ndarray,
         grid_x: np.ndarray,
@@ -873,7 +873,7 @@ def _grid_area_sweep(
                 out[i_right, j] -= area_sweep
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def _indices_of_line_brute(
         grid_x: np.ndarray,
         grid_y: np.ndarray,
@@ -970,7 +970,7 @@ def _indices_of_line_brute(
     return 0, 0
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def _point_is_inside_polygon(
         vertices_x: np.ndarray,
         vertices_y: np.ndarray,
@@ -1064,7 +1064,7 @@ def _point_is_inside_polygon(
     return result
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def _two_line_segment_intersection(
         x1: float, y1: float,
         x2: float, y2: float,
@@ -1090,7 +1090,7 @@ def _two_line_segment_intersection(
         return np.nan, np.nan
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def _two_line_segment_intersection_parameters(
         x1: float, y1: float,
         x2: float, y2: float,

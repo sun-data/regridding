@@ -112,7 +112,7 @@ def regrid_from_weights(
     return values_output
 
 
-@numba.njit(parallel=True)
+@numba.njit(cache=True, parallel=True)
 def _regrid_from_weights(
     weights: numba.typed.List,
     values_input: np.ndarray,

@@ -15,7 +15,7 @@ __all__ = [
 ]
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def line_equation_2d(
     x: float,
     y: float,
@@ -51,7 +51,7 @@ def line_equation_2d(
     return result
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def bounding_boxes_intersect_2d(
     x_p1: float,
     y_p1: float,
@@ -191,7 +191,7 @@ def bounding_boxes_intersect_2d(
     return intersect_x and intersect_y
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def two_line_segment_intersection_parameters(
     x_p1: float,
     y_p1: float,
@@ -355,7 +355,7 @@ def two_line_segment_intersection_parameters(
     return sdet, tdet, det
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def point_is_inside_polygon(
     x: float,
     y: float,

@@ -21,3 +21,12 @@ pip install regridding
 
  - 1D linear interpolation
  - 2D first-order conservative resampling of logically-rectangular curvilinear grids
+
+## Gallery
+
+### 2D conservative resampling
+
+[`regridding.regrid()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.regrid.html)
+can be used to perform flux-conserving 2D resampling using the `"conservative"` method.
+
+![conservative resampling](https://regridding.readthedocs.io/en/latest/_images/regridding.regrid_1_0.png)

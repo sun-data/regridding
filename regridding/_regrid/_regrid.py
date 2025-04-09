@@ -51,7 +51,7 @@ def regrid(
 
     See Also
     --------
-    :func:`regridding.regrid`
+    :func:`regridding.weights`
     :func:`regridding.regrid_from_weights`
 
     Examples

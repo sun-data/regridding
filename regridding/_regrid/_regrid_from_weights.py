@@ -49,7 +49,7 @@ def regrid_from_weights(
     See Also
     --------
     :func:`regridding.regrid`
-    :func:`regridding.regrid_from_weights`
+    :func:`regridding.weights`
     """
 
     shape_input = np.broadcast_shapes(values_input.shape, shape_input)

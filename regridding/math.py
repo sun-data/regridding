@@ -5,7 +5,7 @@ __all__ = [
 ]
 
 
-@numba.njit(inline="always", error_model="numpy")
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def sign(x: float):
     """
     Numba-compiled version of the `sign function <https://en.wikipedia.org/wiki/Sign_function>`_

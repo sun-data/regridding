@@ -52,7 +52,7 @@ def fill_gauss_seidel(
     return result
 
 
-@numba.njit(parallel=True)
+@numba.njit(cache=True, parallel=True)
 def _fill_gauss_seidel_2d(
     a: np.ndarray,
     where: np.ndarray,
@@ -76,7 +76,7 @@ def _fill_gauss_seidel_2d(
     return a
 
 
-@numba.njit(fastmath=True)
+@numba.njit(cache=True, fastmath=True)
 def _iteration_gauss_seidel_2d(
     a: np.ndarray,
     where: np.ndarray,

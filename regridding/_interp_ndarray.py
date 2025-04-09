@@ -163,7 +163,7 @@ def ndarray_linear_interpolation(
     return result
 
 
-@numba.jit(nopython=True, parallel=True)
+@numba.njit(cache=True, parallel=True)
 def _ndarray_linear_interpolation_1d(
     a: np.ndarray,
     x: np.ndarray,
@@ -179,7 +179,7 @@ def _ndarray_linear_interpolation_1d(
     return result
 
 
-@numba.jit(nopython=True, parallel=True)
+@numba.njit(cache=True, parallel=True)
 def _ndarray_linear_interpolation_2d(
     a: np.ndarray,
     x: np.ndarray,
@@ -196,7 +196,7 @@ def _ndarray_linear_interpolation_2d(
     return result
 
 
-@numba.njit
+@numba.njit(cache=True)
 def _linear_interpolation(
     a: np.ndarray,
     x: float,
@@ -220,7 +220,7 @@ def _linear_interpolation(
     return a_0 * (1 - dx) + a_1 * dx
 
 
-@numba.njit
+@numba.njit(cache=True)
 def _bilinear_interpolation(
     a: np.ndarray,
     x: float,

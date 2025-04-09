@@ -21,7 +21,7 @@ def _find_indices_searchsorted(
     return result
 
 
-@numba.njit(parallel=True, cache=True)
+@numba.njit(cache=True, parallel=True)
 def _find_indices_searchsorted_1d(
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],

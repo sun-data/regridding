@@ -8,11 +8,11 @@ __all__ = []
 
 
 @numba.njit(
-    cache=True,
     error_model="numpy",
     # parallel=True,
     # inline="always",
     # boundscheck=True,
+    # cache=True,
 )
 def _conservative_ramshaw(
         grid_input: tuple[np.ndarray, np.ndarray],

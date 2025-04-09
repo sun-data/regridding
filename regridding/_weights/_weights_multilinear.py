@@ -16,6 +16,7 @@ def _weights_multilinear(
         coordinates_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
+        method="searchsorted",
     )
     result = _weights_from_indices_multilinear(
         indices_output=indices_output,

@@ -1,3 +1,7 @@
+"""
+Resample arrays defined on curvilinear grids.
+"""
+
 from . import math
 from . import geometry
 from ._find_indices import *

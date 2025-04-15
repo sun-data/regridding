@@ -12,7 +12,7 @@ def fill_gauss_seidel(
     a: np.ndarray,
     where: np.ndarray,
     axis: None | int | Sequence[int],
-    guess: None | float | np.ndarray = 0,
+    guess: None | float | np.ndarray = None,
     num_iterations: int = 100,
 ) -> np.ndarray:
 

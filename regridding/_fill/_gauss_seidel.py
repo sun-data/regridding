@@ -12,14 +12,18 @@ def fill_gauss_seidel(
     a: np.ndarray,
     where: np.ndarray,
     axis: None | int | Sequence[int],
+    guess: None | float | np.ndarray = 0,
     num_iterations: int = 100,
 ) -> np.ndarray:
 
     a = a.copy()
 
-    a, where = np.broadcast_arrays(a, where, subok=True)
+    if guess is None:
+        guess = np.median(a[where], axis=axis)
 
-    a[where] = 0
+    a, where, guess = np.broadcast_arrays(a, where, guess, subok=True)
+
+    a[where] = guess[where]
 
     axis = regridding._util._normalize_axis(axis=axis, ndim=a.ndim)
     axis_numba = ~np.arange(len(axis))[::-1]

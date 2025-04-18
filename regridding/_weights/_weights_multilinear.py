@@ -33,7 +33,7 @@ def _weights_from_indices_multilinear(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
-    fill_value = None,
+    fill_value=None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     (
         coordinates_input,
@@ -98,7 +98,7 @@ def _weights_from_indices_multilinear_1d(
     indices_output: tuple[np.ndarray],
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
-    fill_value: int = None
+    fill_value: int = None,
 ) -> np.ndarray:
     (i_output,) = indices_output
     (x_input,) = coordinates_input

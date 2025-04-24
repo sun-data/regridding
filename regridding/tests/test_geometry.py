@@ -89,6 +89,49 @@ def test_bounding_boxes_intersect_2d(
 
 
 @pytest.mark.parametrize(
+    argnames="x_p1,y_p1,z_p1,x_p2,y_p2,z_p2,x_q1,y_q1,z_q1,x_q2,y_q2,z_q2,result_expected",
+    argvalues=[
+        (0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, True),
+        (0, 0, 0, 1, 1, 1, 2, 0, 0, 3, 1, 1, False),
+        (0, 0, 0, 2, 2, 2, 1, 1, 1, 3, 3, 3, True),
+        (0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, True),
+        (-1, -1, -1, 0, 0, 0, 0, 0, 0, 1, 1, 1, True),
+        (-1, 1, -1, 0, 0, 0, 0, 0, 0, 1, 1, 1, True),
+    ],
+)
+def test_bounding_boxes_intersect_3d(
+    x_p1: float,
+    y_p1: float,
+    z_p1: float,
+    x_p2: float,
+    y_p2: float,
+    z_p2: float,
+    x_q1: float,
+    y_q1: float,
+    z_q1: float,
+    x_q2: float,
+    y_q2: float,
+    z_q2: float,
+    result_expected: bool,
+):
+    result = regridding.geometry.bounding_boxes_intersect_3d(
+        x_p1=x_p1,
+        y_p1=y_p1,
+        z_p1=z_p1,
+        x_p2=x_p2,
+        y_p2=y_p2,
+        z_p2=z_p2,
+        x_q1=x_q1,
+        y_q1=y_q1,
+        z_q1=z_q1,
+        x_q2=x_q2,
+        y_q2=y_q2,
+        z_q2=z_q2,
+    )
+    assert result == result_expected
+
+
+@pytest.mark.parametrize(
     argnames="x_p1,y_p1,x_p2,y_p2,x_q1,y_q1,x_q2,y_q2,sdet_expected,tdet_expected,det_expected",
     argvalues=[
         (0, 0, 1, 1, 2, 0, 3, 1, math.inf, math.inf, 1),

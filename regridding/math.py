@@ -1,3 +1,6 @@
+"""
+Compiled versions of fundamental mathematical functions.
+"""
 import numba
 
 __all__ = [

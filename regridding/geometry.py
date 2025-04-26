@@ -505,7 +505,10 @@ def line_triangle_intersection(
     tuv: tuple[float, float, float],
 ) -> tuple[float, float, float]:
     """
-    Compute the 3D point where a line intersects a triangle.
+    Compute the 3D point where a line intersects a triangle
+    using the Parametric form described in the
+    `Line-plane intersection Wikipedia article <https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Parametric_form>`_.
+
 
     Parameters
     ----------

@@ -559,13 +559,13 @@ def line_triangle_intersection(
         fig, ax = plt.subplots(subplot_kw=dict(projection="3d"))
         ax.plot(
             *np.array(line).T
-        )
+        );
         ax.plot(
             *np.array(triangle).T.take(np.arange(-1, 3), axis=1)
-        )
+        );
         ax.scatter(
             *intercept
-        )
+        );
     """
     l_a, l_b = line
 

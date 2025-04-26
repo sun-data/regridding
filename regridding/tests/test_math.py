@@ -30,7 +30,7 @@ def test_sign(
     argvalues=[
         ((1, 1, 1), (-1, -1, -1)),
         ((-1, 1, 1), (1, -1, -1)),
-    ]
+    ],
 )
 def test_negate_3d(
     a: tuple[float, float, float],
@@ -45,7 +45,7 @@ def test_negate_3d(
     argvalues=[
         ((1, 1, 1), (-1, -1, -1), (0, 0, 0)),
         ((1, 1, 1), (1, 1, 1), (2, 2, 2)),
-    ]
+    ],
 )
 def test_sum_3d(
     a: tuple[float, float, float],
@@ -61,7 +61,7 @@ def test_sum_3d(
     argvalues=[
         ((1, 1, 1), (-1, -1, -1), (2, 2, 2)),
         ((1, 1, 1), (1, 1, 1), (0, 0, 0)),
-    ]
+    ],
 )
 def test_difference_3d(
     a: tuple[float, float, float],
@@ -76,7 +76,7 @@ def test_difference_3d(
     argnames="r,a,result_expected",
     argvalues=[
         (2, (1, 1, 1), (2, 2, 2)),
-    ]
+    ],
 )
 def test_multiply_3d(
     r: float,
@@ -92,7 +92,7 @@ def test_multiply_3d(
     argvalues=[
         ((1, 1, 1), (1, 1, 1), 3),
         ((1, 1, 1), (2, 2, 2), 6),
-    ]
+    ],
 )
 def test_dot_3d(
     a: tuple[float, float, float],
@@ -108,7 +108,7 @@ def test_dot_3d(
     argvalues=[
         ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
         ((0, 1, 0), (1, 0, 0), (0, 0, -1)),
-    ]
+    ],
 )
 def test_cross_3d(
     a: tuple[float, float, float],

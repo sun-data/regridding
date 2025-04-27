@@ -688,7 +688,8 @@ def solid_angle(
         A 3D query point.
     triangle
         A sequence of 3D vertices describing the triangle.
-        Vertices oriented.
+        Vertices oriented counterclockwise as viewed from outside yield positive
+        angles.
     epsilon
         If the query point is very close to a vertex, the solid angle is ill-defined.
         By convention, this function returns zero if the query point

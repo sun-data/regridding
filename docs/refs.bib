@@ -57,3 +57,22 @@
   keywords={Solids;Integral equations;Laboratories;Physics;Conductors;Conductivity;Electric potential;Boundary conditions;Shape;Genetic expression},
   doi={10.1109/TBME.1983.325207}}
 }
+@article{Jacobson2013,
+author = {Jacobson, Alec and Kavan, Ladislav and Sorkine-Hornung, Olga},
+title = {Robust inside-outside segmentation using generalized winding numbers},
+year = {2013},
+issue_date = {July 2013},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = {32},
+number = {4},
+issn = {0730-0301},
+url = {https://doi.org/10.1145/2461912.2461916},
+doi = {10.1145/2461912.2461916},
+abstract = {Solid shapes in computer graphics are often represented with boundary descriptions, e.g. triangle meshes, but animation, physically-based simulation, and geometry processing are more realistic and accurate when explicit volume representations are available. Tetrahedral meshes which exactly contain (interpolate) the input boundary description are desirable but difficult to construct for a large class of input meshes. Character meshes and CAD models are often composed of many connected components with numerous self-intersections, non-manifold pieces, and open boundaries, precluding existing meshing algorithms. We propose an automatic algorithm handling all of these issues, resulting in a compact discretization of the input's inner volume. We only require reasonably consistent orientation of the input triangle mesh. By generalizing the winding number for arbitrary triangle meshes, we define a function that is a perfect segmentation for watertight input and is well-behaved otherwise. This function guides a graphcut segmentation of a constrained Delaunay tessellation (CDT), providing a minimal description that meets the boundary exactly and may be fed as input to existing tools to achieve element quality. We highlight our robustness on a number of examples and show applications of solving PDEs, volumetric texturing and elastic simulation.},
+journal = {ACM Trans. Graph.},
+month = jul,
+articleno = {33},
+numpages = {12},
+keywords = {inside-outside segmentation, tetrahedral meshing, winding number}
+}

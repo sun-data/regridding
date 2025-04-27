@@ -696,8 +696,8 @@ def solid_angle(
 
     .. math::
 
-        \tan \left( \frac{1}{2} \Omega \right) = frac{\vec{a} \cdot (\vec{b} \times \vec{c})}
-            {a b c + (\vec{a} \cdot \vec{b}) c + (\vec{a} \cdot \vec{c}) b + (\vec{b} \cdot \vec{c}) a}
+        \tan \left( \frac{1}{2} \Omega \right) = \frac{\vec{a} \cdot (\vec{b} \times \vec{c})}
+            {a b c + (\vec{a} \cdot \vec{b}) \, c + (\vec{a} \cdot \vec{c}) \, b + (\vec{b} \cdot \vec{c}) \, a}
 
     """
 

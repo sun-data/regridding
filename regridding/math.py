@@ -7,6 +7,7 @@ import numba
 
 __all__ = [
     "sign",
+    "norm_3d",
     "negate_3d",
     "sum_3d",
     "difference_3d",
@@ -181,6 +182,3 @@ def cross_3d(
     z = +(x_a * y_b - y_a * x_b)
 
     return x, y, z
-
-
-

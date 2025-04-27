@@ -300,3 +300,67 @@ def test_point_is_inside_red_cross(
         vertices_y=vertices_y[::-1],
     )
     assert result_reversed == result_expected
+
+
+_triangle_octant = (
+    (1, 0, 0),
+    (0, 1, 0),
+    (0, 0, 1),
+)
+
+
+@pytest.mark.parametrize(
+    argnames="point,triangle,result_expected",
+    argvalues=[
+        (
+            (10000, 0, 0),
+            _triangle_octant,
+            0,
+        ),
+        (
+            (0, 0, 0),
+            _triangle_octant,
+            math.pi / 2,
+        ),
+        (
+            (1, 0, 0),
+            _triangle_octant,
+            0,
+        ),
+        (
+            (2, -1, 0),
+            _triangle_octant,
+            0,
+        ),
+        (
+            (1, 0, 0),
+            _triangle_octant,
+            0,
+        ),
+        (
+            (1 / 3, 1 / 3, 1 / 3 - 1e-6),
+            _triangle_octant,
+            2 * np.pi,
+        ),
+        (
+            (1 / 3, 1 / 3, 1 / 3 + 1e-6),
+            _triangle_octant,
+            -2 * np.pi,
+        ),
+    ],
+)
+def test_solid_angle(
+    point: tuple[float, float, float],
+    triangle: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    result_expected: float,
+):
+    result = regridding.geometry.solid_angle(
+        point=point,
+        triangle=triangle,
+    )
+
+    assert np.allclose(result, result_expected)

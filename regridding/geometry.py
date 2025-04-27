@@ -666,3 +666,77 @@ def point_is_inside_polygon(
         return False
     else:
         return True
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
+def solid_angle(
+    point: tuple[float, float, float],
+    triangle: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    epsilon: float = 1e-12,
+) -> float:
+    r"""
+    Calculate the solid angle subtended by a triangle with respect to a
+    query point using the :footcite:t:`Oosterom1983` method.
+
+    Parameters
+    ----------
+    point
+        A 3D query point.
+    triangle
+        A sequence of 3D vertices describing the triangle.
+        Vertices oriented counterclockwise as viewed from outside yield positive
+        angles.
+    epsilon
+        If the query point is very close to a vertex, the solid angle is ill-defined.
+        By convention, this function returns zero if the query point
+        is less than `epsilon` distance away from any vertex.
+
+    Notes
+    -----
+
+    The solid angle :math:`\Omega` subtended by a triangular surface is
+
+    .. math::
+
+        \tan \left( \frac{1}{2} \Omega \right) = \frac{\vec{a} \cdot (\vec{b} \times \vec{c})}
+            {a b c + (\vec{a} \cdot \vec{b}) \, c + (\vec{a} \cdot \vec{c}) \, b + (\vec{b} \cdot \vec{c}) \, a}
+
+    where :math:`\vec{a}`, :math:`\vec{b}` and :math:`\vec{c}` are the
+    vertices of the triangle.
+
+    |
+
+    References
+    ----------
+    .. footbibliography::
+    """
+
+    v1, v2, v3 = triangle
+
+    a = regridding.math.difference_3d(v1, point)
+    b = regridding.math.difference_3d(v2, point)
+    c = regridding.math.difference_3d(v3, point)
+
+    len_a = regridding.math.norm_3d(a)
+    len_b = regridding.math.norm_3d(b)
+    len_c = regridding.math.norm_3d(c)
+
+    if (len_a < epsilon) or (len_b < epsilon) or (len_c < epsilon):
+        return 0
+
+    triple_product = regridding.math.dot_3d(a=a, b=regridding.math.cross_3d(b, c))
+
+    d1 = len_a * len_b * len_c
+    d2 = regridding.math.dot_3d(a, b) * len_c
+    d3 = regridding.math.dot_3d(b, c) * len_a
+    d4 = regridding.math.dot_3d(c, a) * len_b
+
+    denominator = d1 + d2 + d3 + d4
+
+    angle = 2 * math.atan2(triple_product, denominator)
+
+    return angle

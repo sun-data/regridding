@@ -2,6 +2,7 @@
 Numba-compiled computational geometry routines needed for regridding operations.
 """
 
+from typing import Sequence
 import math
 import numpy as np
 import numba
@@ -744,7 +745,7 @@ def solid_angle(
 @numba.njit(cache=True, error_model="numpy")
 def point_is_inside_polyhedron(
     point: tuple[float, float, float],
-    polyhedron: numba.typed.List[
+    polyhedron: Sequence[
         tuple[
             tuple[float, float, float],
             tuple[float, float, float],

@@ -28,6 +28,21 @@ def test_sign(
 @pytest.mark.parametrize(
     argnames="a,result_expected",
     argvalues=[
+        ((1, 1, 1), math.sqrt(3)),
+        ((-1, 1, 1), math.sqrt(3)),
+    ],
+)
+def test_norm_3d(
+    a: tuple[float, float, float],
+    result_expected: float,
+):
+    result = regridding.math.norm_3d(a)
+    assert result == result_expected
+
+
+@pytest.mark.parametrize(
+    argnames="a,result_expected",
+    argvalues=[
         ((1, 1, 1), (-1, -1, -1)),
         ((-1, 1, 1), (1, -1, -1)),
     ],

@@ -55,4 +55,6 @@ omit = [
 exclude = "_conservative_ramshaw.py"
 
 [tool.ruff]
-exclude = "_conservative_ramshaw.py"
+exclude = [
+    "_conservative_ramshaw.py"
+]

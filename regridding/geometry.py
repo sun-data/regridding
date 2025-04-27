@@ -12,6 +12,8 @@ __all__ = [
     "bounding_boxes_intersect_2d",
     "bounding_boxes_intersect_3d",
     "two_line_segment_intersection_parameters",
+    "line_triangle_intersection_parameters",
+    "line_triangle_intersection",
     "point_is_inside_polygon",
 ]
 
@@ -437,6 +439,146 @@ def two_line_segment_intersection_parameters(
     tdet = -c
 
     return sdet, tdet, det
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
+def line_triangle_intersection_parameters(
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    triangle: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+) -> tuple[float, float, float]:
+    """
+    Compute the parameters :math:`t,u,v` describing the point of intersection
+    between a line and triangle in 3D.
+
+    Parameters
+    ----------
+    line
+        Two 3D points representing the line segment.
+    triangle
+        Three 3D points representing the triangle.
+
+    See Also
+    --------
+    :func:`line_triangle_intersection`: A function which can use these parameters to compute the actual intersection.
+    """
+
+    l_a, l_b = line
+
+    p_0, p_1, p_2 = triangle
+
+    l_ab = regridding.math.difference_3d(l_b, l_a)
+    l_ab = regridding.math.negate_3d(l_ab)
+
+    p_01 = regridding.math.difference_3d(p_1, p_0)
+    p_02 = regridding.math.difference_3d(p_2, p_0)
+
+    n = regridding.math.cross_3d(p_01, p_02)
+
+    det = regridding.math.dot_3d(l_ab, n)
+
+    s = regridding.math.difference_3d(l_a, p_0)
+
+    t = n
+    u = regridding.math.cross_3d(p_02, l_ab)
+    v = regridding.math.cross_3d(l_ab, p_01)
+
+    t = regridding.math.dot_3d(t, s) / det
+    u = regridding.math.dot_3d(u, s) / det
+    v = regridding.math.dot_3d(v, s) / det
+
+    return t, u, v
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
+def line_triangle_intersection(
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    tuv: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """
+    Compute the 3D point where a line intersects a triangle
+    using the Parametric form described in the
+    `Line-plane intersection Wikipedia article <https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection#Parametric_form>`_.
+
+
+    Parameters
+    ----------
+    line
+        Two 3D points representing a line segment.
+    tuv
+        Intersection parameters computed using
+        :func:`line_triangle_intersection_parameters`.
+
+    See Also
+    --------
+    :func:`line_triangle_intersection_parameters`: the function used to compute `tuv`.
+
+    Examples
+    --------
+
+    Compute the intercept between a line and a triangle and plot the result.
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import regridding
+
+        # Define a line segment
+        line = (
+            (1, 1, -1),
+            (-1, -1, 1),
+        )
+
+        # Define a triangle
+        triangle = (
+            (0, 1, 1),
+            (1, -1, -1),
+            (-1, -1, -1),
+        )
+
+        # Compute the intercept parameters between the line and triangle
+        tuv = regridding.geometry.line_triangle_intersection_parameters(
+            line=line,
+            triangle=triangle,
+        )
+
+        # Compute the actual intercept using the parameters
+        intercept = regridding.geometry.line_triangle_intersection(
+            line=line,
+            tuv=tuv,
+        )
+
+        # Plot the result
+        fig, ax = plt.subplots(subplot_kw=dict(projection="3d"))
+        ax.plot(
+            *np.array(line).T
+        );
+        ax.plot(
+            *np.array(triangle).T.take(np.arange(-1, 3), axis=1)
+        );
+        ax.scatter(
+            *intercept
+        );
+    """
+    l_a, l_b = line
+
+    t, u, v = tuv
+
+    l_ab = regridding.math.difference_3d(l_b, l_a)
+
+    tl_ab = regridding.math.multiply_3d(t, l_ab)
+
+    return regridding.math.sum_3d(l_a, tl_ab)
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")

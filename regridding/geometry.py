@@ -768,8 +768,8 @@ def point_is_inside_polyhedron(
     winding_tolerance
         A parameter that controls the degree to which points close to the border
         are determined to be inside the polyhedron.
-        Values close to allow points on the border to be considered inside the polyhedron,
-        and values close to unity allow points on the border to be considered outside the polyhedron.
+        Values close to ``0.0`` allow points on the border to be considered inside the polyhedron,
+        and values close to ``1.0`` allow points on the border to be considered outside the polyhedron.
 
     Notes
     -----

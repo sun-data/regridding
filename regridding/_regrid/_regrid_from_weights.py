@@ -74,7 +74,9 @@ def regrid_from_weights(
         values_output = np.zeros_like(values_input, shape=shape_output)
     else:
         if values_output.shape != shape_output:
-            raise ValueError(f"")
+            raise ValueError(
+                f"{values_output.shape=} should be equal to {shape_output}"
+            )
         values_output.fill(0)
 
     ndim_output = len(shape_output)

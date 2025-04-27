@@ -2,6 +2,7 @@
 Compiled versions of fundamental mathematical functions.
 """
 
+import math
 import numba
 
 __all__ = [
@@ -26,6 +27,22 @@ def sign(x: float):
         the value to find the sign of
     """
     return bool(x > 0) - bool(x < 0)
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
+def norm_3d(
+    a: tuple[float, float, float],
+) -> float:
+    """
+    Compute the magnitude of a 3D vector.
+
+    Parameters
+    ----------
+    a
+        A 3D vector.
+    """
+    x, y, z = a
+    return math.sqrt(x * x + y * y + z * z)
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
@@ -164,3 +181,6 @@ def cross_3d(
     z = +(x_a * y_b - y_a * x_b)
 
     return x, y, z
+
+
+

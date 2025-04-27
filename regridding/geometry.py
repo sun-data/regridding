@@ -704,6 +704,9 @@ def solid_angle(
         \tan \left( \frac{1}{2} \Omega \right) = \frac{\vec{a} \cdot (\vec{b} \times \vec{c})}
             {a b c + (\vec{a} \cdot \vec{b}) \, c + (\vec{a} \cdot \vec{c}) \, b + (\vec{b} \cdot \vec{c}) \, a}
 
+    where :math:`\vec{a}`, :math:`\vec{b}` and :math:`\vec{c}` are the
+    vertices of the triangle.
+
     |
 
     References

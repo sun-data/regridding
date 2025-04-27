@@ -679,26 +679,31 @@ def solid_angle(
 ) -> bool:
     r"""
     Calculate the solid angle subtended by a triangle with respect to a
-    query point using the :cite:t:`Oosterom1985` method.
+    query point using the :footcite:t:`Oosterom1983` method.
 
     Parameters
     ----------
     point
         A 3D query point.
     triangle
-        A list of 3D vertices describing the triangle.
+        A sequence of 3D vertices describing the triangle.
         Vertices oriented
 
     Notes
     -----
 
-    The solid angle :math:`Omega` subtended by a triangular surface is
+    The solid angle :math:`\Omega` subtended by a triangular surface is
 
     .. math::
 
         \tan \left( \frac{1}{2} \Omega \right) = \frac{\vec{a} \cdot (\vec{b} \times \vec{c})}
             {a b c + (\vec{a} \cdot \vec{b}) \, c + (\vec{a} \cdot \vec{c}) \, b + (\vec{b} \cdot \vec{c}) \, a}
 
+    |
+
+    References
+    ----------
+    .. footbibliography::
     """
 
 

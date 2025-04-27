@@ -680,7 +680,7 @@ def solid_angle(
 ) -> float:
     r"""
     Calculate the solid angle subtended by a triangle with respect to a
-    query point using the :footcite:t:`Oosterom1983` method.
+    query point.
 
     Parameters
     ----------
@@ -699,6 +699,7 @@ def solid_angle(
     -----
 
     The solid angle :math:`\Omega` subtended by a triangular surface is
+    given by :footcite:t:`Oosterom1983` as
 
     .. math::
 
@@ -707,8 +708,6 @@ def solid_angle(
 
     where :math:`\vec{a}`, :math:`\vec{b}` and :math:`\vec{c}` are the
     vertices of the triangle.
-
-    |
 
     References
     ----------
@@ -740,3 +739,66 @@ def solid_angle(
     angle = 2 * math.atan2(triple_product, denominator)
 
     return angle
+
+
+@numba.njit(cache=True, error_model="numpy")
+def point_is_inside_polyhedron(
+    point: tuple[float, float, float],
+    polyhedron: numba.typed.List[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ],
+    ],
+    winding_tolerance: float = 1e-6,
+) -> bool:
+    """
+    Check if the given point is inside or on the boundary of a polyhedron
+    defined by a sequence of triangles.
+
+    Parameters
+    ----------
+    point
+        A 3D query point.
+    polyhedron
+        A sequence of triangles describing the polyhedron.
+        The vertices of the triangles must be oriented counterclockwise as
+        viewed from outside the polyhedron.
+    winding_tolerance
+        A parameter that controls the degree to which points close to the border
+        are determined to be inside the polyhedron.
+        Values close to allow points on the border to be considered inside the polyhedron,
+        and values close to unity allow points on the border to be considered outside the polyhedron.
+
+    Notes
+    -----
+
+    This function uses the generalized winding number developed by
+    :footcite:t:`Jacobson2013` to test if the point is inside the polyhedron.
+
+    Due to floating-point errors, there is some ambiguity for points
+    right on the border of the polyhedron.
+
+    References
+    ----------
+    .. footbibliography::
+
+    """
+
+    num_triangles = len(polyhedron)
+
+    total_solid_angle = 0
+
+    for i in range(num_triangles):
+
+        triangle = polyhedron[i]
+
+        total_solid_angle += solid_angle(point, triangle)
+
+    winding_number = total_solid_angle / (4 * np.pi)
+
+    if winding_number >= winding_tolerance:
+        return True
+    else:
+        return False

@@ -1,6 +1,7 @@
 import pytest
 import math
 import numpy as np
+import numba
 import regridding
 
 
@@ -364,3 +365,100 @@ def test_solid_angle(
     )
 
     assert np.allclose(result, result_expected)
+
+
+_polyhedron_octant = [
+    ((0, 0, 0), (1, 0, 0), (0, 0, 1)),
+    ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+    ((0, 0, 0), (0, 0, 1), (0, 1, 0)),
+    ((0, 0, 0), (0, 1, 0), (1, 0, 0)),
+]
+
+
+@pytest.mark.parametrize(
+    argnames="point,polyhedron,result_expected",
+    argvalues=[
+        (
+            (0.1, 0.1, 0.1),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (1, 1, 1),
+            _polyhedron_octant,
+            False,
+        ),
+        (
+            (100, -100, 100),
+            _polyhedron_octant,
+            False,
+        ),
+        (
+            (1 / 3, 1 / 3, 1 / 3),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (1 / 3, 1 / 3, 1 / 3 + 1e-6),
+            _polyhedron_octant,
+            False,
+        ),
+        (
+            (1 / 2, 0, 0),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (0, 1 / 2, 0),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (0, 0, 1 / 2),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (0, 0, 0),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (1, 0, 0),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (0, 1, 0),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (0, 0, 1),
+            _polyhedron_octant,
+            True,
+        ),
+        (
+            (0, 0, -1e-6),
+            _polyhedron_octant,
+            False,
+        ),
+    ],
+)
+def test_point_is_inside_polyhedron(
+    point: tuple[float, float, float],
+    polyhedron: numba.typed.List[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ],
+    ],
+    result_expected: bool,
+):
+    result = regridding.geometry.point_is_inside_polyhedron(
+        point=point,
+        polyhedron=polyhedron,
+    )
+
+    assert result == result_expected

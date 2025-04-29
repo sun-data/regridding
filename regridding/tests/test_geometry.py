@@ -91,7 +91,7 @@ _box = (
             _box,
             True,
         ),
-    ]
+    ],
 )
 def test_point_is_inside_box_3d(
     point: tuple[float, float, float],

@@ -10,6 +10,7 @@ import regridding
 
 __all__ = [
     "line_equation_2d",
+    "point_is_inside_box_3d",
     "bounding_boxes_intersect_2d",
     "bounding_boxes_intersect_3d",
     "two_line_segment_intersection_parameters",
@@ -53,6 +54,51 @@ def line_equation_2d(
     """
     result = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
     return result
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
+def point_is_inside_box_3d(
+    point: tuple[float, float, float],
+    box: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+) -> bool:
+    """
+    Check if a given query point is contained within a 3D box specified
+    by two opposite corners.
+
+    Parameters
+    ----------
+    point
+        The query point.
+    box
+        A bounding box specified by two points.
+    """
+
+    x, y, z = point
+
+    b1, b2 = box
+
+    x1, y1, z1 = b1
+    x2, y2, z2 = b2
+
+    x_check = x1 <= x <= x2
+
+    if not x_check:
+        return False
+
+    y_check = y1 <= y <= y2
+
+    if not y_check:
+        return False
+
+    z_check = z1 <= z <= z2
+
+    if not z_check:
+        return False
+
+    return True
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")

@@ -52,6 +52,63 @@ def test_line_equation_2d(
     assert np.sign(result_above) != np.sign(result_below)
 
 
+_box = (
+    (-2, -2, -2),
+    (+2, +2, +2),
+)
+
+
+@pytest.mark.parametrize(
+    argnames="point,box,result_expected",
+    argvalues=[
+        (
+            (1, 1, 1),
+            _box,
+            True,
+        ),
+        (
+            (10, 1, 1),
+            _box,
+            False,
+        ),
+        (
+            (1, 10, 1),
+            _box,
+            False,
+        ),
+        (
+            (1, 1, 10),
+            _box,
+            False,
+        ),
+        (
+            (-2, -2, -2),
+            _box,
+            True,
+        ),
+        (
+            (2, 0, 0),
+            _box,
+            True,
+        ),
+    ]
+)
+def test_point_is_inside_box_3d(
+    point: tuple[float, float, float],
+    box: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    result_expected: bool,
+):
+    result = regridding.geometry.point_is_inside_box_3d(
+        point=point,
+        box=box,
+    )
+
+    assert result == result_expected
+
+
 @pytest.mark.parametrize(
     argnames="x_p1,y_p1,x_p2,y_p2,x_q1,y_q1,x_q2,y_q2,result_expected",
     argvalues=[

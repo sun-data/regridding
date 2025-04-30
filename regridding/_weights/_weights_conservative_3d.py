@@ -504,6 +504,129 @@ def _volume(
 
 
 @numba.njit(cache=True)
+def _indices_boundary(
+    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> numba.typed.List[
+    tuple[
+        tuple[int, int, int],
+        tuple[int, int, int],
+        tuple[int, int, int],
+    ],
+]:
+    """
+    For a given grid, find the set of indices that expresses the boundary
+    as a sequence of triangles.
+
+    Parameters
+    ----------
+    grid
+        A logically-rectangular grid of cell vertices.
+    """
+
+    x, y, z = grid
+
+    shape_x, shape_y, shape_z = x.shape
+
+    triangles = numba.typed.List()
+
+    for i0 in range(shape_x - 1):
+        for j0 in range(shape_y - 1):
+
+            k0 = 0
+
+            i1 = i0 + 1
+            j1 = j0 + 1
+
+            v_000 = i0, j0, k0
+            v_010 = i0, j1, k0
+            v_110 = i1, j1, k0
+            v_100 = i1, j0, k0
+
+            triangles.append((v_000, v_010, v_110))
+            triangles.append((v_110, v_100, v_000))
+
+    for i0 in range(shape_x - 1):
+        for j0 in range(shape_y - 1):
+
+            k1 = shape_z
+
+            i1 = i0 + 1
+            j1 = j0 + 1
+
+            v_001 = i0, j0, k1
+            v_101 = i1, j0, k1
+            v_111 = i1, j1, k1
+            v_011 = i0, j1, k1
+
+            triangles.append((v_001, v_101, v_111))
+            triangles.append((v_111, v_011, v_001))
+
+    for j0 in range(shape_y - 1):
+        for k0 in range(shape_z - 1):
+
+            i0 = 0
+
+            j1 = j0 + 1
+            k1 = k0 + 1
+
+            v_000 = i0, j0, k0
+            v_001 = i0, j0, k1
+            v_011 = i0, j1, k1
+            v_010 = i0, j1, k0
+
+            triangles.append((v_000, v_001, v_011))
+            triangles.append((v_011, v_010, v_000))
+
+    for j0 in range(shape_y - 1):
+        for k0 in range(shape_z - 1):
+
+            i1 = shape_x
+
+            j1 = j0 + 1
+            k1 = k0 + 1
+
+            v_100 = i1, j0, k0
+            v_110 = i1, j1, k0
+            v_111 = i1, j1, k1
+            v_101 = i1, j0, k1
+
+            triangles.append((v_100, v_110, v_111))
+            triangles.append((v_111, v_101, v_100))
+
+    for i0 in range(shape_x - 1):
+        for k0 in range(shape_z - 1):
+
+            j0 = 0
+
+            i1 = i0 + 1
+            k1 = k0 + 1
+
+            v_000 = i0, j0, k0
+            v_100 = i1, j0, k0
+            v_101 = i1, j0, k1
+            v_001 = i0, j0, k1
+
+            triangles.append((v_000, v_100, v_101))
+            triangles.append(v_101, v_001, v_000)
+
+    for i0 in range(shape_x - 1):
+        for k0 in range(shape_z - 1):
+
+            j1 = shape_y
+
+            i1 = i0 + 1
+            k1 = k0 + 1
+
+            v_010 = i0, j1, k0
+            v_011 = i0, j1, k1
+            v_111 = i1, j1, k1
+            v_110 = i1, j1, k0
+
+            triangles.append((v_010, v_011, v_111))
+            triangles.append((v_111, v_110, v_010))
+
+
+@numba.njit(cache=True)
 def _index_of_point_brute(
     point: tuple[float, float, float],
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],

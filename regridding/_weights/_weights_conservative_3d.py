@@ -504,6 +504,78 @@ def _volume(
 
 
 @numba.njit(cache=True)
+def _index_of_point_brute(
+    point: tuple[float, float, float],
+    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[int, int, int]:
+    """
+    Find the index of the cell in the grid which contains the given point.
+
+    This function uses brute force to search,
+    but this could be improved significantly by using the secant method
+    or possibly the bisection method.
+
+    Parameters
+    ----------
+    point
+        The query point.
+    grid
+        A logically-rectangular grid of cell vertices.
+    """
+
+    x, y, z = grid
+
+    shape_x, shape_y, shape_z = x.shape
+
+    for i in range(shape_x - 1):
+        for j in range(shape_y - 1):
+            for k in range(shape_z - 1):
+
+                i_000 = i + 0, j + 0, k + 0
+                i_001 = i + 0, j + 0, k + 1
+                i_010 = i + 0, j + 1, k + 0
+                i_011 = i + 0, j + 1, k + 1
+                i_100 = i + 1, j + 0, k + 0
+                i_101 = i + 1, j + 0, k + 1
+                i_110 = i + 1, j + 1, k + 0
+                i_111 = i + 1, j + 1, k + 1
+
+                indices = (
+                    (i_000, i_010, i_110),
+                    (i_110, i_100, i_000),
+                    (i_001, i_101, i_111),
+                    (i_111, i_011, i_001),
+                    (i_000, i_001, i_011),
+                    (i_011, i_010, i_000),
+                    (i_100, i_110, i_111),
+                    (i_111, i_101, i_100),
+                    (i_000, i_100, i_101),
+                    (i_101, i_001, i_000),
+                    (i_010, i_011, i_111),
+                    (i_111, i_110, i_010),
+                )
+
+                polyhedron = numba.typed.List()
+
+                for index in indices:
+
+                    t0, t1, t2 = index
+
+                    triangle = (
+                        (x[t0], y[t0], z[t0]),
+                        (x[t1], y[t1], z[t1]),
+                        (x[t2], y[t2], z[t2]),
+                    )
+
+                    polyhedron.append(triangle)
+
+                if regridding.geometry.point_is_inside_polyhedron(
+                    point=point, polyhedron=polyhedron
+                ):
+                    return i, j, k
+
+
+@numba.njit(cache=True)
 def _empty_intercepts(
     shape_input: tuple[int, int, int],
     shape_output: tuple[int, int, int],

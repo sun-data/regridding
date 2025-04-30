@@ -77,3 +77,41 @@ def test_cell_volume(
     result = _weights_conservative_3d._cell_volume(grid)
     assert np.allclose(result, result_expected)
     assert result.shape == result_expected.shape
+
+
+@pytest.mark.parametrize(
+    argnames="point,grid,result_expected",
+    argvalues=[
+        (
+            (0.5, 0.5, 0.5),
+            np.meshgrid(
+                np.arange(3),
+                np.arange(4),
+                np.arange(5),
+                indexing="ij",
+            ),
+            (0, 0, 0),
+        ),
+        (
+            (-0.5, -0.5, 3.5),
+            np.meshgrid(
+                -np.arange(3),
+                -np.arange(4),
+                np.arange(5),
+                indexing="ij",
+            ),
+            (0, 0, 3),
+        ),
+    ],
+)
+def test_index_of_point_brute(
+    point: tuple[float, float, float],
+    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
+    result_expected: np.ndarray,
+):
+    result = _weights_conservative_3d._index_of_point_brute(
+        point=point,
+        grid=grid,
+    )
+
+    assert result == result_expected

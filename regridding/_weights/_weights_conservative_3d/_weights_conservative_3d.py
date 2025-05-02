@@ -2,15 +2,18 @@ import sys
 import numpy as np
 import numpy.typing as npt
 import numba
-import regridding
+import regridding as rg
+from . import  (
+    _arrays,
+    _volumes,
+    _grids,
+    _intercepts,
+)
+from _arrays import axis_x, axis_y, axis_z
 
 __all__ = [
     "weights_conservative_3d",
 ]
-
-axis_x = 0
-axis_y = 1
-axis_z = 2
 
 
 @numba.njit(cache=True)
@@ -43,9 +46,9 @@ def weights_conservative_3d(
     for x in range(0):
         weights.append((0.0, 0.0, 0.0))
 
-    volume_input = _cell_volume(grid_input)
+    volume_input = _volumes.volume_grid(grid_input)
 
-    intercepts = _empty_intercepts(shape_input, shape_output)
+    intercepts = _intercepts.empty(shape_input, shape_output)
 
     for sweep_input in (False, True):
         _sweep_grid(
@@ -111,7 +114,7 @@ def _sweep_grid(
         (grid_static_x.max(), grid_static_y.max(), grid_static_z.max()),
     )
 
-    index_boundary, coord_boundary = _calc_boundary(grid_static)
+    indices_boundary, triangles_boundary = _indices_and_triangles_of_boundary(grid_static)
 
     axes_parallel = (
         axis_x,
@@ -140,9 +143,7 @@ def _sweep_grid(
         )
 
     for axis in axes_diagonal:
-        _sweep_along_diagonal(
-
-        )
+        _sweep_along_diagonal()
 
 
 @numba.njit(cache=True, parallel=True)
@@ -151,7 +152,7 @@ def _sweep_along_axis(
     grid_output: tuple[np.ndarray, np.ndarray, np.ndarray],
     volume_input: np.ndarray,
     bbox_boundary: tuple[tuple[float, float, float], tuple[float, float, float]],
-    index_boundary: tuple[np.ndarray, np.ndarray, np.ndarray],
+    indices_boundary: tuple[np.ndarray, np.ndarray, np.ndarray],
     coord_boundary: tuple[np.ndarray, np.ndarray, np.ndarray],
     weights: numba.typed.List[tuple[int, int, float]],
     intercepts: numba.typed.List,
@@ -180,25 +181,36 @@ def _sweep_along_axis(
     weights
         The current list of weights.
         New weights will be appended to this list.
+    intercepts
+        A sorted list of intercepts to be traversed later.
+        As new intercepts are found, they are inserted into the list.
     sweep_input
         A boolean flag indicating whether to iterate along `grid_input`
         or `grid_output`.
         If :obj:`True`, this function sweeps along `grid_input`.
     axis
-        The logical axis of the `grid_sweep` to iterate along.
+        The logical axis of the sweep grid to iterate along.
     """
 
-    grid_sweep, grid_static = _grid_sweep_static(grid_input, grid_output, sweep_input)
+    grid_sweep, grid_static = _grid_sweep_static(
+        grid_input=grid_input,
+        grid_output=grid_output,
+        sweep_input=sweep_input,
+        axis_x=axis,
+    )
 
-    grid_sweep_x, grid_sweep_y, grid_sweep_z = grid_sweep
-    grid_static_x, grid_static_y, grid_static_z = grid_static
-
-    grid_sweep_x = _align_axis_right(grid_sweep_x, axis)
-    grid_sweep_y = _align_axis_right(grid_sweep_y, axis)
-    grid_sweep_z = _align_axis_right(grid_sweep_z, axis)
+    x_sweep, y_sweep, z_sweep = grid_sweep
 
     shape_sweep_x, shape_sweep_y, shape_sweep_z = grid_sweep.shape
     shape_static_x, shape_static_y, shape_static_z = grid_static.shape
+
+    weight = numba.typed.List()
+
+    for i in range(shape_sweep_x):
+        weight_i = numba.typed.List()
+        for _ in range(0):
+            weight_i.append((0., 0., 0.))
+        weight.append(weight_i)
 
     for i in numba.prange(shape_sweep_x):
 
@@ -215,16 +227,16 @@ def _sweep_along_axis(
             sweep_is_outside_static = True
 
             point_1 = (
-                grid_sweep_x[index_sweep],
-                grid_sweep_y[index_sweep],
-                grid_sweep_z[index_sweep],
+                x_sweep[index_sweep],
+                y_sweep[index_sweep],
+                z_sweep[index_sweep],
             )
 
-            if regridding.geometry.point_is_inside_box_3d(
+            if rg.geometry.point_is_inside_box_3d(
                 point=point_1,
                 box=bbox_boundary,
             ):
-                if regridding.geometry.point_is_inside_polyhedron(
+                if rg.geometry.point_is_inside_polyhedron(
                     point=point_1,
                     polyhedron=coord_boundary,
                 ):
@@ -232,16 +244,15 @@ def _sweep_along_axis(
                         point=point_1,
                         grid=grid_static,
                     )
+                    sweep_is_outside_static = False
 
-            while True:
+            while k < (shape_sweep_z - 1):
 
                 point_2 = (
-                    grid_sweep_x[i, j, k + 1],
-                    grid_sweep_y[i, j, k + 1],
-                    grid_sweep_z[i, j, k + 1],
+                    x_sweep[i, j, k + 1],
+                    y_sweep[i, j, k + 1],
+                    z_sweep[i, j, k + 1],
                 )
-
-                sweep_is_outside_static = index_static[0] == sys.maxsize
 
                 if sweep_is_outside_static:
 
@@ -253,6 +264,8 @@ def _sweep_along_axis(
                         coord_boundary=coord_boundary,
                         intercepts=intercepts,
                     )
+
+                    sweep_is_outside_static = index_static[0] == sys.maxsize
 
                 else:
 
@@ -272,29 +285,33 @@ def _sweep_along_axis(
                     if not 0 <= index_static[axis_z] < (shape_static_z - 1):
                         break
 
-                if k >= (shape_sweep_z - 1):
-                    break
-
-
-
-
-
-
+    for i in range(shape_sweep_x):
+        weight_i = weight[i]
+        for w in range(len(weight_i)):
+            weights.append(weight_i[w])
 
 
 @numba.njit(cache=True)
 def _step_outside_static(
     point_1: tuple[float, float, float],
     point_2: tuple[float, float, float],
-    index_static: tuple[int, int, int],
     index_sweep: tuple[int, int, int],
     grid_static: tuple[np.ndarray, np.ndarray, np.ndarray],
     bbox_boundary: tuple[tuple[float, float, float], tuple[float, float, float]],
-    coord_boundary: tuple[np.ndarray, np.ndarray, np.ndarray],
-    index_boundary: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> tuple[
-    tuple[float, float, float],
-]:
+    indices_boundary: numba.typed.List[
+        tuple[int, int, int],
+    ],
+    triangles_boundary: numba.typed.List[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ],
+    ],
+    intercepts: numba.typed.List,
+    sweep_input: bool,
+    axis: int,
+) -> tuple[tuple[float, float, float], int, tuple[int, int, int]]:
     """
     Check if the current line segment crosses the boundary.
     If it does, compute the intersection and return the intersection point
@@ -306,26 +323,58 @@ def _step_outside_static(
         The first point of the line segment.
     point_2
         The second point of the line segment.
-    index_static
-        The current 3D index in the static grid.
-    index_sweep
-        The current 3D index in the sweep grid.
-    grid_static
-        Coordinates of the static grid.
     bbox_boundary
         Two points defining the bounding box of the static grid.
-    coord_boundary
-        A sequence of triangles defining the outer surface of the static grid.
-    index_boundary
-        The index of the static grid corresponding to each triangle in
-        `coord_boundary`.
+    indices_boundary
+        A sequence of triangle indices defining the outer boundary of the
+        static grid.
+    intercepts
+        A sorted list of intercepts to be traversed later.
+        As new intercepts are found, they are inserted into the list.
     """
+
+    line = (point_1, point_2)
+
+    x, y, z = grid_static
+
+    if rg.geometry.point_is_inside_box_3d(point_2, bbox_boundary):
+
+        for t in range(len(triangles_boundary)):
+
+            triangle = triangles_boundary[t]
+
+            tuv = rg.geometry.line_triangle_intersection_parameters(
+                line=line,
+                triangle=triangle
+            )
+
+            if rg.geometry.line_intersects_triangle(tuv):
+
+                index_static = indices_boundary[t]
+
+                intercept = rg.geometry.line_triangle_intersection(
+                    line=line,
+                    tuv=tuv,
+                )
+
+                index_input, index_output = _index_input_output(
+                    index_sweep=index_sweep,
+                    index_static=index_static,
+                    sweep_input=sweep_input,
+                    axis=axis,
+                )
+
+                if axis == axis_x:
+
+                    pass
 
 
 @numba.njit(cache=True)
 def _step_inside_static(
-    point_1: tuple[float, float, float],
-    point_2: tuple[float, float, float],
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
     index_static: tuple[int, int, int],
     index_sweep: tuple[int, int, int],
     grid_static: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -354,16 +403,127 @@ def _step_inside_static(
         New weights will be appended to this list.
     """
 
+    point_1, point_2 = line
+
+    i, j, k = index_sweep
+    l, m, n = index_static
+
+    x, y, z = grid_static
+
+    i_000 = l + 0, m + 0, n + 0
+    i_001 = l + 0, m + 0, n + 1
+    i_010 = l + 0, m + 1, n + 0
+    i_011 = l + 0, m + 1, n + 1
+    i_100 = l + 1, m + 0, n + 0
+    i_101 = l + 1, m + 0, n + 1
+    i_110 = l + 1, m + 1, n + 0
+    i_111 = l + 1, m + 1, n + 1
+
+    indices_triangles = (
+        (i_000, i_010, i_110),
+        (i_110, i_100, i_000),
+        (i_001, i_101, i_111),
+        (i_111, i_011, i_001),
+        (i_000, i_001, i_011),
+        (i_011, i_010, i_000),
+        (i_100, i_110, i_111),
+        (i_111, i_101, i_100),
+        (i_000, i_100, i_101),
+        (i_101, i_001, i_000),
+        (i_010, i_011, i_111),
+        (i_111, i_110, i_010),
+    )
+
+    normals_index = (
+        (0, 0, -1),
+        (0, 0, -1),
+        (0, 0, +1),
+        (0, 0, +1),
+        (-1, 0, 0),
+        (-1, 0, 0),
+        (+1, 0, 0),
+        (+1, 0, 0),
+        (0, -1, 0),
+        (0, -1, 0),
+        (0, +1, 0),
+        (0, +1, 0),
+    )
+
+    for t in range(len(indices_triangles)):
+
+        i0, i1, i2 = indices_triangles[t]
+
+        v0 = (x[i0], y[i0], z[i0])
+        v1 = (x[i1], y[i1], z[i1])
+        v2 = (x[i2], y[i2], z[i2])
+
+        triangle = (v0, v1, v2)
+
+        tuv = rg.geometry.line_triangle_intersection_parameters(
+            line=line,
+            triangle=triangle,
+        )
+
+        if rg.geometry.line_intersects_triangle(tuv):
+
+            intercept = rg.geometry.line_triangle_intersection(
+                line=line,
+                tuv=tuv,
+            )
+
+            line = (point_1, intercept)
+
+            normal_index = normals_index[t]
+
+            index_static = rg.math.sum_3d(index_static, normal_index)
+
+
+
+        else:
+            index_sweep = i, j, k + 1
+
+
+
+        # index_left
+        #
+        # volume_sweep =
+        #
+        # i_normal, j_normal, k_normal = normals_index[t]
+
+
+
+
+
+
+
 
 @numba.njit(cache=True)
 def _grid_sweep_static(
     grid_input: tuple[np.ndarray, np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray, np.ndarray],
     sweep_input: bool,
+    axis: int,
 ) -> tuple[
     tuple[np.ndarray, np.ndarray, np.ndarray],
     tuple[np.ndarray, np.ndarray, np.ndarray],
 ]:
+    """
+    Given the input and output grids,
+    prepare the sweep and static grids.
+
+    Parameters
+    ----------
+    grid_input
+        The vertices of the old grid.
+    grid_output
+        The vertices of the new grid.
+    sweep_input
+        A boolean flag indicating whether to iterate along `grid_input`
+        or `grid_output`.
+        If :obj:`True`, this function sweeps along `grid_input`.
+    axis
+        The logical axis of the `grid_sweep` to iterate along.
+    """
     if sweep_input:
         grid_sweep = grid_input
         grid_static = grid_output
@@ -371,150 +531,66 @@ def _grid_sweep_static(
         grid_sweep = grid_output
         grid_static = grid_input
 
+    grid_sweep_x, grid_sweep_y, grid_sweep_z = grid_sweep
+
+    grid_sweep_x = _arrays.align_axis_right(grid_sweep_x, axis)
+    grid_sweep_y = _arrays.align_axis_right(grid_sweep_y, axis)
+    grid_sweep_z = _arrays.align_axis_right(grid_sweep_z, axis)
+
+    grid_sweep = grid_sweep_x, grid_sweep_y, grid_sweep_z
+
     return grid_sweep, grid_static
 
 
 @numba.njit(cache=True)
-def _cell_volume(
-    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> np.ndarray:
-    """
-    Compute the volume of each cell in a logically-rectangular grid.
-
-    Parameters
-    ----------
-    grid
-        A 3D grid of cell vertices.
-    """
-
-    x, y, z = grid
-
-    num_i, num_j, num_k = x.shape
-
-    result = np.zeros((num_i - 1, num_j - 1, num_k - 1))
-
-    for axis in (0, 1, 2):
-        _cell_volume_sweep(
-            grid=grid,
-            out=result,
-            axis=axis,
-        )
-
-    return result
-
-
-@numba.njit(cache=True)
-def _cell_volume_sweep(
-    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-    out: np.ndarray,
+def _index_input_output(
+    index_sweep: tuple[int, int, int],
+    index_static: tuple[int, int, int],
+    sweep_input: bool,
     axis: int,
-) -> None:
-    """
-    Compute the volume contribution of this axis.
+):
 
-    Parameters
-    ----------
-    grid
-        A 3D grid of cell vertices.
-    out
-        An output to array to store the result.
-    axis
-        The axis along which to iterate.
-    """
+    i_sweep, j_sweep, k_sweep = index_sweep
 
-    x, y, z = grid
+    if axis == axis_x:
+        index_sweep = j_sweep, k_sweep, i_sweep
+    elif axis == axis_y:
+        index_sweep = k_sweep, i_sweep, j_sweep
 
-    x = _align_axis_right(x, axis)
-    y = _align_axis_right(y, axis)
-    z = _align_axis_right(z, axis)
+    if sweep_input:
+        index_input = index_sweep
+        index_output = index_static
+    else:
+        index_input = index_static
+        index_output = index_sweep
 
-    out = _align_axis_right(out, axis)
+    return index_input, index_output
 
-    num_i, num_j, num_k = x.shape
 
-    for i in numba.prange(num_i):
 
-        i = numba.types.int64(i)
 
-        for j in range(num_j):
-
-            for k in range(num_k - 1):
-
-                i_left = i - 1
-                i_right = i
-
-                j_lower = j - 1
-                j_upper = j
-
-                k1 = k
-                k2 = k + 1
-
-                v1 = x[i, j, k1], y[i, j, k1], z[i, j, k1]
-                v2 = x[i, j, k2], y[i, j, k2], z[i, j, k2]
-
-                volume_left = 0
-                volume_lower = 0
-
-                if i_left >= 0:
-                    v0_left = x[i_left, j, k], y[i_left, j, k], z[i_left, j, k]
-                    volume_left = _volume(v0_left, v1, v2)
-
-                if j_lower >= 0:
-                    v0_lower = x[i, j_lower, k], y[i, j_lower, k], z[i, j_lower, k]
-                    volume_lower = -_volume(v0_lower, v1, v2)
-
-                if i_left >= 0:
-                    if j_lower >= 0:
-                        out[i_left, j_lower, k] -= volume_left
-                    if j_upper < (num_j - 1):
-                        out[i_left, j_upper, k] += volume_left
-
-                if j_lower >= 0:
-                    if i_left >= 0:
-                        out[i_left, j_lower, k] -= volume_lower
-                    if i_right < (num_i - 1):
-                        out[i_right, j_lower, k] += volume_lower
 
 
 @numba.njit(cache=True)
-def _volume(
-    v0: tuple[float, float, float],
-    v1: tuple[float, float, float],
-    v2: tuple[float, float, float],
-) -> float:
-    """
-    Compute the volume of a tetrahedron constructed from three
-    vertices and the origin.
-
-    Parameters
-    ----------
-    v0
-        First vertex of the tetrahedron.
-    v1
-        Second vertex of the tetrahedron.
-    v2
-        Third vertex of the tetrahedron.
-    """
-    triple_product = regridding.math.dot_3d(
-        a=v0,
-        b=regridding.math.cross_3d(v1, v2),
-    )
-
-    return triple_product / 6
-
-
-@numba.njit(cache=True)
-def _indices_boundary(
+def _indices_and_triangles_of_boundary(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> numba.typed.List[
-    tuple[
+) -> tuple[
+    numba.typed.List[
         tuple[int, int, int],
-        tuple[int, int, int],
-        tuple[int, int, int],
+    ],
+    numba.typed.List[
+        tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            tuple[float, float, float],
+        ],
     ],
 ]:
     """
-    For a given grid, find the set of indices that expresses the boundary
+    For a given grid, find the indices of the boundary cells
+    and the vertices of all the triangles on the boundary.
+
+    find the set of indices that expresses the boundary
     as a sequence of triangles.
 
     Parameters
@@ -527,6 +603,8 @@ def _indices_boundary(
 
     shape_x, shape_y, shape_z = x.shape
 
+    indices = numba.typed.List()
+
     triangles = numba.typed.List()
 
     for i0 in range(shape_x - 1):
@@ -537,10 +615,20 @@ def _indices_boundary(
             i1 = i0 + 1
             j1 = j0 + 1
 
-            v_000 = i0, j0, k0
-            v_010 = i0, j1, k0
-            v_110 = i1, j1, k0
-            v_100 = i1, j0, k0
+            i_cell = i0, j0, k0
+
+            i_000 = i0, j0, k0
+            i_010 = i0, j1, k0
+            i_110 = i1, j1, k0
+            i_100 = i1, j0, k0
+
+            v_000 = x[i_000], y[i_000], z[i_000]
+            v_010 = x[i_010], y[i_010], z[i_010]
+            v_110 = x[i_110], y[i_110], z[i_110]
+            v_100 = x[i_100], y[i_100], z[i_100]
+
+            indices.append(i_cell)
+            indices.append(i_cell)
 
             triangles.append((v_000, v_010, v_110))
             triangles.append((v_110, v_100, v_000))
@@ -553,10 +641,20 @@ def _indices_boundary(
             i1 = i0 + 1
             j1 = j0 + 1
 
-            v_001 = i0, j0, k1
-            v_101 = i1, j0, k1
-            v_111 = i1, j1, k1
-            v_011 = i0, j1, k1
+            i_cell = i0, j0, k1 - 1
+
+            i_001 = i0, j0, k1
+            i_101 = i1, j0, k1
+            i_111 = i1, j1, k1
+            i_011 = i0, j1, k1
+
+            v_001 = x[i_001], y[i_001], z[i_001]
+            v_101 = x[i_101], y[i_101], z[i_101]
+            v_111 = x[i_111], y[i_111], z[i_111]
+            v_011 = x[i_011], y[i_011], z[i_011]
+
+            indices.append(i_cell)
+            indices.append(i_cell)
 
             triangles.append((v_001, v_101, v_111))
             triangles.append((v_111, v_011, v_001))
@@ -569,10 +667,20 @@ def _indices_boundary(
             j1 = j0 + 1
             k1 = k0 + 1
 
-            v_000 = i0, j0, k0
-            v_001 = i0, j0, k1
-            v_011 = i0, j1, k1
-            v_010 = i0, j1, k0
+            i_cell = i0, j0, k0
+
+            i_000 = i0, j0, k0
+            i_001 = i0, j0, k1
+            i_011 = i0, j1, k1
+            i_010 = i0, j1, k0
+
+            v_000 = x[i_000], y[i_000], z[i_000]
+            v_001 = x[i_001], y[i_001], z[i_001]
+            v_011 = x[i_011], y[i_011], z[i_011]
+            v_010 = x[i_010], y[i_010], z[i_010]
+
+            indices.append(i_cell)
+            indices.append(i_cell)
 
             triangles.append((v_000, v_001, v_011))
             triangles.append((v_011, v_010, v_000))
@@ -585,10 +693,20 @@ def _indices_boundary(
             j1 = j0 + 1
             k1 = k0 + 1
 
-            v_100 = i1, j0, k0
-            v_110 = i1, j1, k0
-            v_111 = i1, j1, k1
-            v_101 = i1, j0, k1
+            i_cell = i1 - 1, j0, k0
+
+            i_100 = i1, j0, k0
+            i_110 = i1, j1, k0
+            i_111 = i1, j1, k1
+            i_101 = i1, j0, k1
+
+            v_100 = x[i_100], y[i_100], z[i_100]
+            v_110 = x[i_110], y[i_110], z[i_110]
+            v_111 = x[i_111], y[i_111], z[i_111]
+            v_101 = x[i_101], y[i_101], z[i_101]
+
+            indices.append(i_cell)
+            indices.append(i_cell)
 
             triangles.append((v_100, v_110, v_111))
             triangles.append((v_111, v_101, v_100))
@@ -601,13 +719,23 @@ def _indices_boundary(
             i1 = i0 + 1
             k1 = k0 + 1
 
-            v_000 = i0, j0, k0
-            v_100 = i1, j0, k0
-            v_101 = i1, j0, k1
-            v_001 = i0, j0, k1
+            i_cell = i0, j0, k0
+
+            i_000 = i0, j0, k0
+            i_100 = i1, j0, k0
+            i_101 = i1, j0, k1
+            i_001 = i0, j0, k1
+
+            v_000 = x[i_000], y[i_000], z[i_000]
+            v_100 = x[i_100], y[i_100], z[i_100]
+            v_101 = x[i_101], y[i_101], z[i_101]
+            v_001 = x[i_001], y[i_001], z[i_001]
+
+            indices.append(i_cell)
+            indices.append(i_cell)
 
             triangles.append((v_000, v_100, v_101))
-            triangles.append(v_101, v_001, v_000)
+            triangles.append((v_101, v_001, v_000))
 
     for i0 in range(shape_x - 1):
         for k0 in range(shape_z - 1):
@@ -617,13 +745,25 @@ def _indices_boundary(
             i1 = i0 + 1
             k1 = k0 + 1
 
-            v_010 = i0, j1, k0
-            v_011 = i0, j1, k1
-            v_111 = i1, j1, k1
-            v_110 = i1, j1, k0
+            i_cell = i0, j1 - 1, k0
+
+            i_010 = i0, j1, k0
+            i_011 = i0, j1, k1
+            i_111 = i1, j1, k1
+            i_110 = i1, j1, k0
+
+            v_010 = x[i_010], y[i_010], z[i_010]
+            v_011 = x[i_011], y[i_011], z[i_011]
+            v_111 = x[i_111], y[i_111], z[i_111]
+            v_110 = x[i_110], y[i_110], z[i_110]
+
+            indices.append(i_cell)
+            indices.append(i_cell)
 
             triangles.append((v_010, v_011, v_111))
             triangles.append((v_111, v_110, v_010))
+
+    return indices, triangles
 
 
 @numba.njit(cache=True)
@@ -692,72 +832,8 @@ def _index_of_point_brute(
 
                     polyhedron.append(triangle)
 
-                if regridding.geometry.point_is_inside_polyhedron(
-                    point=point, polyhedron=polyhedron
+                if rg.geometry.point_is_inside_polyhedron(
+                    point=point,
+                    polyhedron=polyhedron,
                 ):
                     return i, j, k
-
-
-@numba.njit(cache=True)
-def _empty_intercepts(
-    shape_input: tuple[int, int, int],
-    shape_output: tuple[int, int, int],
-) -> numba.typed.List:
-    """
-    Create an empty list of intercepts between each plane in the
-    input grid and each plane in the output grid.
-
-    Parameters
-    ----------
-    shape_input
-        The shape of the input grid.
-    shape_output
-        The shape of the output grid.
-    """
-    intercepts = numba.typed.List()
-    for a in range(len(shape_input)):
-        intercepts_a = numba.typed.List()
-        for b in range(len(shape_output)):
-            intercepts_ab = numba.typed.List()
-            for i in range(shape_input[a]):
-                intercepts_abi = numba.typed.List()
-                for j in range(shape_output[b]):
-                    intercepts_abij = numba.typed.List()
-                    for x in range(0):
-                        intercepts_abij.append((0.0, 0.0, 0.0))
-                    intercepts_abi.append(intercepts_abij)
-                intercepts_ab.append(intercepts_abi)
-            intercepts_a.append(intercepts_ab)
-        intercepts.append(intercepts_a)
-    return intercepts
-
-
-@numba.njit(cache=True)
-def _align_axis_right(
-    a: np.ndarray,
-    axis: int,
-) -> np.ndarray:
-    """
-    Roll all the axes of a 3D array to the right until `axis` is the last axis..
-
-    This function is needed to permute the axes in such a way to retain
-    their right-handedness.
-
-    Parameters
-    ----------
-    a
-        The array to modify the axes of.
-    axis
-        The axis to set as the last axis.
-    """
-    axis = axis % a.ndim
-
-    if axis == axis_x:
-        result = a.transpose((axis_y, axis_z, axis_x))
-    elif axis == axis_y:
-        result = a.transpose((axis_z, axis_x, axis_y))
-    else:
-        result = a
-
-    return result
-

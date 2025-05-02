@@ -277,6 +277,16 @@ def test_two_line_segment_intersection_parameters(
             ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
             False,
         ),
+        (
+            ((10, 10, -1), (10, 10, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            False,
+        ),
+        (
+            ((0, -10, -1), (0, -10, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            False,
+        ),
     ],
 )
 def test_line_intersects_triangle(

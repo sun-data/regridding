@@ -245,6 +245,63 @@ def test_two_line_segment_intersection_parameters(
 
 
 @pytest.mark.parametrize(
+    argnames="line,triangle,result_expected",
+    argvalues=[
+        (
+            ((0, 0, -1), (0, 0, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            True,
+        ),
+        (
+            ((0.5, 0, -1), (0.5, 0, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            True,
+        ),
+        (
+            ((1, 0, -1), (1, 0, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            True,
+        ),
+        (
+            ((1, 0, -1), (-1, 0, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            True,
+        ),
+        (
+            ((0, 0, -2), (0, 0, -1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            False,
+        ),
+        (
+            ((10, 0, -1), (10, 0, 1)),
+            ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
+            False,
+        ),
+    ],
+)
+def test_line_intersects_triangle(
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    triangle: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    result_expected: bool,
+):
+    tuv = regridding.geometry.line_triangle_intersection_parameters(
+        line=line,
+        triangle=triangle,
+    )
+
+    result = regridding.geometry.line_intersects_triangle(tuv)
+
+    assert result == result_expected
+
+
+@pytest.mark.parametrize(
     argnames="line,triangle,result",
     argvalues=[
         (

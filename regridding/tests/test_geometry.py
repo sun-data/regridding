@@ -273,17 +273,17 @@ def test_two_line_segment_intersection_parameters(
             False,
         ),
         (
-            ((-10, 0, -1), (-10, 0, 1)),
+            ((1, 1, -1), (1, 1, 1)),
             ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
             False,
         ),
         (
-            ((10, 10, -1), (10, 10, 1)),
+            ((1, -1, -1), (1, -1, 1)),
             ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
             False,
         ),
         (
-            ((10, -10, -1), (10, -10, 1)),
+            ((-2, 0, -1), (-2, 0, 1)),
             ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
             False,
         ),
@@ -305,6 +305,7 @@ def test_line_intersects_triangle(
         line=line,
         triangle=triangle,
     )
+    print(f"{tuv=}")
 
     result = regridding.geometry.line_intersects_triangle(tuv)
 

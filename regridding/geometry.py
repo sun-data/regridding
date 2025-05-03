@@ -888,3 +888,28 @@ def point_is_inside_polyhedron(
         return True
     else:
         return False
+
+
+def volume_tetrahedron(
+    triangle: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+) -> float:
+    """
+    Compute the volume of the tetrahedron formed by a triangle and the origin.
+
+    Parameters
+    ----------
+    triangle
+        Three vertices of a triangle defining one face of the tetrahedron.
+    """
+    a, b, c = triangle
+
+    result = regridding.math.dot_3d(
+        a,
+        regridding.math.cross_3d(b, c),
+    )
+
+    return result / 6

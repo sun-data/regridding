@@ -15,6 +15,7 @@ __all__ = [
     "bounding_boxes_intersect_3d",
     "two_line_segment_intersection_parameters",
     "line_triangle_intersection_parameters",
+    "line_intersects_triangle",
     "line_triangle_intersection",
     "point_is_inside_polygon",
 ]
@@ -513,7 +514,8 @@ def line_triangle_intersection_parameters(
 
     See Also
     --------
-    :func:`line_triangle_intersection`: A function which can use these parameters to compute the actual intersection.
+    :func:`line_intersects_triangle`: A function which can use these parameters to check if there is an intersection.
+    :func:`line_triangle_intersection`: A function which can use these parameters to compute the coordinates of the intersection.
     """
 
     l_a, l_b = line
@@ -544,6 +546,42 @@ def line_triangle_intersection_parameters(
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
+def line_intersects_triangle(
+    tuv: tuple[float, float, float],
+) -> bool:
+    """
+    Check whether a given line segment intersects with a triangle.
+
+    Parameters
+    ----------
+    tuv
+        Intersection parameters computed using
+        :func:`line_triangle_intersection_parameters`.
+
+    See Also
+    --------
+    :func:`line_triangle_intersection_parameters`: The function used to compute `tuv`.
+    :func:`line_triangle_intersection`: A function to compute the coordinate of the intersection.
+    """
+
+    t, u, v = tuv
+
+    if not 0 <= t <= 1:
+        return False
+
+    if not 0 <= u <= 1:
+        return False
+
+    if not 0 <= v <= 1:
+        return False
+
+    if not (u + v) <= 1:
+        return False
+
+    return True
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def line_triangle_intersection(
     line: tuple[
         tuple[float, float, float],
@@ -568,6 +606,7 @@ def line_triangle_intersection(
     See Also
     --------
     :func:`line_triangle_intersection_parameters`: the function used to compute `tuv`.
+    :func:`line_intersects_triangle`: A function which can be used to check if the intersection exists.
 
     Examples
     --------

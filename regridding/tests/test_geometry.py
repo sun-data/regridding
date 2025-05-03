@@ -273,7 +273,7 @@ def test_two_line_segment_intersection_parameters(
             False,
         ),
         (
-            ((10, 0, -1), (10, 0, 1)),
+            ((-10, 0, -1), (-10, 0, 1)),
             ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
             False,
         ),
@@ -283,7 +283,7 @@ def test_two_line_segment_intersection_parameters(
             False,
         ),
         (
-            ((0, -10, -1), (0, -10, 1)),
+            ((10, -10, -1), (10, -10, 1)),
             ((1, 0, 0), (-1, 1, 0), (-1, -1, 0)),
             False,
         ),

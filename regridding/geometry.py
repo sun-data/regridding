@@ -898,7 +898,11 @@ def volume_tetrahedron(
     ],
 ) -> float:
     """
-    Compute the volume of the tetrahedron formed by a triangle and the origin.
+    Compute the signed volume of the tetrahedron formed by a triangle and the
+    origin.
+
+    If the vertices are oriented counterclockwise as viewed from the outside,
+    the volume will be positive, otherwise it will be negative.
 
     Parameters
     ----------

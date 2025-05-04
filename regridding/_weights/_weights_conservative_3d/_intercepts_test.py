@@ -5,6 +5,31 @@ from . import _intercepts
 
 
 @pytest.mark.parametrize(
+    argnames="line, point, result_expected",
+    argvalues=[
+        (
+            ((-1, -1, 0), (1, 1, 0)),
+            (-1, 1, 0),
+            (0, 0, 0),
+        )
+    ],
+)
+def test_line_point_closest_approach(
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    point: tuple[float, float, float],
+    result_expected: tuple[float, float, float],
+):
+    t = _intercepts._line_point_closest_approach_parameter(line, point)
+
+    result = _intercepts._line_point_closest_approach(line, t)
+
+    assert result == result_expected
+
+
+@pytest.mark.parametrize(
     argnames="grid_input,grid_output,volume_input",
     argvalues=[
         (

@@ -918,7 +918,7 @@ def volume_tetrahedron(
 
     .. math::
 
-        V = \frac{1}{6} \vec{a} \cdot (\vec{b] \times \vec{c})
+        V = \frac{1}{6} \vec{a} \cdot (\vec{b} \times \vec{c})
 
     where :math:`\vec{a}`, :math:`\vec{b}`, and :math:`\vec{c}` are the
     three other vertices of the tetrahedron.

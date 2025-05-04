@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from . import _volumes
+from . import _grids
 
 
 @pytest.mark.parametrize(
@@ -39,6 +39,6 @@ def test_volume_grid(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],
     result_expected: np.ndarray,
 ):
-    result = _volumes.volume_grid(grid)
+    result = _grids.grid_volume(grid)
     assert np.allclose(result, result_expected)
     assert result.shape == result_expected.shape

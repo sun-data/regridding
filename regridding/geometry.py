@@ -18,6 +18,7 @@ __all__ = [
     "line_intersects_triangle",
     "line_triangle_intersection",
     "point_is_inside_polygon",
+    "volume_tetrahedron",
 ]
 
 
@@ -890,6 +891,7 @@ def point_is_inside_polyhedron(
         return False
 
 
+@numba.njit(cache=True)
 def volume_tetrahedron(
     vertex_1: tuple[float, float, float],
     vertex_2: tuple[float, float, float],

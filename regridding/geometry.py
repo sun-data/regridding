@@ -891,29 +891,29 @@ def point_is_inside_polyhedron(
 
 
 def volume_tetrahedron(
-    triangle: tuple[
-        tuple[float, float, float],
-        tuple[float, float, float],
-        tuple[float, float, float],
-    ],
+    vertex_1: tuple[float, float, float],
+    vertex_2: tuple[float, float, float],
+    vertex_3: tuple[float, float, float],
 ) -> float:
     """
-    Compute the signed volume of the tetrahedron formed by a triangle and the
-    origin.
+    Compute the signed volume of the tetrahedron formed by three vertices
+    and the origin
 
     If the vertices are oriented counterclockwise as viewed from the outside,
     the volume will be positive, otherwise it will be negative.
 
     Parameters
     ----------
-    triangle
-        Three vertices of a triangle defining one face of the tetrahedron.
+    vertex_1
+        The first vertex of the tetrahedron.
+    vertex_2
+        The second vertex of the tetrahedron.
+    vertex_3
+        The third vertex of the tetrahedron.
     """
-    a, b, c = triangle
-
     result = regridding.math.dot_3d(
-        a,
-        regridding.math.cross_3d(b, c),
+        vertex_1,
+        regridding.math.cross_3d(vertex_2, vertex_3),
     )
 
     return result / 6

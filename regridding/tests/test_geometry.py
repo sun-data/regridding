@@ -590,35 +590,31 @@ def test_point_is_inside_polyhedron(
 
 
 @pytest.mark.parametrize(
-    argnames="triangle,result_expected",
+    argnames="vertex_1,vertex_2,vertex_3,result_expected",
     argvalues=[
         (
-            (
-                (1, 0, 0),
-                (0, 1, 0),
-                (0, 0, 1),
-            ),
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, 0, 1),
             1 / 6,
         ),
         (
-            (
-                (1, 0, 0),
-                (0, 0, 1),
-                (0, 1, 0),
-            ),
+            (1, 0, 0),
+            (0, 0, 1),
+            (0, 1, 0),
             -1 / 6,
         ),
     ],
 )
 def test_volume_tetrahedron(
-    triangle: tuple[
-        tuple[float, float, float],
-        tuple[float, float, float],
-        tuple[float, float, float],
-    ],
+    vertex_1: tuple[float, float, float],
+    vertex_2: tuple[float, float, float],
+    vertex_3: tuple[float, float, float],
     result_expected: float,
 ):
     result = regridding.geometry.volume_tetrahedron(
-        triangle=triangle,
+        vertex_1=vertex_1,
+        vertex_2=vertex_2,
+        vertex_3=vertex_3,
     )
     assert result == result_expected

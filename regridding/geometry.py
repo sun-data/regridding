@@ -910,6 +910,19 @@ def volume_tetrahedron(
         The second vertex of the tetrahedron.
     vertex_3
         The third vertex of the tetrahedron.
+
+    Notes
+    -----
+
+    The volume of a tetrahedron with one vertex located at the origin is
+
+    .. math::
+
+        V = \frac{1}{6} \vec{a} \cdot (\vec{b] \times \vec{c})
+
+    where :math:`\vec{a}`, :math:`\vec{b}`, and :math:`\vec{c}` are the
+    three other vertices of the tetrahedron.
+
     """
     result = regridding.math.dot_3d(
         vertex_1,

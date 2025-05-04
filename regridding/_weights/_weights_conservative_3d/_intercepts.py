@@ -7,7 +7,6 @@ import numpy as np
 import numba
 import regridding as rg
 from . import _arrays
-from . import _volumes
 from . import _grids
 
 
@@ -45,6 +44,69 @@ def empty(
             intercepts_a.append(intercepts_ab)
         intercepts.append(intercepts_a)
     return intercepts
+
+
+def _line_point_closest_approach_parameter(
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    point: tuple[float, float, float],
+) -> float:
+    """
+    Compute the parameter describing the point of closest approach of line
+    segment to a point.
+
+    Based on a `StackExchange answer by John Hughes <https://math.stackexchange.com/a/2193733/502546>`_.
+
+    Parameters
+    ----------
+    line
+        A line segment in 3D.
+    point
+        A point in 3D
+    """
+
+    a, b = line
+    p = point
+
+    v = rg.math.difference_3d(b, a)
+    u = rg.math.difference_3d(a, p)
+
+    numerator = -rg.math.dot_3d(v, u)
+    denominator = rg.math.dot_3d(v, v)
+
+    return numerator / denominator
+
+
+def _line_point_closest_approach(
+    line: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    t: float,
+) -> tuple[float, float, float]:
+    """
+    Compute the point of closest approach of line segment to a point using
+    the parameter computed using :func:`_line_point_closest_approach_parameter`.
+
+    Based on a `StackExchange answer by John Hughes <https://math.stackexchange.com/a/2193733/502546>`_.
+
+    Parameters
+    ----------
+    line
+        A line segment in 3D.
+    t
+        The parameter of closest approach.
+    """
+    a, b = line
+
+    s = 1 - t
+
+    a2 = rg.math.multiply_3d(s, a)
+    b2 = rg.math.multiply_3d(t, b)
+
+    return rg.math.sum_3d(a2, b2)
 
 
 @numba.njit(cache=True)
@@ -136,8 +198,8 @@ def sweep(
                             z_output[i0_output],
                         )
 
-                        vol_input = _volumes.volume_tetrahedron(apex_input, p0, p1)
-                        vol_output = _volumes.volume_tetrahedron(apex_output, p0, p1)
+                        vol_input = rg.geometry.volume_tetrahedron(apex_input, p0, p1)
+                        vol_output = rg.geometry.volume_tetrahedron(apex_output, p0, p1)
 
                         volume_input_lower = volume_input[i0_input_lower]
                         volume_input_upper = volume_input[i0_output_upper]
@@ -167,7 +229,6 @@ def sweep(
                             index=i0_input_upper,
                             shape=shape_input,
                         )
-
                         i0_output_lower = _arrays.index_flat(
                             index=i0_output_lower,
                             shape=shape_output,

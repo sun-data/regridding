@@ -895,7 +895,7 @@ def volume_tetrahedron(
     vertex_2: tuple[float, float, float],
     vertex_3: tuple[float, float, float],
 ) -> float:
-    """
+    r"""
     Compute the signed volume of the tetrahedron formed by three vertices
     and the origin
 

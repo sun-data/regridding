@@ -110,24 +110,21 @@ def _grid_volume_sweep(
                 v1 = x[i, j, k1], y[i, j, k1], z[i, j, k1]
                 v2 = x[i, j, k2], y[i, j, k2], z[i, j, k2]
 
-                volume_left = 0
-                volume_lower = 0
-
                 if i_left >= 0:
+
                     v0_left = x[i_left, j, k], y[i_left, j, k], z[i_left, j, k]
                     volume_left = rg.geometry.volume_tetrahedron(v0_left, v1, v2)
 
-                if j_lower >= 0:
-                    v0_lower = x[i, j_lower, k], y[i, j_lower, k], z[i, j_lower, k]
-                    volume_lower = -rg.geometry.volume_tetrahedron(v0_lower, v1, v2)
-
-                if i_left >= 0:
                     if j_lower >= 0:
                         out[i_left, j_lower, k] -= volume_left
                     if j_upper < (num_j - 1):
                         out[i_left, j_upper, k] += volume_left
 
                 if j_lower >= 0:
+
+                    v0_lower = x[i, j_lower, k], y[i, j_lower, k], z[i, j_lower, k]
+                    volume_lower = -rg.geometry.volume_tetrahedron(v0_lower, v1, v2)
+
                     if i_left >= 0:
                         out[i_left, j_lower, k] -= volume_lower
                     if i_right < (num_i - 1):

@@ -9,6 +9,7 @@ __all__ = [
     "axis_x",
     "axis_y",
     "axis_z",
+    "axes",
     "index_in_bounds",
     "index_flat",
     "index_3d",
@@ -19,6 +20,8 @@ __all__ = [
 axis_x = 0
 axis_y = 1
 axis_z = 2
+
+axes = (axis_x, axis_y, axis_z)
 
 
 @numba.njit(cache=True)

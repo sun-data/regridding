@@ -39,40 +39,5 @@ def test_weights_conservative_3d(
 
 
 
-@pytest.mark.parametrize(
-    argnames="point,grid,result_expected",
-    argvalues=[
-        (
-            (0.5, 0.5, 0.5),
-            np.meshgrid(
-                np.arange(3),
-                np.arange(4),
-                np.arange(5),
-                indexing="ij",
-            ),
-            (0, 0, 0),
-        ),
-        (
-            (-0.5, -0.5, 3.5),
-            np.meshgrid(
-                -np.arange(3),
-                -np.arange(4),
-                np.arange(5),
-                indexing="ij",
-            ),
-            (0, 0, 3),
-        ),
-    ],
-)
-def test_index_of_point_brute(
-    point: tuple[float, float, float],
-    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-    result_expected: np.ndarray,
-):
-    result = _weights_conservative_3d._index_of_point_brute(
-        point=point,
-        grid=grid,
-    )
 
-    assert result == result_expected
 

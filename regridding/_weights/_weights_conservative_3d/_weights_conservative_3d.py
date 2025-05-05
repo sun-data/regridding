@@ -44,7 +44,7 @@ def weights_conservative_3d(
 
     weights = numba.typed.List()
     for x in range(0):
-        weights.append((0.0, 0.0, 0.0))
+        weights.append((0, 0, 0.0))
 
     volume_input = _volumes.volume_grid(grid_input)
 
@@ -114,7 +114,7 @@ def _sweep_grid(
         (grid_static_x.max(), grid_static_y.max(), grid_static_z.max()),
     )
 
-    indices_boundary, triangles_boundary = _indices_and_triangles_of_boundary(grid_static)
+    indices_boundary, triangles_boundary = _grids.boundary(grid_static)
 
     axes_parallel = (
         axis_x,
@@ -134,8 +134,8 @@ def _sweep_grid(
             grid_output=grid_output,
             volume_input=volume_input,
             bbox_boundary=bbox_boundary,
-            index_boundary=index_boundary,
-            coord_boundary=coord_boundary,
+            indices_boundary=indices_boundary,
+            triangles_boundary=triangles_boundary,
             weights=weights,
             intercepts=intercepts,
             sweep_input=sweep_input,
@@ -209,7 +209,7 @@ def _sweep_along_axis(
     for i in range(shape_sweep_x):
         weight_i = numba.typed.List()
         for _ in range(0):
-            weight_i.append((0., 0., 0.))
+            weight_i.append((0, 0, 0.))
         weight.append(weight_i)
 
     for i in numba.prange(shape_sweep_x):
@@ -240,7 +240,7 @@ def _sweep_along_axis(
                     point=point_1,
                     polyhedron=coord_boundary,
                 ):
-                    index_static = _index_of_point_brute(
+                    index_static = _grids.index_of_point_brute(
                         point=point_1,
                         grid=grid_static,
                     )
@@ -375,40 +375,78 @@ def _step_inside_static(
         tuple[float, float, float],
         tuple[float, float, float],
     ],
-    index_static: tuple[int, int, int],
     index_sweep: tuple[int, int, int],
+    index_static: tuple[int, int, int],
+    grid_sweep: tuple[np.ndarray, np.ndarray, np.ndarray],
     grid_static: tuple[np.ndarray, np.ndarray, np.ndarray],
+    shape_cells_input: tuple[int, int, int],
+    shape_cells_output: tuple[int, int, int],
     weights: numba.typed.List[tuple[int, int, float]],
-) -> None:
+    intercepts: numba.typed.List,
+    sweep_input: bool,
+    axis: int,
+) -> tuple[
+    tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+    tuple[int, int, int],
+    tuple[int, int, int],
+]:
     """
     Check if the current line segment crosses any face of the current cell
     in the static grid.
     If it does, compute the intersection point and indices of the new
     cell in the static grid.
+    Otherwise, increment the index of the sweep grid.
 
     Parameters
     ----------
-    point_1
-        The first point of the line segment.
-    point_2
-        The second point of the line segment.
-    index_static
-        The current index in the static grid.
+    line
+        The current line segment of the sweep grid.
     index_sweep
         The current index in the sweep grid.
+        This is assumed to be a valid, positive index.
+    index_static
+        The current index in the static grid.
+        This is assumed to be a valid, positive index.
+    grid_sweep
+        The vertices of the sweep grid.
+        The last axis of this grid must be the sweep axis.
     grid_static
         Coordinates of the static grid.
+    shape_cells_input
+        The number of cells along each axis of the input grid.
+        This could be calculated from the other arguments,
+        but we don't to save computation time.
+    shape_cells_output
+        The number of cells along each axis of the output grid.
+        Like `shape_cells_input`,
+        this could be calculated from the other arguments,
+        but we don't to save computation time.
     weights
         The current list of weights.
         New weights will be appended to this list.
+    intercepts
+        A sorted list of intercepts to be traversed later.
+        As new intercepts are found, they are inserted into the list.
+    sweep_input
+        A boolean flag indicating whether to iterate along `grid_input`
+        or `grid_output`.
+        If :obj:`True`, this function sweeps along `grid_input`.
+    axis
+        The logical axis of the sweep grid to iterate along.
     """
 
-    point_1, point_2 = line
+    p1, p2 = line
 
     i, j, k = index_sweep
     l, m, n = index_static
 
-    x, y, z = grid_static
+    x_sweep, y_sweep, z_sweep = grid_sweep
+    x_static, y_static, z_static = grid_static
+
+    shape_sweep = x_sweep.shape
 
     i_000 = l + 0, m + 0, n + 0
     i_001 = l + 0, m + 0, n + 1
@@ -434,6 +472,21 @@ def _step_inside_static(
         (i_111, i_110, i_010),
     )
 
+    axis_index = (
+        2,
+        2,
+        2,
+        2,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+    )
+
     normals_index = (
         (0, 0, -1),
         (0, 0, -1),
@@ -453,9 +506,9 @@ def _step_inside_static(
 
         i0, i1, i2 = indices_triangles[t]
 
-        v0 = (x[i0], y[i0], z[i0])
-        v1 = (x[i1], y[i1], z[i1])
-        v2 = (x[i2], y[i2], z[i2])
+        v0 = (x_static[i0], y_static[i0], z_static[i0])
+        v1 = (x_static[i1], y_static[i1], z_static[i1])
+        v2 = (x_static[i2], y_static[i2], z_static[i2])
 
         triangle = (v0, v1, v2)
 
@@ -471,30 +524,133 @@ def _step_inside_static(
                 tuv=tuv,
             )
 
-            line = (point_1, intercept)
+            p2 = intercept
 
             normal_index = normals_index[t]
 
-            index_static = rg.math.sum_3d(index_static, normal_index)
+            index_static_new = rg.math.sum_3d(index_static, normal_index)
 
+            axis_static = axis_index[t]
 
+            if index_static_new[axis_static] > index_static[axis_static]:
+                index_static_intercept = index_static_new
+            else:
+                index_static_intercept = index_static
 
-        else:
-            index_sweep = i, j, k + 1
+            axes_orthogonal = [ax for ax in _arrays.axes if ax != axis]
 
+            for axis_orthogonal in axes_orthogonal:
 
+                if sweep_input:
+                    axis_input = axis_orthogonal
+                    axis_output = axis_static
+                else:
+                    axis_input = axis_static
+                    axis_output = axis_orthogonal
 
-        # index_left
-        #
-        # volume_sweep =
-        #
-        # i_normal, j_normal, k_normal = normals_index[t]
+                index_input, index_output = _index_input_output(
+                    index_sweep=index_sweep,
+                    index_static=index_static_intercept,
+                    sweep_input=sweep_input,
+                    axis=axis,
+                )
 
+                i_input = index_input[axis_input]
+                i_output = index_output[axis_output]
 
+                _intercepts.insert_intercept(
+                    intercepts=intercepts[axis_input][axis_output][i_input][i_output],
+                    intercept_new=(
+                        _arrays.index_flat(index_input, shape_cells_input),
+                        _arrays.index_flat(index_output, shape_cells_output),
+                        intercept,
+                    ),
+                )
 
+                break
 
+    else:
+        index_sweep = i, j, k + 1
 
+    i_left = i - 1
+    i_right = i
 
+    j_lower = j - 1
+    j_upper = j
+
+    index_sweep_left = i_left, j, k
+    index_sweep_lower = i, j_lower, k
+
+    p0_left = (
+        x_sweep[index_sweep_left],
+        y_sweep[index_sweep_left],
+        z_sweep[index_sweep_left],
+    )
+    p0_lower = (
+        x_sweep[index_sweep_lower],
+        y_sweep[index_sweep_lower],
+        z_sweep[index_sweep_lower],
+    )
+
+    volume_left = rg.geometry.volume_tetrahedron(p0_left, p1, p2)
+    volume_lower = -rg.geometry.volume_tetrahedron(p0_lower, p1, p1)
+
+    if i_left >= 0:
+        if j_lower >= 0:
+
+            index_sweep_00 = i_left, j_lower, k
+
+            index_input_00, index_output_00 = _index_input_output(
+                index_sweep=index_sweep_00,
+                index_static=index_static,
+                sweep_input=sweep_input,
+                axis=axis,
+            )
+
+            index_input_00 = _arrays.index_flat(index_input_00, shape_cells_input)
+            index_output_00 = _arrays.index_flat(index_output_00, shape_cells_output)
+
+            volume_lower_left = -volume_lower - volume_left
+            weights.append((index_input_00, index_output_00, volume_lower_left))
+
+        if j_upper < (shape_sweep[1] - 1):
+
+            index_sweep_01 = i_left, j_upper, k
+
+            index_input_01, index_output_01 = _index_input_output(
+                index_sweep=index_sweep_01,
+                index_static=index_static,
+                sweep_input=sweep_input,
+                axis=axis,
+            )
+
+            index_input_01 = _arrays.index_flat(index_input_01, shape_cells_input)
+            index_output_01 = _arrays.index_flat(index_output_01, shape_cells_output)
+
+            volume_upper_left = volume_left
+            weights.append((index_input_01, index_output_01, volume_upper_left))
+
+    if i_right < (shape_sweep[0] - 1):
+        if j_lower >= 0:
+
+            index_sweep_10 = i_right, j_lower, k
+
+            index_input_10, index_output_10 = _index_input_output(
+                index_sweep=index_sweep_10,
+                index_static=index_static,
+                sweep_input=sweep_input,
+                axis=axis,
+            )
+
+            index_input_10 = _arrays.index_flat(index_input_10, shape_cells_input)
+            index_output_10 = _arrays.index_flat(index_output_10, shape_cells_output)
+
+            volume_lower_right = volume_lower
+            weights.append((index_input_10, index_output_10, volume_lower_right))
+
+    line = p1, p2
+
+    return line, index_sweep, index_static
 
 
 @numba.njit(cache=True)
@@ -566,274 +722,3 @@ def _index_input_output(
 
     return index_input, index_output
 
-
-
-
-
-
-@numba.njit(cache=True)
-def _indices_and_triangles_of_boundary(
-    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> tuple[
-    numba.typed.List[
-        tuple[int, int, int],
-    ],
-    numba.typed.List[
-        tuple[
-            tuple[float, float, float],
-            tuple[float, float, float],
-            tuple[float, float, float],
-        ],
-    ],
-]:
-    """
-    For a given grid, find the indices of the boundary cells
-    and the vertices of all the triangles on the boundary.
-
-    find the set of indices that expresses the boundary
-    as a sequence of triangles.
-
-    Parameters
-    ----------
-    grid
-        A logically-rectangular grid of cell vertices.
-    """
-
-    x, y, z = grid
-
-    shape_x, shape_y, shape_z = x.shape
-
-    indices = numba.typed.List()
-
-    triangles = numba.typed.List()
-
-    for i0 in range(shape_x - 1):
-        for j0 in range(shape_y - 1):
-
-            k0 = 0
-
-            i1 = i0 + 1
-            j1 = j0 + 1
-
-            i_cell = i0, j0, k0
-
-            i_000 = i0, j0, k0
-            i_010 = i0, j1, k0
-            i_110 = i1, j1, k0
-            i_100 = i1, j0, k0
-
-            v_000 = x[i_000], y[i_000], z[i_000]
-            v_010 = x[i_010], y[i_010], z[i_010]
-            v_110 = x[i_110], y[i_110], z[i_110]
-            v_100 = x[i_100], y[i_100], z[i_100]
-
-            indices.append(i_cell)
-            indices.append(i_cell)
-
-            triangles.append((v_000, v_010, v_110))
-            triangles.append((v_110, v_100, v_000))
-
-    for i0 in range(shape_x - 1):
-        for j0 in range(shape_y - 1):
-
-            k1 = shape_z
-
-            i1 = i0 + 1
-            j1 = j0 + 1
-
-            i_cell = i0, j0, k1 - 1
-
-            i_001 = i0, j0, k1
-            i_101 = i1, j0, k1
-            i_111 = i1, j1, k1
-            i_011 = i0, j1, k1
-
-            v_001 = x[i_001], y[i_001], z[i_001]
-            v_101 = x[i_101], y[i_101], z[i_101]
-            v_111 = x[i_111], y[i_111], z[i_111]
-            v_011 = x[i_011], y[i_011], z[i_011]
-
-            indices.append(i_cell)
-            indices.append(i_cell)
-
-            triangles.append((v_001, v_101, v_111))
-            triangles.append((v_111, v_011, v_001))
-
-    for j0 in range(shape_y - 1):
-        for k0 in range(shape_z - 1):
-
-            i0 = 0
-
-            j1 = j0 + 1
-            k1 = k0 + 1
-
-            i_cell = i0, j0, k0
-
-            i_000 = i0, j0, k0
-            i_001 = i0, j0, k1
-            i_011 = i0, j1, k1
-            i_010 = i0, j1, k0
-
-            v_000 = x[i_000], y[i_000], z[i_000]
-            v_001 = x[i_001], y[i_001], z[i_001]
-            v_011 = x[i_011], y[i_011], z[i_011]
-            v_010 = x[i_010], y[i_010], z[i_010]
-
-            indices.append(i_cell)
-            indices.append(i_cell)
-
-            triangles.append((v_000, v_001, v_011))
-            triangles.append((v_011, v_010, v_000))
-
-    for j0 in range(shape_y - 1):
-        for k0 in range(shape_z - 1):
-
-            i1 = shape_x
-
-            j1 = j0 + 1
-            k1 = k0 + 1
-
-            i_cell = i1 - 1, j0, k0
-
-            i_100 = i1, j0, k0
-            i_110 = i1, j1, k0
-            i_111 = i1, j1, k1
-            i_101 = i1, j0, k1
-
-            v_100 = x[i_100], y[i_100], z[i_100]
-            v_110 = x[i_110], y[i_110], z[i_110]
-            v_111 = x[i_111], y[i_111], z[i_111]
-            v_101 = x[i_101], y[i_101], z[i_101]
-
-            indices.append(i_cell)
-            indices.append(i_cell)
-
-            triangles.append((v_100, v_110, v_111))
-            triangles.append((v_111, v_101, v_100))
-
-    for i0 in range(shape_x - 1):
-        for k0 in range(shape_z - 1):
-
-            j0 = 0
-
-            i1 = i0 + 1
-            k1 = k0 + 1
-
-            i_cell = i0, j0, k0
-
-            i_000 = i0, j0, k0
-            i_100 = i1, j0, k0
-            i_101 = i1, j0, k1
-            i_001 = i0, j0, k1
-
-            v_000 = x[i_000], y[i_000], z[i_000]
-            v_100 = x[i_100], y[i_100], z[i_100]
-            v_101 = x[i_101], y[i_101], z[i_101]
-            v_001 = x[i_001], y[i_001], z[i_001]
-
-            indices.append(i_cell)
-            indices.append(i_cell)
-
-            triangles.append((v_000, v_100, v_101))
-            triangles.append((v_101, v_001, v_000))
-
-    for i0 in range(shape_x - 1):
-        for k0 in range(shape_z - 1):
-
-            j1 = shape_y
-
-            i1 = i0 + 1
-            k1 = k0 + 1
-
-            i_cell = i0, j1 - 1, k0
-
-            i_010 = i0, j1, k0
-            i_011 = i0, j1, k1
-            i_111 = i1, j1, k1
-            i_110 = i1, j1, k0
-
-            v_010 = x[i_010], y[i_010], z[i_010]
-            v_011 = x[i_011], y[i_011], z[i_011]
-            v_111 = x[i_111], y[i_111], z[i_111]
-            v_110 = x[i_110], y[i_110], z[i_110]
-
-            indices.append(i_cell)
-            indices.append(i_cell)
-
-            triangles.append((v_010, v_011, v_111))
-            triangles.append((v_111, v_110, v_010))
-
-    return indices, triangles
-
-
-@numba.njit(cache=True)
-def _index_of_point_brute(
-    point: tuple[float, float, float],
-    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> tuple[int, int, int]:
-    """
-    Find the index of the cell in the grid which contains the given point.
-
-    This function uses brute force to search,
-    but this could be improved significantly by using the secant method
-    or possibly the bisection method.
-
-    Parameters
-    ----------
-    point
-        The query point.
-    grid
-        A logically-rectangular grid of cell vertices.
-    """
-
-    x, y, z = grid
-
-    shape_x, shape_y, shape_z = x.shape
-
-    for i in range(shape_x - 1):
-        for j in range(shape_y - 1):
-            for k in range(shape_z - 1):
-
-                i_000 = i + 0, j + 0, k + 0
-                i_001 = i + 0, j + 0, k + 1
-                i_010 = i + 0, j + 1, k + 0
-                i_011 = i + 0, j + 1, k + 1
-                i_100 = i + 1, j + 0, k + 0
-                i_101 = i + 1, j + 0, k + 1
-                i_110 = i + 1, j + 1, k + 0
-                i_111 = i + 1, j + 1, k + 1
-
-                indices = (
-                    (i_000, i_010, i_110),
-                    (i_110, i_100, i_000),
-                    (i_001, i_101, i_111),
-                    (i_111, i_011, i_001),
-                    (i_000, i_001, i_011),
-                    (i_011, i_010, i_000),
-                    (i_100, i_110, i_111),
-                    (i_111, i_101, i_100),
-                    (i_000, i_100, i_101),
-                    (i_101, i_001, i_000),
-                    (i_010, i_011, i_111),
-                    (i_111, i_110, i_010),
-                )
-
-                polyhedron = numba.typed.List()
-
-                for index in indices:
-
-                    t0, t1, t2 = index
-
-                    triangle = (
-                        (x[t0], y[t0], z[t0]),
-                        (x[t1], y[t1], z[t1]),
-                        (x[t2], y[t2], z[t2]),
-                    )
-
-                    polyhedron.append(triangle)
-
-                if rg.geometry.point_is_inside_polyhedron(
-                    point=point,
-                    polyhedron=polyhedron,
-                ):
-                    return i, j, k

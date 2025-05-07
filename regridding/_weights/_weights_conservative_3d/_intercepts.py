@@ -46,6 +46,23 @@ def empty(
     return intercepts
 
 
+def insert_intercept(
+    intercepts: numba.typed.List[tuple[int, int, tuple[float, float, float]]],
+    intercept_new: tuple[int, int, tuple[float, float, float]],
+) -> None:
+    """
+    Insert a new intercept into the current list of intercepts at the correct
+    point so that the list maintains sorted order.
+
+    Parameters
+    ----------
+    intercepts
+        The current list of intercepts.
+    intercept_new
+        A new intercept to insert into the list.
+    """
+
+
 def _line_point_closest_approach_parameter(
     line: tuple[
         tuple[float, float, float],

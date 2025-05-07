@@ -10,7 +10,10 @@ from . import _arrays
 
 __all__ = [
     "shape_centers",
-    "boundary",
+    "cell_axes",
+    "cell_normals",
+    "cell_boundary",
+    "grid_boundary",
     "index_of_point_brute",
 ]
 
@@ -133,8 +136,111 @@ def _grid_volume_sweep(
                         out[i_right, j_lower, k] += volume_lower
 
 
+cell_axes = (
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+)
+"""
+The index of the axis normal to each face in :func:`cell_boundary`.
+"""
+
+cell_normals = (
+    (0, 0, -1),
+    (0, 0, -1),
+    (0, 0, +1),
+    (0, 0, +1),
+    (-1, 0, 0),
+    (-1, 0, 0),
+    (+1, 0, 0),
+    (+1, 0, 0),
+    (0, -1, 0),
+    (0, -1, 0),
+    (0, +1, 0),
+    (0, +1, 0),
+)
+"""
+Vectors normal to each face in :func:`cell_boundary`.
+"""
+
+
 @numba.njit(cache=True)
-def boundary(
+def cell_boundary(
+    index: tuple[int, int, int],
+    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> numba.typed.List[
+    tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ],
+]:
+    """
+    For a given cell in a grid of cell vertices,
+    compute the 12 triangles composing the boundary.
+
+    Parameters
+    ----------
+    index
+        The index of the cell to compute the boundary of.
+    grid
+        A grid of cell vertices.
+
+    """
+    i, j, k = index
+
+    x, y, z = grid
+
+    i_000 = i + 0, j + 0, k + 0
+    i_001 = i + 0, j + 0, k + 1
+    i_010 = i + 0, j + 1, k + 0
+    i_011 = i + 0, j + 1, k + 1
+    i_100 = i + 1, j + 0, k + 0
+    i_101 = i + 1, j + 0, k + 1
+    i_110 = i + 1, j + 1, k + 0
+    i_111 = i + 1, j + 1, k + 1
+
+    indices_triangles = (
+        (i_000, i_010, i_110),
+        (i_110, i_100, i_000),
+        (i_001, i_101, i_111),
+        (i_111, i_011, i_001),
+        (i_000, i_001, i_011),
+        (i_011, i_010, i_000),
+        (i_100, i_110, i_111),
+        (i_111, i_101, i_100),
+        (i_000, i_100, i_101),
+        (i_101, i_001, i_000),
+        (i_010, i_011, i_111),
+        (i_111, i_110, i_010),
+    )
+
+    polyhedron = numba.typed.List()
+
+    for t in range(len(indices_triangles)):
+
+        i0, i1, i2 = indices_triangles[t]
+
+        v0 = x[i0], y[i0], z[i0]
+        v1 = x[i1], y[i1], z[i1]
+        v2 = x[i2], y[i2], z[i2]
+
+        polyhedron.append((v0, v1, v2))
+
+    return polyhedron
+
+
+@numba.njit(cache=True)
+def grid_boundary(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> tuple[
     numba.typed.List[
@@ -356,46 +462,15 @@ def index_of_point_brute(
         for j in range(shape_y - 1):
             for k in range(shape_z - 1):
 
-                i_000 = i + 0, j + 0, k + 0
-                i_001 = i + 0, j + 0, k + 1
-                i_010 = i + 0, j + 1, k + 0
-                i_011 = i + 0, j + 1, k + 1
-                i_100 = i + 1, j + 0, k + 0
-                i_101 = i + 1, j + 0, k + 1
-                i_110 = i + 1, j + 1, k + 0
-                i_111 = i + 1, j + 1, k + 1
+                index = i, j, k
 
-                indices = (
-                    (i_000, i_010, i_110),
-                    (i_110, i_100, i_000),
-                    (i_001, i_101, i_111),
-                    (i_111, i_011, i_001),
-                    (i_000, i_001, i_011),
-                    (i_011, i_010, i_000),
-                    (i_100, i_110, i_111),
-                    (i_111, i_101, i_100),
-                    (i_000, i_100, i_101),
-                    (i_101, i_001, i_000),
-                    (i_010, i_011, i_111),
-                    (i_111, i_110, i_010),
+                polyhedron = cell_boundary(
+                    index=index,
+                    grid=grid,
                 )
-
-                polyhedron = numba.typed.List()
-
-                for index in indices:
-
-                    t0, t1, t2 = index
-
-                    triangle = (
-                        (x[t0], y[t0], z[t0]),
-                        (x[t1], y[t1], z[t1]),
-                        (x[t2], y[t2], z[t2]),
-                    )
-
-                    polyhedron.append(triangle)
 
                 if rg.geometry.point_is_inside_polyhedron(
                     point=point,
                     polyhedron=polyhedron,
                 ):
-                    return i, j, k
+                    return index

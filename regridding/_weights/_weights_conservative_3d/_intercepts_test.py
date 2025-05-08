@@ -4,6 +4,77 @@ import numba
 from . import _intercepts
 
 
+intercepts1 = numba.typed.List([
+    (0, 0, (0, 0, 0)),
+    (0, 1, (1, 1, 1)),
+    (0, 2, (2, 2, 2)),
+])
+
+intercepts2 = numba.typed.List([
+    (0, 0, (0, 0, 0)),
+    (0, 1, (-1, 1, -1)),
+    (0, 2, (-2, 2, -2)),
+])
+
+
+@pytest.mark.parametrize(
+    argnames="intercepts,intercept_new,result_expected",
+    argvalues=[
+        (
+            intercepts1,
+            (0, 0, (-1, -1, -1)),
+            0,
+        ),
+        (
+            intercepts1,
+            (0, 0, (0.5, 0.25, 0.5)),
+            1,
+        ),
+        (
+            intercepts1,
+            (0, 0, (1.5, 1.25, 1.75)),
+            2,
+        ),
+        (
+            intercepts1,
+            (0, 0, (2.5, 2.25, 2.75)),
+            3,
+        ),
+        (
+            intercepts2,
+            (0, 0, (1, -1, 1)),
+            0,
+        ),
+        (
+            intercepts2,
+            (0, 0, (-0.5, 0.25, -0.5)),
+            1,
+        ),
+        (
+            intercepts2,
+            (0, 0, (-1.5, 1.25, -1.75)),
+            2,
+        ),
+        (
+            intercepts2,
+            (0, 0, (-2.5, 2.25, -2.75)),
+            3,
+        ),
+    ]
+)
+def test_bisect_intercepts(
+    intercepts: numba.typed.List[tuple[int, int, tuple[float, float, float]]],
+    intercept_new: tuple[int, int, tuple[float, float, float]],
+    result_expected: int,
+):
+    result = _intercepts._bisect_intercepts(
+        intercepts=intercepts,
+        intercept_new=intercept_new,
+    )
+
+    assert result == result_expected
+
+
 @pytest.mark.parametrize(
     argnames="line, point, result_expected",
     argvalues=[

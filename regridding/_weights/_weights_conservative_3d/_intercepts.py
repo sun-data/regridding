@@ -46,6 +46,7 @@ def empty(
     return intercepts
 
 
+@numba.njit(cache=True)
 def insert_intercept(
     intercepts: numba.typed.List[tuple[int, int, tuple[float, float, float]]],
     intercept_new: tuple[int, int, tuple[float, float, float]],
@@ -61,8 +62,73 @@ def insert_intercept(
     intercept_new
         A new intercept to insert into the list.
     """
+    index = _bisect_intercepts(intercepts, intercept_new)
+
+    intercepts.insert(index, intercept_new)
 
 
+@numba.njit(cache=True)
+def _bisect_intercepts(
+    intercepts: numba.typed.List[tuple[int, int, tuple[float, float, float]]],
+    intercept_new: tuple[int, int, tuple[float, float, float]],
+) -> int:
+    """
+    Given an ordered sequence of intercepts,
+    find the index for which a new intercept should be inserted to maintain
+    the ordering
+
+    Parameters
+    ----------
+    intercepts
+        The current list of intercepts.
+    intercept_new
+        A new intercept to insert into the list.
+    """
+
+    num_intercepts = len(intercepts)
+
+    _, _, intercept_new = intercept_new
+
+    index_left = 0
+    index_right = num_intercepts- 1
+
+    _, _, intercept_left = intercepts[index_left]
+    _, _, intercept_right = intercepts[index_right]
+
+    t_start = _line_point_closest_approach_parameter(
+        line=(intercept_left, intercept_right),
+        point=intercept_new,
+    )
+
+    if t_start < 0:
+        return 0
+
+    if t_start >= 1:
+        return num_intercepts
+
+    while (index_right - index_left) > 1:
+
+        index_middle = (index_left + index_right) // 2
+
+        _, _, intercept_middle = intercepts[index_middle]
+
+        t_left = _line_point_closest_approach_parameter(
+            line=(intercept_left, intercept_middle),
+            point=intercept_new,
+        )
+
+        if 0 <= t_left < 1:
+            index_right = index_middle
+            intercept_right = intercept_middle
+
+        else:
+            index_left = index_middle
+            intercept_left = intercept_middle
+
+    return index_right
+
+
+@numba.njit(cache=True)
 def _line_point_closest_approach_parameter(
     line: tuple[
         tuple[float, float, float],

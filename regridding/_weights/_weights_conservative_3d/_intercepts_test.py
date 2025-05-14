@@ -18,6 +18,34 @@ intercepts2 = numba.typed.List([
 
 
 @pytest.mark.parametrize(
+    argnames="intercepts,intercept_new",
+    argvalues=[
+        (
+            numba.typed.List([
+                (0, 0, (0, 0, 0)),
+                (0, 1, (-1, 1, -1)),
+                (0, 2, (-2, 2, -2)),
+            ]),
+            (0, 0, (-1, -1, -1)),
+        ),
+        (
+            _intercepts.empty((11,11,11), (11,11,11))[0][0][0][0],
+            (0, 0, (-1, -1, -1)),
+        ),
+    ],
+)
+def test_insert_intercept(
+    intercepts: numba.typed.List[tuple[int, int, tuple[float, float, float]]],
+    intercept_new: tuple[int, int, tuple[float, float, float]],
+):
+    length_old = len(intercepts)
+
+    _intercepts.insert_intercept(intercepts, intercept_new)
+
+    assert len(intercepts) == length_old + 1
+
+
+@pytest.mark.parametrize(
     argnames="intercepts,intercept_new,result_expected",
     argvalues=[
         (

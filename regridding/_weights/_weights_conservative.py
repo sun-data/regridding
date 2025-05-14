@@ -6,6 +6,7 @@ import numba
 from regridding import _util
 from ._weights_conservative_1d import weights_conservative_1d
 from regridding._conservative_ramshaw import _conservative_ramshaw
+from ._weights_conservative_3d import weights_conservative_3d
 
 
 def _weights_conservative(
@@ -127,9 +128,25 @@ def _weights_conservative(
                     weights_input=weights_input_index,
                 )
 
-            else:  # pragma: nocover
+            elif len(axis_input) == 3:
+            x_input, y_input, z_input = coordinates_input
+            x_output, y_output, z_output = coordinates_output
+            weights[index] = weights_conservative_3d(
+                grid_input=(
+                    x_input[index_vertices_input],
+                    y_input[index_vertices_input],
+                    z_input[index_vertices_input],
+                ),
+                grid_output=(
+                    x_output[index_vertices_output],
+                    y_output[index_vertices_output],
+                    z_output[index_vertices_output],
+                ),
+            )
+
+        else:  # pragma: nocover
                 raise NotImplementedError(
-                    "Regridding operations greater than 2D are not supported"
+                    "Regridding operations greater than 3D are not supported"
                 )
 
     return weights, shape_values_input, shape_values_output

@@ -304,7 +304,7 @@ def grid_boundary(
     for i0 in range(shape_x - 1):
         for j0 in range(shape_y - 1):
 
-            k1 = shape_z
+            k1 = shape_z - 1
 
             i1 = i0 + 1
             j1 = j0 + 1
@@ -356,7 +356,7 @@ def grid_boundary(
     for j0 in range(shape_y - 1):
         for k0 in range(shape_z - 1):
 
-            i1 = shape_x
+            i1 = shape_x - 1
 
             j1 = j0 + 1
             k1 = k0 + 1
@@ -408,7 +408,7 @@ def grid_boundary(
     for i0 in range(shape_x - 1):
         for k0 in range(shape_z - 1):
 
-            j1 = shape_y
+            j1 = shape_y - 1
 
             i1 = i0 + 1
             k1 = k0 + 1

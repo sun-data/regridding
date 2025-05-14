@@ -87,10 +87,13 @@ def _bisect_intercepts(
 
     num_intercepts = len(intercepts)
 
+    if num_intercepts < 2:
+        return num_intercepts
+
     _, _, intercept_new = intercept_new
 
     index_left = 0
-    index_right = num_intercepts- 1
+    index_right = num_intercepts - 1
 
     _, _, intercept_left = intercepts[index_left]
     _, _, intercept_right = intercepts[index_right]
@@ -304,53 +307,59 @@ def sweep(
                             shape=shape_centers_output,
                         )
 
-                        i0_input_lower = _arrays.index_flat(
+                        n0_input_lower = _arrays.index_flat(
                             index=i0_input_lower,
-                            shape=shape_input,
+                            shape=shape_centers_input,
                         )
-                        i0_input_upper = _arrays.index_flat(
+                        n0_input_upper = _arrays.index_flat(
                             index=i0_input_upper,
-                            shape=shape_input,
+                            shape=shape_centers_input,
                         )
-                        i0_output_lower = _arrays.index_flat(
+                        n0_output_lower = _arrays.index_flat(
                             index=i0_output_lower,
-                            shape=shape_output,
+                            shape=shape_centers_output,
                         )
-                        i0_output_upper = _arrays.index_flat(
+                        n0_output_upper = _arrays.index_flat(
                             index=i0_output_upper,
-                            shape=shape_output,
+                            shape=shape_centers_output,
                         )
 
                         if input_lower_in_bounds:
+
+                            volume_input_lower = volume_input[i0_input_lower]
+
                             if output_lower_in_bounds:
                                 weight_lower_lower = (
-                                    i0_input_lower,
-                                    i0_output_lower,
+                                    n0_input_lower,
+                                    n0_output_lower,
                                     (-vol_input - vol_output) / volume_input_lower,
                                 )
                                 weights.append(weight_lower_lower)
 
                             if output_upper_in_bounds:
                                 weight_lower_upper = (
-                                    i0_input_lower,
-                                    i0_output_upper,
+                                    n0_input_lower,
+                                    n0_output_upper,
                                     (-vol_input + vol_output) / volume_input_lower,
                                 )
                                 weights.append(weight_lower_upper)
 
                         if input_upper_in_bounds:
+
+                            volume_input_upper = volume_input[i0_input_upper]
+
                             if output_lower_in_bounds:
                                 weight_upper_lower = (
-                                    i0_input_upper,
-                                    i0_output_lower,
+                                    n0_input_upper,
+                                    n0_output_lower,
                                     (vol_input - vol_output) / volume_input_upper,
                                 )
                                 weights.append(weight_upper_lower)
 
                             if output_upper_in_bounds:
                                 weight_upper_upper = (
-                                    i0_input_upper,
-                                    i0_output_upper,
+                                    n0_input_upper,
+                                    n0_output_upper,
                                     (vol_input + vol_output) / volume_input_upper,
                                 )
                                 weights.append(weight_upper_upper)

@@ -799,8 +799,8 @@ def _calc_and_save_weights(
             index_input_00 = _arrays.index_flat(index_input_00, shape_cells_input)
             index_output_00 = _arrays.index_flat(index_output_00, shape_cells_output)
 
-            weights.append((index_input_00, index_output_00, volume_lower_left))
             volume_lower_left = (-volume_lower - volume_left) / volume_input_lower_left
+            weights.append((index_input_00, index_output_00, volume_lower_left))
 
         if j_upper < (shape_sweep[1] - 1):
 
@@ -818,8 +818,8 @@ def _calc_and_save_weights(
             index_input_01 = _arrays.index_flat(index_input_01, shape_cells_input)
             index_output_01 = _arrays.index_flat(index_output_01, shape_cells_output)
 
-            weights.append((index_input_01, index_output_01, volume_upper_left))
             volume_upper_left = volume_left / volume_input_upper_left
+            weights.append((index_input_01, index_output_01, volume_upper_left))
 
     if i_right < (shape_sweep[0] - 1):
         if j_lower >= 0:
@@ -839,6 +839,7 @@ def _calc_and_save_weights(
             index_output_10 = _arrays.index_flat(index_output_10, shape_cells_output)
 
             volume_lower_right = volume_lower / volume_input_lower_right
+            weights.append((index_input_10, index_output_10, volume_lower_right))
 
 
 @numba.njit(cache=True)
@@ -871,13 +872,6 @@ def _grid_sweep_static(
     else:
         grid_sweep = grid_output
         grid_static = grid_input
-
-    # axis = axis_sweep[~0]
-    # grid_sweep_x = _arrays.align_axis_right(grid_sweep_x, axis)
-    # grid_sweep_y = _arrays.align_axis_right(grid_sweep_y, axis)
-    # grid_sweep_z = _arrays.align_axis_right(grid_sweep_z, axis)
-    #
-    # grid_sweep = grid_sweep_x, grid_sweep_y, grid_sweep_z
 
     return grid_sweep, grid_static
 

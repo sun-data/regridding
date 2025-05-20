@@ -11,12 +11,12 @@ __all__ = [
 
 
 def weights(
-    coordinates_input: tuple[np.ndarray, ...],
-    coordinates_output: tuple[np.ndarray, ...],
-    axis_input: None | int | Sequence[int] = None,
-    axis_output: None | int | Sequence[int] = None,
-    method: Literal["multilinear", "conservative"] = "multilinear",
-) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+        coordinates_input: tuple[np.ndarray, ...],
+        coordinates_output: tuple[np.ndarray, ...],
+        axis_input: None | int | Sequence[int] = None,
+        axis_output: None | int | Sequence[int] = None,
+        method: Literal["multilinear", "conservative"] = "multilinear",
+) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
     """
     Save the results of a regridding operation as a sequence of weights,
     which can be used in subsequent regridding operations on the same grid.
@@ -137,5 +137,7 @@ def weights(
     else:
         raise ValueError(f"unrecognized method '{method}'")
 
-def transpose_weights(weights):
+
+def transpose_weights(weights: tuple[tuple[int, ...], tuple[int, ...], np.ndarray]
+                      ) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
     return numba.typed.List([(j, i, weight) for i, j, weight in weights])

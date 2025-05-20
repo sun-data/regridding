@@ -1,5 +1,6 @@
-from ._weights import weights
+from ._weights import weights, transpose_weights
 
 __all__ = [
     "weights",
+    "transpose_weights",
 ]

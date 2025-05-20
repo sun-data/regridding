@@ -2,9 +2,11 @@ from typing import Sequence, Literal
 import numpy as np
 from ._weights_multilinear import _weights_multilinear
 from ._weights_conservative import _weights_conservative
+import numba
 
 __all__ = [
     "weights",
+    "transpose_weights",
 ]
 
 
@@ -134,3 +136,6 @@ def weights(
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
+
+def transpose_weights(weights):
+    return numba.typed.List([(j, i, weight) for i, j, weight in weights])

@@ -166,7 +166,6 @@ def test_regrid_conservative_2d(
             None,
             (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
             None,
-            None,
         ),
         (
             (

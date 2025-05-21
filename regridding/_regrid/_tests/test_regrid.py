@@ -158,7 +158,7 @@ def test_regrid_conservative_2d(
 
 
 @pytest.mark.parametrize(
-    argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output",
+    argnames="coordinates_input, values_input, axis_input, coordinates_output, axis_output",
     argvalues=[
         (
             (x_broadcasted, y_broadcasted),
@@ -179,7 +179,6 @@ def test_regrid_conservative_2d(
                 1.1 * (x_broadcasted[..., np.newaxis] + np.array([0, 0.001])) + 0.01,
                 1.2 * (y_broadcasted[..., np.newaxis] + np.array([0, 0.01])) + 0.001,
             ),
-            None,
             (0, 1),
         ),
     ],

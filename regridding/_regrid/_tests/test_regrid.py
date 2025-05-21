@@ -155,3 +155,31 @@ def test_regrid_conservative_2d(
     assert np.issubdtype(result.dtype, float)
     assert result.shape == tuple(result_shape)
     assert np.isclose(result.sum(), values_input.sum())
+
+
+def test_transpose_weights(
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
+    values_input: np.ndarray,
+    values_output: None | np.ndarray,
+    axis_input: None | int | tuple[int, ...],
+    axis_output: None | int | tuple[int, ...],
+):
+
+    weights, shape_input, shape_output = regridding.weights(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
+
+    transposed_weights = regridding.transpose_weights(weights)
+
+    data = regridding.regrid_from_weights(
+        weights, shape_input, shape_output, values_input
+    )
+    reversed_data = regridding.regrid_from_weights(
+        transposed_weights, shape_output, shape_input, data
+    )
+
+    assert reversed_data.shape == values_input.shape

@@ -157,6 +157,33 @@ def test_regrid_conservative_2d(
     assert np.isclose(result.sum(), values_input.sum())
 
 
+@pytest.mark.parametrize(
+    argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output",
+    argvalues=[
+        (
+            (x_broadcasted, y_broadcasted),
+            np.random.normal(size=(10 - 1, 11 - 1)),
+            None,
+            (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
+            None,
+            None,
+        ),
+        (
+            (
+                x_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+                y_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+            ),
+            np.random.normal(size=(x.shape[0] - 1, y.shape[0] - 1, 2)),
+            (0, 1),
+            (
+                1.1 * (x_broadcasted[..., np.newaxis] + np.array([0, 0.001])) + 0.01,
+                1.2 * (y_broadcasted[..., np.newaxis] + np.array([0, 0.01])) + 0.001,
+            ),
+            None,
+            (0, 1),
+        ),
+    ],
+)
 def test_transpose_weights(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],

@@ -161,7 +161,6 @@ def test_transpose_weights(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
     values_input: np.ndarray,
-    values_output: None | np.ndarray,
     axis_input: None | int | tuple[int, ...],
     axis_output: None | int | tuple[int, ...],
 ):

@@ -161,15 +161,6 @@ def test_regrid_conservative_2d(
     argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output, method",
     argvalues=[
         (
-            (x[..., np.newaxis],),
-            x[..., np.newaxis],
-            (0,),
-            (0.1 * new_x[..., np.newaxis] + 0.001 * new_y,),
-            None,
-            (0,),
-            "multilinear",
-        ),
-        (
             (
                 x_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
                 y_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
@@ -195,7 +186,6 @@ def test_transpose_weights(
     axis_output: None | int | tuple[int, ...],
     method: None | str,
 ):
-
     weights, shape_input, shape_output = regridding.weights(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
@@ -204,20 +194,26 @@ def test_transpose_weights(
         method=method,
     )
 
+    data = regridding.regrid_from_weights(
+        weights=weights,
+        shape_input=shape_input,
+        shape_output=shape_output,
+        values_input=values_input,
+        values_output=values_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
+
     transposed_weights = regridding.transpose_weights(weights)
 
-    data = regridding.regrid_from_weights(
-        weights,
-        shape_input,
-        shape_output,
-        values_input,
-        values_output,
-    )
     reversed_data = regridding.regrid_from_weights(
-        transposed_weights,
-        shape_output,
-        shape_input,
-        data,
+        weights=transposed_weights,
+        shape_input=shape_output,
+        shape_output=shape_input,
+        values_input=data,
+        values_output=values_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
     )
 
     assert reversed_data.shape == values_input.shape

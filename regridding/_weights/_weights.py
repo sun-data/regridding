@@ -141,4 +141,12 @@ def weights(
 def transpose_weights(
     weights: tuple[tuple[int, ...], tuple[int, ...], np.ndarray],
 ) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
-    return numba.typed.List([(j, i, weight) for i, j, weight in weights])
+
+    flat_weights = weights.reshape(-1)
+    transposed_weights = np.empty_like(flat_weights)
+    for i, weights_list in enumerate(flat_weights):
+        transposed_weights[i] = numba.typed.List(
+            [(j, i, weight) for i, j, weight in weights_list]
+        )
+    transposed_weights = transposed_weights.reshape(weights.shape)
+    return transposed_weights

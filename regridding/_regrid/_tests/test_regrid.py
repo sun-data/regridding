@@ -162,12 +162,11 @@ def test_regrid_conservative_2d(
     argvalues=[
         (
             (x[..., np.newaxis],),
-            (0.1 * new_x[..., np.newaxis] + 0.001 * new_y,),
             x[..., np.newaxis],
+            (0,),
+            (0.1 * new_x[..., np.newaxis] + 0.001 * new_y,),
             None,
             (0,),
-            (0,),
-            0.1 * new_x[..., np.newaxis] + 0.001 * new_y,
             "multilinear",
         ),
         (

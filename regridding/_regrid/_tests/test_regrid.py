@@ -158,15 +158,17 @@ def test_regrid_conservative_2d(
 
 
 @pytest.mark.parametrize(
-    argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output",
+    argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output, method",
     argvalues=[
         (
-            (x_broadcasted, y_broadcasted),
-            np.random.normal(size=(10 - 1, 11 - 1)),
+            (x[..., np.newaxis],),
+            (0.1 * new_x[..., np.newaxis] + 0.001 * new_y,),
+            x[..., np.newaxis],
             None,
-            (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
-            None,
-            None,
+            (0,),
+            (0,),
+            0.1 * new_x[..., np.newaxis] + 0.001 * new_y,
+            "multilinear",
         ),
         (
             (
@@ -181,6 +183,7 @@ def test_regrid_conservative_2d(
             ),
             None,
             (0, 1),
+            "conservative",
         ),
     ],
 )
@@ -191,6 +194,7 @@ def test_transpose_weights(
     values_output: None | np.ndarray,
     axis_input: None | int | tuple[int, ...],
     axis_output: None | int | tuple[int, ...],
+    method: None | str,
 ):
 
     weights, shape_input, shape_output = regridding.weights(
@@ -198,6 +202,7 @@ def test_transpose_weights(
         coordinates_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
+        method=method,
     )
 
     transposed_weights = regridding.transpose_weights(weights)
@@ -210,7 +215,10 @@ def test_transpose_weights(
         values_output,
     )
     reversed_data = regridding.regrid_from_weights(
-        transposed_weights, shape_output, shape_input, data
+        transposed_weights,
+        shape_output,
+        shape_input,
+        data,
     )
 
     assert reversed_data.shape == values_input.shape

@@ -161,7 +161,6 @@ def transpose_weights(
     .. jupyter-execute::
 
         import numpy as np
-        import scipy.signal
         import matplotlib.pyplot as plt
         import regridding
 
@@ -204,7 +203,7 @@ def transpose_weights(
             transposed_weights,
             shape_output,
             shape_input,
-            values_input=values_input_2,
+            values_input=values_output_1,
         )
 
         # Plot the original and regridded arrays of values

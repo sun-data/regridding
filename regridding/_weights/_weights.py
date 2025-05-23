@@ -209,8 +209,8 @@ def transpose_weights(
 
         # Plot the original and regridded arrays of values
         fig, axs = plt.subplots(
-            nrows=3,
-            ncols=1,
+            nrows=1,
+            ncols=3,
             sharex=True,
             sharey=True,
             constrained_layout=True,

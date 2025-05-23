@@ -161,6 +161,7 @@ def transpose_weights(
     .. jupyter-execute::
 
         import numpy as np
+        import scipy.signal
         import matplotlib.pyplot as plt
         import regridding
 

@@ -217,7 +217,7 @@ def transpose_weights(
         )
         axs[0].pcolormesh(x_input, y_input, values_input_1);
         axs[0].set_title(r"values_input_1");
-        axs[1].pcolormesh(x_output, y_output, values_output_1);
+        axs[1].pcolormesh(x_input, y_input, values_output_1);
         axs[1].set_title(r"values_output_1");
         axs[2].pcolormesh(x_input, y_input, values_input_2);
         axs[2].set_title(r"values_input_2");

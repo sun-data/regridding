@@ -155,3 +155,65 @@ def test_regrid_conservative_2d(
     assert np.issubdtype(result.dtype, float)
     assert result.shape == tuple(result_shape)
     assert np.isclose(result.sum(), values_input.sum())
+
+
+@pytest.mark.parametrize(
+    argnames="coordinates_input, values_input, axis_input, coordinates_output, values_output, axis_output, method",
+    argvalues=[
+        (
+            (
+                x_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+                y_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+            ),
+            np.random.normal(size=(x.shape[0] - 1, y.shape[0] - 1, 2)),
+            (0, 1),
+            (
+                1.1 * (x_broadcasted[..., np.newaxis] + np.array([0, 0.001])) + 0.01,
+                1.2 * (y_broadcasted[..., np.newaxis] + np.array([0, 0.01])) + 0.001,
+            ),
+            None,
+            (0, 1),
+            "conservative",
+        ),
+    ],
+)
+def test_transpose_weights(
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
+    values_input: np.ndarray,
+    values_output: None | np.ndarray,
+    axis_input: None | int | tuple[int, ...],
+    axis_output: None | int | tuple[int, ...],
+    method: None | str,
+):
+    weights, shape_input, shape_output = regridding.weights(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        method=method,
+    )
+
+    data = regridding.regrid_from_weights(
+        weights=weights,
+        shape_input=shape_input,
+        shape_output=shape_output,
+        values_input=values_input,
+        values_output=values_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
+
+    transposed_weights = regridding.transpose_weights(weights)
+
+    reversed_data = regridding.regrid_from_weights(
+        weights=transposed_weights,
+        shape_input=shape_output,
+        shape_output=shape_input,
+        values_input=data,
+        values_output=values_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
+
+    assert reversed_data.shape == values_input.shape

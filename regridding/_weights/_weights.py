@@ -16,7 +16,7 @@ def weights(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
-) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
     which can be used in subsequent regridding operations on the same grid.
@@ -139,8 +139,8 @@ def weights(
 
 
 def transpose_weights(
-    weights: tuple[tuple[int, ...], tuple[int, ...], np.ndarray],
-) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
+    weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     r"""
     Swap indices, :math:`(i, j, w) \rightarrow (j, i, w)`,
     in array of weights lists calculated by :func:`regridding.weights`.
@@ -180,7 +180,7 @@ def transpose_weights(
         values_input[4, 4] = 1
 
         # Save regridding weights relating the input and output grids
-        weights, shape_input, shape_output = regridding.weights(
+        weights = regridding.weights(
             coordinates_input=(x_input, y_input),
             coordinates_output=(x_output, y_output),
             method="conservative",
@@ -188,9 +188,7 @@ def transpose_weights(
 
         # Regrid the first array of values using the saved weights
         values_output = regridding.regrid_from_weights(
-            weights,
-            shape_input,
-            shape_output,
+            *weights,
             values_input=values_input,
         )
 
@@ -199,9 +197,7 @@ def transpose_weights(
 
         # Regrid the regridded values back onto original grid using transposed weights.
         values_transposed = regridding.regrid_from_weights(
-            weights_transposed,
-            shape_output,
-            shape_input,
+            *weights_transposed,
             values_input=values_output,
         )
 
@@ -221,6 +217,8 @@ def transpose_weights(
         axs[2].set_title(r"rotated and tranposed");
     """
 
+    weights, shape_input, shape_output = weights
+
     flat_weights = weights.reshape(-1)
     transposed_weights = np.empty_like(flat_weights)
     for i, weights_list in enumerate(flat_weights):
@@ -228,4 +226,4 @@ def transpose_weights(
             [(j, i, weight) for i, j, weight in weights_list]
         )
     transposed_weights = transposed_weights.reshape(weights.shape)
-    return transposed_weights
+    return (transposed_weights, shape_output, shape_input)

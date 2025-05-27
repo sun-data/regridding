@@ -186,7 +186,7 @@ def test_transpose_weights(
     axis_output: None | int | tuple[int, ...],
     method: None | str,
 ):
-    weights, shape_input, shape_output = regridding.weights(
+    weights = regridding.weights(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
         axis_input=axis_input,
@@ -195,9 +195,7 @@ def test_transpose_weights(
     )
 
     data = regridding.regrid_from_weights(
-        weights=weights,
-        shape_input=shape_input,
-        shape_output=shape_output,
+        *weights,
         values_input=values_input,
         values_output=values_output,
         axis_input=axis_input,
@@ -207,9 +205,7 @@ def test_transpose_weights(
     transposed_weights = regridding.transpose_weights(weights)
 
     reversed_data = regridding.regrid_from_weights(
-        weights=transposed_weights,
-        shape_input=shape_output,
-        shape_output=shape_input,
+        *transposed_weights,
         values_input=data,
         values_output=values_output,
         axis_input=axis_input,

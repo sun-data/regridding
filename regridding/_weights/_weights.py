@@ -2,9 +2,11 @@ from typing import Sequence, Literal
 import numpy as np
 from ._weights_multilinear import _weights_multilinear
 from ._weights_conservative import _weights_conservative
+import numba
 
 __all__ = [
     "weights",
+    "transpose_weights",
 ]
 
 
@@ -134,3 +136,94 @@ def weights(
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
+
+
+def transpose_weights(
+    weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+    r"""
+    Swap indices, :math:`(i, j, w) \rightarrow (j, i, w)`,
+    in array of weights lists calculated by :func:`regridding.weights`.
+
+    Transposed weights can be used with :func:`regridding.regrid_from_weights`
+    to perform a transform in the opposite direction.
+
+    Parameters
+    ----------
+    weights
+        Ragged array of weights computed by :func:`regridding.weights`.
+
+    Examples
+    --------
+
+        Regrid array of values onto new grid with precalculated weights, and then transform back with transposed
+        weights.
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import regridding
+
+        # Define input grid
+        x_input = np.linspace(-4, 4, num=11)
+        y_input = np.linspace(-4, 4, num=11)
+        x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
+
+        # Define rotated output grid
+        angle = 0.2
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
+
+        # Define arrays of values defined on the same grid
+        values_input = np.zeros((10, 10))
+        values_input[4, 4] = 1
+
+        # Save regridding weights relating the input and output grids
+        weights = regridding.weights(
+            coordinates_input=(x_input, y_input),
+            coordinates_output=(x_output, y_output),
+            method="conservative",
+        )
+
+        # Regrid the first array of values using the saved weights
+        values_output = regridding.regrid_from_weights(
+            *weights,
+            values_input=values_input,
+        )
+
+        # Transpose calculated weights
+        weights_transposed = regridding.transpose_weights(weights)
+
+        # Regrid the regridded values back onto original grid using transposed weights.
+        values_transposed = regridding.regrid_from_weights(
+            *weights_transposed,
+            values_input=values_output,
+        )
+
+        # Plot the original and regridded arrays of values
+        fig, axs = plt.subplots(
+            nrows=1,
+            ncols=3,
+            sharex=True,
+            sharey=True,
+            constrained_layout=True,
+        )
+        axs[0].pcolormesh(x_input, y_input, values_input);
+        axs[0].set_title(r"original");
+        axs[1].pcolormesh(x_output, y_output, values_output);
+        axs[1].set_title(r"rotated");
+        axs[2].pcolormesh(x_input, y_input, values_transposed);
+        axs[2].set_title(r"rotated and tranposed");
+    """
+
+    weights, shape_input, shape_output = weights
+
+    flat_weights = weights.reshape(-1)
+    transposed_weights = np.empty_like(flat_weights)
+    for i, weights_list in enumerate(flat_weights):
+        transposed_weights[i] = numba.typed.List(
+            [(j, i, weight) for i, j, weight in weights_list]
+        )
+    transposed_weights = transposed_weights.reshape(weights.shape)
+    return (transposed_weights, shape_output, shape_input)

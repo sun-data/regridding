@@ -5,7 +5,7 @@ Resample arrays defined on curvilinear grids.
 from . import math
 from . import geometry
 from ._find_indices import find_indices
-from ._weights import weights
+from ._weights import weights, transpose_weights
 from ._interp_ndarray import ndarray_linear_interpolation
 from ._regrid import regrid_from_weights, regrid
 from ._fill import fill
@@ -15,6 +15,7 @@ __all__ = [
     "geometry",
     "find_indices",
     "weights",
+    "transpose_weights",
     "ndarray_linear_interpolation",
     "regrid_from_weights",
     "regrid",

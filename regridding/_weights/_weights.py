@@ -141,11 +141,12 @@ def weights(
 def transpose_weights(
     weights: tuple[tuple[int, ...], tuple[int, ...], np.ndarray],
 ) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
-    """
-    Swap indices, (i,j, weight) -> (j,i,weight), in array of weights lists calculated by :func:`regridding.weights`.
+    r"""
+    Swap indices, :math:`(i, j, w) \rightarrow (j, i, w)`,
+    in array of weights lists calculated by :func:`regridding.weights`.
 
-    Transposed weights can be used with :func:`regridding.regrid_from_weights` to perform a transform in the opposite
-    direction.
+    Transposed weights can be used with :func:`regridding.regrid_from_weights`
+    to perform a transform in the opposite direction.
 
     Parameters
     ----------

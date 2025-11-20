@@ -52,6 +52,7 @@ def regrid_from_weights(
     :func:`regridding.weights`
     """
 
+    unit_flag = False
     if hasattr(values_input, "unit"):
         unit_flag = True
         unit = values_input.unit

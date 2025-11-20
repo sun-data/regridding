@@ -2,7 +2,6 @@ from typing import Sequence
 import numpy as np
 import numba
 from regridding import _util
-import astropy
 
 __all__ = [
     "regrid_from_weights",
@@ -53,7 +52,8 @@ def regrid_from_weights(
     :func:`regridding.weights`
     """
 
-    if isinstance(values_input, astropy.Quantity):
+    if hasattr(values_input, "unit"):
+        unit_flag = True
         unit = values_input.unit
 
     shape_input = np.broadcast_shapes(values_input.shape, shape_input)
@@ -115,8 +115,8 @@ def regrid_from_weights(
 
     values_output = np.moveaxis(values_output, axis_output_numba, axis_output)
 
-    if isinstance(values_input, astropy.Quantity):
-        values_output << unit
+    if unit_flag:
+        values_output = values_output << unit
 
     return values_output
 

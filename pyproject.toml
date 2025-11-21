@@ -23,6 +23,7 @@ dynamic = ["version"]
 test = [
     "pytest",
     "scipy",
+    "astropy",
 ]
 doc = [
     "pytest",

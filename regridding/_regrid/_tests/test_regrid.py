@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import astropy.units as u
 import regridding
 
 x = np.linspace(-1, 1, num=10)
@@ -104,7 +105,7 @@ def test_regrid_multilinear_1d(
     argvalues=[
         (
             (x_broadcasted, y_broadcasted),
-            np.random.normal(size=(10 - 1, 11 - 1)),
+            np.random.normal(size=(10 - 1, 11 - 1)) * u.ph,
             None,
             (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
             None,

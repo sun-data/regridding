@@ -52,6 +52,8 @@ def regrid_from_weights(
     :func:`regridding.weights`
     """
 
+    unit = getattr(values_input, "unit", None)
+
     shape_input = np.broadcast_shapes(values_input.shape, shape_input)
 
     ndim_input = len(shape_input)
@@ -110,6 +112,9 @@ def regrid_from_weights(
     values_output = values_output.reshape(*shape_output_tmp)
 
     values_output = np.moveaxis(values_output, axis_output_numba, axis_output)
+
+    if unit is not None:
+        values_output = values_output << unit
 
     return values_output
 

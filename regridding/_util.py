@@ -7,7 +7,7 @@ def _normalize_axis(
 ) -> tuple[int, ...]:
     if axis is None:
         axis = tuple(range(ndim))
-    axis = np.core.numeric.normalize_axis_tuple(axis, ndim=ndim)
+    axis = np.lib.array_utils.normalize_axis_tuple(axis, ndim=ndim)
     axis = tuple(~(~np.array(axis) % ndim))
     return axis
 

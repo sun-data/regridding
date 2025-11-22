@@ -80,7 +80,10 @@ def ndarray_linear_interpolation(
 
     if axis_indices is None:
         axis_indices = tuple(range(ndim_indices))
-    axis_indices = np.lib.array_utils.normalize_axis_tuple(axis_indices, ndim=ndim_indices)
+    axis_indices = np.lib.array_utils.normalize_axis_tuple(
+        axis=axis_indices,
+        ndim=ndim_indices,
+    )
     axis_indices = tuple(~(~np.array(axis_indices) % ndim_indices))
 
     if len(indices) != len(axis):

@@ -714,40 +714,46 @@ def point_is_inside_polygon(
         x1 = vertices_x[i + 1]
         y1 = vertices_y[i + 1]
 
-        if regridding.math.sign(y0) != regridding.math.sign(y1):
-            x_intercept = x0 + y0 * (x1 - x0) / (y1 - y0)
+        if y0 * y1 < 0:
 
-            if x_intercept > 0:
-                if (y0 == 0) and (x0 > 0):
-                    if y1 > 0:
-                        w = w + 0.5
-                    elif y1 < 0:
-                        w = w - 0.5
-                elif (y1 == 0) and (x1 > 0):
-                    if y0 < 0:
-                        w = w + 0.5
-                    elif y0 > 0:
-                        w = w - 0.5
-                elif y0 < 0:
-                    w = w + 1
-                elif y0 > 0:
-                    w = w - 1
+            r = x0 + y0 * (x1 - x0) / (y0 - y1)
 
-            elif x_intercept < 0:
-                if (y0 == 0) and (x0 < 0):
-                    if y1 < 0:
-                        w = w + 0.5
-                    elif y1 > 0:
-                        w = w - 0.5
-                elif (y1 == 0) and (x1 < 0):
-                    if y0 > 0:
-                        w = w + 0.5
-                    elif y0 < 0:
-                        w = w - 0.5
+            if r > 0:
+                if y0 < 0:
+                    w += 1
+                else:
+                    w -= 1
+            else:
+                if y0 < 0:
+                    w -= 1
+                else:
+                    w += 1
+
+        elif y0 == 0:
+
+            if x0 > 0:
+                if y1 > 0:
+                    w += 0.5
+                elif y1 < 0:
+                    w -= 0.5
+            elif x0 < 0:
+                if y1 < 0:
+                    w += 0.5
+                elif y1 > 0:
+                    w -= 0.5
+
+        elif y1 == 0:
+
+            if x1 > 0:
+                if y0 < 0:
+                    w += 0.5
                 elif y0 > 0:
-                    w = w + 1
+                    w -= 0.5
+            elif x1 < 0:
+                if y0 > 0:
+                    w += 0.5
                 elif y0 < 0:
-                    w = w - 1
+                    w -= 0.5
 
     if w == 0:
         return False

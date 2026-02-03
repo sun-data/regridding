@@ -74,7 +74,7 @@ def test_index_of_point_brute(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],
     result_expected: np.ndarray,
 ):
-    result = _grids._index_of_point_brute(
+    result = _grids.index_of_point_brute(
         point=point,
         grid=grid,
     )

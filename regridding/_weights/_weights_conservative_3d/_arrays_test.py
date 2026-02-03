@@ -26,7 +26,7 @@ from . import _arrays
             (11, 12, 13),
             False,
         ),
-    ]
+    ],
 )
 def test_index_in_bounds(
     index: tuple[int, int, int],
@@ -43,13 +43,13 @@ def test_index_in_bounds(
     argvalues=[
         (1, 1, 1),
         (5, 6, 7),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     argnames="shape",
     argvalues=[
         (11, 12, 13),
-    ]
+    ],
 )
 def test_index_flat(
     index: tuple[int, int, int],
@@ -63,17 +63,13 @@ def test_index_flat(
 
 @pytest.mark.parametrize(
     argnames="index",
-    argvalues=[
-        0,
-        11,
-        25
-    ]
+    argvalues=[0, 11, 25],
 )
 @pytest.mark.parametrize(
     argnames="shape",
     argvalues=[
         (11, 12, 13),
-    ]
+    ],
 )
 def test_index_3d(
     index: int,

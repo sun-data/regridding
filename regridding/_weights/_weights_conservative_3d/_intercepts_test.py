@@ -4,32 +4,38 @@ import numba
 from . import _intercepts
 
 
-intercepts1 = numba.typed.List([
-    (0, 0, (0, 0, 0)),
-    (0, 1, (1, 1, 1)),
-    (0, 2, (2, 2, 2)),
-])
+intercepts1 = numba.typed.List(
+    [
+        (0, 0, (0, 0, 0)),
+        (0, 1, (1, 1, 1)),
+        (0, 2, (2, 2, 2)),
+    ]
+)
 
-intercepts2 = numba.typed.List([
-    (0, 0, (0, 0, 0)),
-    (0, 1, (-1, 1, -1)),
-    (0, 2, (-2, 2, -2)),
-])
+intercepts2 = numba.typed.List(
+    [
+        (0, 0, (0, 0, 0)),
+        (0, 1, (-1, 1, -1)),
+        (0, 2, (-2, 2, -2)),
+    ]
+)
 
 
 @pytest.mark.parametrize(
     argnames="intercepts,intercept_new",
     argvalues=[
         (
-            numba.typed.List([
-                (0, 0, (0, 0, 0)),
-                (0, 1, (-1, 1, -1)),
-                (0, 2, (-2, 2, -2)),
-            ]),
+            numba.typed.List(
+                [
+                    (0, 0, (0, 0, 0)),
+                    (0, 1, (-1, 1, -1)),
+                    (0, 2, (-2, 2, -2)),
+                ]
+            ),
             (0, 0, (-1, -1, -1)),
         ),
         (
-            _intercepts.empty((11,11,11), (11,11,11))[0][0][0][0],
+            _intercepts.empty((11, 11, 11), (11, 11, 11))[0][0][0][0],
             (0, 0, (-1, -1, -1)),
         ),
     ],
@@ -190,7 +196,7 @@ def _test_sweep_compiled(
 
     weights = numba.typed.List()
     for _ in range(0):
-        weights.append((0, 0, 0.))
+        weights.append((0, 0, 0.0))
 
     _intercepts.sweep(
         intercepts=intercepts,

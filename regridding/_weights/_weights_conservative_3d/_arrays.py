@@ -14,7 +14,6 @@ __all__ = [
     "index_flat",
     "index_3d",
     "align_axis_right",
-
 ]
 
 axis_x = 0

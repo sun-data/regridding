@@ -26,7 +26,7 @@ _x, _y, _z = np.meshgrid(_x, _y, _z, indexing="ij")
                 indexing="ij",
             ),
         )
-    ]
+    ],
 )
 def test_weights_conservative_3d(
     grid_input: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -36,8 +36,3 @@ def test_weights_conservative_3d(
         grid_input=grid_input,
         grid_output=grid_output,
     )
-
-
-
-
-

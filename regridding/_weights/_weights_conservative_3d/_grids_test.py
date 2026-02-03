@@ -13,7 +13,7 @@ from . import _grids
                 np.arange(2),
                 indexing="ij",
             ),
-            np.ones((1, 1, 1))
+            np.ones((1, 1, 1)),
         ),
         (
             np.meshgrid(
@@ -22,7 +22,7 @@ from . import _grids
                 np.arange(5),
                 indexing="ij",
             ),
-            np.ones((2, 3, 4))
+            np.ones((2, 3, 4)),
         ),
         (
             np.meshgrid(
@@ -31,9 +31,9 @@ from . import _grids
                 2 * np.arange(5),
                 indexing="ij",
             ),
-            8 * np.ones((2, 3, 4))
+            8 * np.ones((2, 3, 4)),
         ),
-    ]
+    ],
 )
 def test_volume_grid(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],

@@ -284,8 +284,16 @@ def sweep(
                             z_output[i0_output],
                         )
 
-                        vol_input = rg.geometry.volume_tetrahedron(apex_input, p0, p1)
-                        vol_output = -rg.geometry.volume_tetrahedron(apex_output, p0, p1)
+                        vol_input = rg.geometry.volume_tetrahedron(
+                            apex_input,
+                            p0,
+                            p1,
+                        )
+                        vol_output = -rg.geometry.volume_tetrahedron(
+                            apex_output,
+                            p0,
+                            p1,
+                        )
 
                         input_lower_in_bounds = _arrays.index_in_bounds(
                             index=i0_input_lower,

@@ -2,6 +2,7 @@
 Utilities for inspecting and searching logically-rectangular grids of
 coordinates.
 """
+
 import sys
 import numpy as np
 import numba
@@ -243,9 +244,7 @@ def cell_boundary(
 def grid_boundary(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> tuple[
-    numba.typed.List[
-        tuple[int, int, int],
-    ],
+    numba.typed.List[tuple[int, int, int]],
     numba.typed.List[
         tuple[
             tuple[float, float, float],

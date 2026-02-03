@@ -56,7 +56,6 @@ def weights_conservative_3d(
 
     volume_input = _grids.grid_volume(grid_input)
 
-
     intercepts = _intercepts.empty(shape_input, shape_output)
 
     for sweep_input in (False, True):
@@ -239,7 +238,7 @@ def _sweep_along_axis(
     for i in range(shape_sweep_x):
         weight_i = numba.typed.List()
         for _ in range(0):
-            weight_i.append((0, 0, 0.))
+            weight_i.append((0, 0, 0.0))
         weight.append(weight_i)
 
     if len(axis_sweep) == 2:
@@ -484,7 +483,7 @@ def _step_outside_static(
 
                         tuv = rg.geometry.line_triangle_intersection_parameters(
                             line=line,
-                            triangle=triangle
+                            triangle=triangle,
                         )
 
                         if rg.geometry.line_intersects_triangle(tuv):
@@ -773,7 +772,8 @@ def _calc_and_save_intercept(
         if len(axis_sweep) == 1:
 
             axis_parallel_actual = [
-                ax for ax in _arrays.axes
+                ax
+                for ax in _arrays.axes
                 if ax is not axis_orthogonal_apparent and ax is not _arrays.axis_z
             ][0]
 

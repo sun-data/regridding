@@ -11,9 +11,9 @@ from . import (
 from ._arrays import axis_x, axis_y, axis_z
 
 axes = (
-    (axis_x, ),
-    (axis_y, ),
-    (axis_z, ),
+    (axis_x,),
+    (axis_y,),
+    (axis_z,),
     (axis_x, axis_y),
     (axis_y, axis_z),
     (axis_z, axis_x),
@@ -136,8 +136,7 @@ def _sweep_grid(
 
     _, boundary_static = _grids.grid_boundary(grid_static)
 
-    for axis in axes:
-    # for axis in literal_unroll(axes):
+    for axis in literal_unroll(axes):
 
         axis_last = axis[~0]
 
@@ -160,7 +159,10 @@ def _sweep_grid(
         )
 
 
-@numba.njit(cache=True, parallel=True)
+@numba.njit(
+    cache=True,
+    # parallel=True,
+)
 def _sweep_along_axis(
     grid_sweep: tuple[np.ndarray, np.ndarray, np.ndarray],
     grid_static: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -219,13 +221,6 @@ def _sweep_along_axis(
     axis_sweep
         The logical axis of the sweep grid to iterate along.
     """
-
-    grid_sweep, grid_static = _grid_sweep_static(
-        grid_input=grid_input,
-        grid_output=grid_output,
-        sweep_input=sweep_input,
-        axis_sweep=axis_sweep,
-    )
 
     x_sweep, y_sweep, z_sweep = grid_sweep
     x_static, y_static, z_static = grid_static
@@ -309,6 +304,7 @@ def _sweep_along_axis(
                 )
 
                 line = point_1, point_2
+
                 if sweep_is_outside_static:
 
                     line, index_sweep, index_static = _step_outside_static(
@@ -316,8 +312,8 @@ def _sweep_along_axis(
                         index_sweep=index_sweep,
                         index_static=index_static,
                         step_index=step_index,
+                        grid_sweep=grid_sweep,
                         grid_static=grid_static,
-                        bbox_static=bbox_static,
                         shape_cells_input=shape_cells_input,
                         shape_cells_output=shape_cells_output,
                         intercepts=intercepts,
@@ -359,7 +355,7 @@ def _sweep_along_axis(
             weights.append(weight_i[w])
 
 
-@numba.njit(cache=True)
+@numba.njit(cache=True, error_model="numpy")
 def _step_outside_static(
     line: tuple[
         tuple[float, float, float],
@@ -368,8 +364,8 @@ def _step_outside_static(
     index_sweep: tuple[int, int, int],
     index_static: tuple[int, int, int],
     step_index: tuple[int, int, int],
+    grid_sweep: tuple[np.ndarray, np.ndarray, np.ndarray],
     grid_static: tuple[np.ndarray, np.ndarray, np.ndarray],
-    bbox_static: tuple[tuple[float, float, float], tuple[float, float, float]],
     shape_cells_input: tuple[int, int, int],
     shape_cells_output: tuple[int, int, int],
     intercepts: numba.typed.List,
@@ -400,6 +396,9 @@ def _step_outside_static(
         This is assumed to be a valid, positive index.
     step_index
         A step size in index space on the sweep grid.
+    grid_sweep
+        The vertices of the sweep grid.
+        The last axis of this grid must be the sweep axis.
     grid_static
         The vertices of the static grid.
     bbox_static
@@ -430,105 +429,105 @@ def _step_outside_static(
 
     shape_cells_static = _grids.shape_centers(x.shape)
 
-    if rg.geometry.point_is_inside_box_3d(p2, bbox_static):
+    for axis in _arrays.axes:
 
-        for axis in _arrays.axes:
+        x_axis = _arrays.align_axis_right(x, axis)
+        y_axis = _arrays.align_axis_right(y, axis)
+        z_axis = _arrays.align_axis_right(z, axis)
 
-            x_axis = _arrays.align_axis_right(x, axis)
-            y_axis = _arrays.align_axis_right(y, axis)
-            z_axis = _arrays.align_axis_right(z, axis)
+        for direction_face in (-1, 1):
 
-            for direction_face in (-1, 1):
+            if direction_face > 0:
+                k_face = ~0
+            else:
+                k_face = 0
 
-                if direction_face > 0:
-                    k_face = ~0
-                else:
-                    k_face = 0
+            x_face = x_axis[..., k_face]
+            y_face = y_axis[..., k_face]
+            z_face = z_axis[..., k_face]
 
-                x_face = x_axis[..., k_face]
-                y_face = y_axis[..., k_face]
-                z_face = z_axis[..., k_face]
+            shape_face = x_face.shape
 
-                shape_face = x_face.shape
+            num_i, num_j = shape_face
 
-                num_i, num_j = shape_face
+            for i0 in range(num_i - 1):
+                for j0 in range(num_j - 1):
 
-                for i0 in range(num_i - 1):
-                    for j0 in range(num_j - 1):
+                    i1 = i0 + 1
+                    j1 = j0 + 1
 
-                        i1 = i0 + 1
-                        j1 = j0 + 1
+                    for t in (-1, 1):
 
-                        for t in (-1, 1):
+                        if t > 0:
+                            ind = (
+                                (i0, j0),
+                                (i1, j0),
+                                (i1, j1),
+                            )
+                        else:
+                            ind = (
+                                (i1, j1),
+                                (i0, j1),
+                                (i0, j0),
+                            )
 
-                            if t > 0:
-                                ind = (
-                                    (i0, j0),
-                                    (i1, j0),
-                                    (i1, j1),
-                                )
+                        if direction_face < 0:
+                            ind = ind[::-1]
+
+                        v0, v1, v2 = ind
+
+                        triangle = (
+                            (x_face[v0], y_face[v0], z_face[v0]),
+                            (x_face[v1], y_face[v1], z_face[v1]),
+                            (x_face[v2], y_face[v2], z_face[v2]),
+                        )
+
+                        tuv = rg.geometry.line_triangle_intersection_parameters(
+                            line=line,
+                            triangle=triangle
+                        )
+
+                        if rg.geometry.line_intersects_triangle(tuv):
+
+                            if direction_face > 0:
+                                index_static = i0, j0, shape_cells_static[axis] - 1
                             else:
-                                ind = (
-                                    (i1, j1),
-                                    (i0, j1),
-                                    (i0, j0),
-                                )
+                                index_static = i0, j0, 0
 
-                            if direction_face < 0:
-                                ind = ind[::-1]
+                            i, j, k = index_static
 
-                            v0, v1, v2 = ind
+                            if axis == axis_x:
+                                index_static = k, i, j
+                            elif axis == axis_y:
+                                index_static = j, k, i
 
-                            triangle = (
-                                (x_face[v0], y_face[v0], z_face[v0]),
-                                (x_face[v1], y_face[v1], z_face[v1]),
-                                (x_face[v2], y_face[v2], z_face[v2]),
-                            )
+                            normal = [1 if ax == axis else 0 for ax in _arrays.axes]
+                            normal = rg.math.multiply_3d(direction_face, normal)
 
-                            tuv = rg.geometry.line_triangle_intersection_parameters(
+                            _, p2 = _calc_and_save_intercept(
                                 line=line,
-                                triangle=triangle
+                                tuv=tuv,
+                                index_sweep=index_sweep,
+                                index_static=index_static,
+                                grid_sweep=grid_sweep,
+                                grid_static=grid_static,
+                                shape_cells_input=shape_cells_input,
+                                shape_cells_output=shape_cells_output,
+                                intercepts=intercepts,
+                                sweep_input=sweep_input,
+                                axis_sweep=axis_sweep,
+                                axis_static=axis,
+                                offset_static=normal,
                             )
 
-                            if rg.geometry.line_intersects_triangle(tuv):
-
-                                if direction_face > 0:
-                                    index_static = i0, j0, shape_cells_static[axis] - 1
-                                else:
-                                    index_static = i0, j0, 0
-
-                                i, j, k = index_static
-
-                                if axis == axis_x:
-                                    index_static = k, i, j
-                                elif axis == axis_y:
-                                    index_static = j, k, i
-
-                                normal = [1 if ax == axis else 0 for ax in _arrays.axes]
-                                normal = rg.math.multiply_3d(direction_face, normal)
-
-                                _, p2 = _calc_and_save_intercept(
-                                    line=line,
-                                    tuv=tuv,
-                                    index_sweep=index_sweep,
-                                    index_static=index_static,
-                                    shape_cells_input=shape_cells_input,
-                                    shape_cells_output=shape_cells_output,
-                                    intercepts=intercepts,
-                                    sweep_input=sweep_input,
-                                    axis_sweep=axis_sweep,
-                                    axis_static=axis,
-                                    normal_static=normal,
-                                )
-
-                                return (p1, p2), index_sweep, index_static
+                            return (p1, p2), index_sweep, index_static
 
     index_sweep = rg.math.sum_3d(index_sweep, step_index)
 
     return (p1, p2), index_sweep, index_static
 
 
-@numba.njit(cache=True)
+@numba.njit(cache=True, error_model="numpy")
 def _step_inside_static(
     line: tuple[
         tuple[float, float, float],
@@ -569,7 +568,7 @@ def _step_inside_static(
         The index of the current vertex in the sweep grid
         This is assumed to be a valid, positive index.
     index_static
-        The current index in the static grid.
+        The index of the current cell in the static grid.
         This is assumed to be a valid, positive index.
     step_index
         A step size in index space on the sweep grid.
@@ -630,13 +629,15 @@ def _step_inside_static(
                     tuv=tuv,
                     index_sweep=index_sweep,
                     index_static=index_static,
+                    grid_sweep=grid_sweep,
+                    grid_static=grid_static,
                     shape_cells_input=shape_cells_input,
                     shape_cells_output=shape_cells_output,
                     intercepts=intercepts,
                     sweep_input=sweep_input,
                     axis_sweep=axis_sweep,
                     axis_static=_grids.cell_axes[t],
-                    normal_static=_grids.cell_normals[t],
+                    offset_static=_grids.cell_normals[t],
                 )
 
                 break
@@ -673,13 +674,15 @@ def _calc_and_save_intercept(
     tuv: tuple[float, float, float],
     index_sweep: tuple[int, int, int],
     index_static: tuple[int, int, int],
+    grid_sweep: tuple[np.ndarray, np.ndarray, np.ndarray],
+    grid_static: tuple[np.ndarray, np.ndarray, np.ndarray],
     shape_cells_input: tuple[int, int, int],
     shape_cells_output: tuple[int, int, int],
     intercepts: numba.typed.List,
     sweep_input: bool,
     axis_sweep: tuple[int] | tuple[int, int],
     axis_static: int,
-    normal_static: tuple[int, int, int],
+    offset_static: tuple[int, int, int],
 ) -> tuple[
     tuple[int, int, int],
     tuple[float, float, float],
@@ -690,20 +693,108 @@ def _calc_and_save_intercept(
         tuv=tuv,
     )
 
+    point_sweep, point_sweep_new = line
+
+    x_sweep, y_sweep, z_sweep = grid_sweep
+    x_static, y_static, z_static = grid_static
+
+    vertex_static = (
+        x_static[index_static],
+        y_static[index_static],
+        z_static[index_static],
+    )
+
     shape_input = [n + 1 for n in shape_cells_input]
     shape_output = [n + 1 for n in shape_cells_output]
 
-    index_static_new = rg.math.sum_3d(index_static, normal_static)
-    # print(f"{index_static=}")
-    # print(f"{index_static_new=}")
+    index_static_new = rg.math.sum_3d(index_static, offset_static)
 
-    index_static_intercept = index_static
+    index_static_normal = index_static_new
+    if 0 <= index_static_normal[axis_static] < shape_output[axis_static]:
+        vertex_static_normal = (
+            x_static[index_static_normal],
+            y_static[index_static_normal],
+            z_static[index_static_normal],
+        )
+        normal_static = rg.math.difference_3d(vertex_static_normal, vertex_static)
+    else:
+        index_static_normal = rg.math.difference_3d(index_static, offset_static)
+        vertex_static_normal = (
+            x_static[index_static_normal],
+            y_static[index_static_normal],
+            z_static[index_static_normal],
+        )
+        normal_static = rg.math.difference_3d(vertex_static, vertex_static_normal)
+
+    index_apex_static = index_static
     if index_static_new[axis_static] > index_static[axis_static]:
-        index_static_intercept = index_static_new
+        index_apex_static = index_static_new
+    else:
+        normal_static = rg.math.negate_3d(normal_static)
 
     axes_orthogonal = [ax for ax in _arrays.axes if ax not in axis_sweep]
 
     for axis_orthogonal in axes_orthogonal:
+
+        offset_axis = 2 - axis_sweep[~0]
+
+        axis_orthogonal_apparent = (axis_orthogonal + offset_axis) % 3
+
+        offset_orthogonal = _arrays.vector_unit[axis_orthogonal_apparent]
+
+        index_orthogonal = rg.math.difference_3d(index_sweep, offset_orthogonal)
+
+        if index_orthogonal[axis_orthogonal_apparent] >= 0:
+            point_orthogonal = (
+                x_sweep[index_orthogonal],
+                y_sweep[index_orthogonal],
+                z_sweep[index_orthogonal],
+            )
+            normal_sweep = rg.math.difference_3d(point_sweep, point_orthogonal)
+        else:
+            index_orthogonal = rg.math.sum_3d(index_sweep, offset_orthogonal)
+            point_orthogonal = (
+                x_sweep[index_orthogonal],
+                y_sweep[index_orthogonal],
+                z_sweep[index_orthogonal],
+            )
+            normal_sweep = rg.math.difference_3d(point_orthogonal, point_sweep)
+
+        if sweep_input:
+            normal_input = normal_sweep
+            normal_output = normal_static
+        else:
+            normal_input = normal_static
+            normal_output = normal_sweep
+
+        direction = rg.math.cross_3d(normal_input, normal_output)
+
+        index_apex_sweep = index_sweep
+        if len(axis_sweep) == 1:
+
+            axis_parallel_actual = [
+                ax for ax in _arrays.axes
+                if ax is not axis_orthogonal_apparent and ax is not _arrays.axis_z
+            ][0]
+
+            offset_parallel = _arrays.vector_unit[axis_parallel_actual]
+
+            index_parallel = rg.math.difference_3d(index_sweep, offset_parallel)
+
+            if index_parallel[axis_parallel_actual] >= 0:
+
+                point_parallel = (
+                    x_sweep[index_parallel],
+                    y_sweep[index_parallel],
+                    z_sweep[index_parallel],
+                )
+
+                parallel = rg.math.difference_3d(point_sweep, point_parallel)
+
+                sgn = rg.math.dot_3d(parallel, direction)
+
+                if sgn < 0:
+                    index_apex_sweep = index_parallel
 
         if sweep_input:
             axis_input = axis_orthogonal
@@ -713,8 +804,8 @@ def _calc_and_save_intercept(
             axis_output = axis_orthogonal
 
         index_input, index_output = _index_input_output(
-            index_sweep=index_sweep,
-            index_static=index_static_intercept,
+            index_sweep=index_apex_sweep,
+            index_static=index_apex_static,
             sweep_input=sweep_input,
             axis_sweep=axis_sweep,
         )
@@ -722,14 +813,33 @@ def _calc_and_save_intercept(
         i_input = index_input[axis_input]
         i_output = index_output[axis_output]
 
-        _intercepts.insert_intercept(
-            intercepts=intercepts[axis_input][axis_output][i_input][i_output],
-            intercept_new=(
-                _arrays.index_flat(index_input, shape_input),
-                _arrays.index_flat(index_output, shape_output),
-                intercept,
-            ),
+        intercept_new = (
+            _arrays.index_flat(index_input, shape_input),
+            _arrays.index_flat(index_output, shape_output),
+            intercept,
         )
+
+        intercepts_input_output = intercepts[axis_input][axis_output][i_input][i_output]
+        num_intercept = len(intercepts_input_output)
+        if num_intercept == 0:
+            index = 0
+
+        elif num_intercept == 1:
+            _, _, intercept_0 = intercepts_input_output[0]
+            direction_intercepts = rg.math.difference_3d(intercept, intercept_0)
+            sgn_intercepts = rg.math.dot_3d(direction_intercepts, direction)
+            if sgn_intercepts > 0:
+                index = 1
+            else:
+                index = 0
+
+        else:
+            index = _intercepts._bisect_intercepts(
+                intercepts=intercepts_input_output,
+                intercept_new=intercept_new,
+            )
+
+        intercepts_input_output.insert(index, intercept_new)
 
     return index_static_new, intercept
 
@@ -779,8 +889,8 @@ def _calc_and_save_weights(
 
     p1, p2 = line
 
-    volume_left = rg.geometry.volume_tetrahedron(p0_left, p1, p2)
-    volume_lower = -rg.geometry.volume_tetrahedron(p0_lower, p1, p1)
+    volume_left = -rg.geometry.volume_tetrahedron(p0_left, p1, p2)
+    volume_lower = rg.geometry.volume_tetrahedron(p0_lower, p1, p2)
 
     if i_left >= 0:
         if j_lower >= 0:
@@ -799,7 +909,7 @@ def _calc_and_save_weights(
             index_input_00 = _arrays.index_flat(index_input_00, shape_cells_input)
             index_output_00 = _arrays.index_flat(index_output_00, shape_cells_output)
 
-            volume_lower_left = (-volume_lower - volume_left) / volume_input_lower_left
+            volume_lower_left = (volume_lower + volume_left) / volume_input_lower_left
             weights.append((index_input_00, index_output_00, volume_lower_left))
 
         if j_upper < (shape_sweep[1] - 1):
@@ -818,7 +928,7 @@ def _calc_and_save_weights(
             index_input_01 = _arrays.index_flat(index_input_01, shape_cells_input)
             index_output_01 = _arrays.index_flat(index_output_01, shape_cells_output)
 
-            volume_upper_left = volume_left / volume_input_upper_left
+            volume_upper_left = -volume_left / volume_input_upper_left
             weights.append((index_input_01, index_output_01, volume_upper_left))
 
     if i_right < (shape_sweep[0] - 1):
@@ -838,7 +948,7 @@ def _calc_and_save_weights(
             index_input_10 = _arrays.index_flat(index_input_10, shape_cells_input)
             index_output_10 = _arrays.index_flat(index_output_10, shape_cells_output)
 
-            volume_lower_right = volume_lower / volume_input_lower_right
+            volume_lower_right = -volume_lower / volume_input_lower_right
             weights.append((index_input_10, index_output_10, volume_lower_right))
 
 
@@ -882,7 +992,7 @@ def _index_input_output(
     index_static: tuple[int, int, int],
     sweep_input: bool,
     axis_sweep: tuple[int] | tuple[int, int],
-):
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     """
     Convert indices on the sweep and static grids into indices on the
     input/output grids.
@@ -918,4 +1028,3 @@ def _index_input_output(
         index_output = index_sweep
 
     return index_input, index_output
-

@@ -49,6 +49,21 @@ def test_insert_intercept(
     argnames="intercepts,intercept_new,result_expected",
     argvalues=[
         (
+            numba.typed.List([(0, 0, (0.9, 0, 0)), (0, 1, (1.2, 0, 0))]),
+            (0, 2, (1.1, 0, 0)),
+            1,
+        ),
+        (
+            numba.typed.List([(0, 0, (0, 0.9, 0)), (0, 1, (0, 1.2, 0))]),
+            (0, 2, (0, 1.1, 0)),
+            1,
+        ),
+        (
+            numba.typed.List([(0, 0, (0, 0, 0.9)), (0, 1, (0, 0, 1.2))]),
+            (0, 2, (0, 0, 1.1)),
+            1,
+        ),
+        (
             intercepts1,
             (0, 0, (-1, -1, -1)),
             0,
@@ -88,7 +103,7 @@ def test_insert_intercept(
             (0, 0, (-2.5, 2.25, -2.75)),
             3,
         ),
-    ]
+    ],
 )
 def test_bisect_intercepts(
     intercepts: numba.typed.List[tuple[int, int, tuple[float, float, float]]],

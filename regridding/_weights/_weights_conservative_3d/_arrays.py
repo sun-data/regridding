@@ -23,6 +23,12 @@ axis_z = 2
 
 axes = (axis_x, axis_y, axis_z)
 
+vector_unit = (
+    (1, 0, 0),
+    (0, 1, 0),
+    (0, 0, 1),
+)
+
 
 @numba.njit(cache=True)
 def index_in_bounds(
@@ -118,7 +124,7 @@ def align_axis_right(
     axis: int,
 ) -> np.ndarray:
     """
-    Roll all the axes of a 3D array to the right until `axis` is the last axis..
+    Roll all the axes of a 3D array to the right until `axis` is the last axis.
 
     This function is needed to permute the axes in such a way to retain
     their right-handedness.

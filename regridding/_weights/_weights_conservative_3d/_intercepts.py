@@ -236,13 +236,13 @@ def sweep(
 
         intercepts_a = intercepts[a]
 
-        normal_a = [1 if axis == a else 0 for axis in range(len(intercepts))]
+        offset_a = [1 if axis == a else 0 for axis in range(len(intercepts))]
 
         for b in range(len(intercepts_a)):
 
             intercepts_ab = intercepts_a[b]
 
-            normal_b = [1 if axis == b else 0 for axis in range(len(intercepts))]
+            offset_b = [1 if axis == b else 0 for axis in range(len(intercepts))]
 
             for i in range(len(intercepts_ab)):
 
@@ -267,10 +267,10 @@ def sweep(
                         i1_input = _arrays.index_3d(i1_input, shape_input)
                         i1_output = _arrays.index_3d(i1_output, shape_output)
 
-                        i0_input_lower = rg.math.difference_3d(i0_input, normal_a)
+                        i0_input_lower = rg.math.difference_3d(i0_input, offset_a)
                         i0_input_upper = i0_input
 
-                        i0_output_lower = rg.math.difference_3d(i0_output, normal_b)
+                        i0_output_lower = rg.math.difference_3d(i0_output, offset_b)
                         i0_output_upper = i0_output
 
                         apex_input = (
@@ -285,10 +285,7 @@ def sweep(
                         )
 
                         vol_input = rg.geometry.volume_tetrahedron(apex_input, p0, p1)
-                        vol_output = rg.geometry.volume_tetrahedron(apex_output, p0, p1)
-
-                        volume_input_lower = volume_input[i0_input_lower]
-                        volume_input_upper = volume_input[i0_output_upper]
+                        vol_output = -rg.geometry.volume_tetrahedron(apex_output, p0, p1)
 
                         input_lower_in_bounds = _arrays.index_in_bounds(
                             index=i0_input_lower,
@@ -332,7 +329,7 @@ def sweep(
                                 weight_lower_lower = (
                                     n0_input_lower,
                                     n0_output_lower,
-                                    (-vol_input - vol_output) / volume_input_lower,
+                                    (vol_input + vol_output) / volume_input_lower,
                                 )
                                 weights.append(weight_lower_lower)
 
@@ -340,7 +337,7 @@ def sweep(
                                 weight_lower_upper = (
                                     n0_input_lower,
                                     n0_output_upper,
-                                    (-vol_input + vol_output) / volume_input_lower,
+                                    (-vol_input - vol_output) / volume_input_lower,
                                 )
                                 weights.append(weight_lower_upper)
 
@@ -352,7 +349,7 @@ def sweep(
                                 weight_upper_lower = (
                                     n0_input_upper,
                                     n0_output_lower,
-                                    (vol_input - vol_output) / volume_input_upper,
+                                    (-vol_input - vol_output) / volume_input_upper,
                                 )
                                 weights.append(weight_upper_lower)
 

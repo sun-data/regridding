@@ -2,7 +2,7 @@
 Utilities for inspecting and searching logically-rectangular grids of
 coordinates.
 """
-
+import sys
 import numpy as np
 import numba
 import regridding as rg
@@ -474,3 +474,5 @@ def index_of_point_brute(
                     polyhedron=polyhedron,
                 ):
                     return index
+
+    return sys.maxsize, sys.maxsize, sys.maxsize

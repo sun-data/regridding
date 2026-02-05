@@ -2,6 +2,7 @@ from typing import Sequence
 import numpy as np
 import numba
 from regridding import _util
+from ._weights_conservative_1d import weights_conservative_1d
 from regridding._conservative_ramshaw import _conservative_ramshaw
 
 
@@ -38,38 +39,55 @@ def _weights_conservative(
 
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
-    for index in np.ndindex(*shape_orthogonal):
-        index_vertices_input = list(reversed(index))
+    if len(axis_input) == 1:
 
-        for ax in axis_input:
-            index_vertices_input.insert(~ax, slice(None))
-        index_vertices_input = tuple(reversed(index_vertices_input))
+        x_input, = coordinates_input
+        x_output, = coordinates_output
 
-        index_vertices_output = list(reversed(index))
-        for ax in axis_output:
-            index_vertices_output.insert(~ax, slice(None))
-        index_vertices_output = tuple(reversed(index_vertices_output))
+        x_input = np.moveaxis(x_input, axis_input, ~0)
+        x_output = np.moveaxis(x_output, axis_output, ~0)
 
-        if len(axis_input) == 1:
-            raise NotImplementedError("1D regridding not supported")
+        x_input = x_input.reshape(-1, x_input.shape[~0])
+        x_output = x_output.reshape(-1, x_output.shape[~0])
 
-        elif len(axis_input) == 2:
-            coordinates_input_x, coordinates_input_y = coordinates_input
-            coordinates_output_x, coordinates_output_y = coordinates_output
-            weights[index] = _conservative_ramshaw(
-                grid_input=(
-                    coordinates_input_x[index_vertices_input],
-                    coordinates_input_y[index_vertices_input],
-                ),
-                grid_output=(
-                    coordinates_output_x[index_vertices_output],
-                    coordinates_output_y[index_vertices_output],
-                ),
-            )
+        weights = weights_conservative_1d(
+            grid_input=(x_input,),
+            grid_output=(x_output,),
+        )
 
-        else:
-            raise NotImplementedError(
-                "Regridding operations greater than 2D are not supported"
-            )
+        weights = weights.reshape(shape_orthogonal)
+
+    else:
+
+        for index in np.ndindex(*shape_orthogonal):
+            index_vertices_input = list(reversed(index))
+
+            for ax in axis_input:
+                index_vertices_input.insert(~ax, slice(None))
+            index_vertices_input = tuple(reversed(index_vertices_input))
+
+            index_vertices_output = list(reversed(index))
+            for ax in axis_output:
+                index_vertices_output.insert(~ax, slice(None))
+            index_vertices_output = tuple(reversed(index_vertices_output))
+
+            if len(axis_input) == 2:
+                coordinates_input_x, coordinates_input_y = coordinates_input
+                coordinates_output_x, coordinates_output_y = coordinates_output
+                weights[index] = _conservative_ramshaw(
+                    grid_input=(
+                        coordinates_input_x[index_vertices_input],
+                        coordinates_input_y[index_vertices_input],
+                    ),
+                    grid_output=(
+                        coordinates_output_x[index_vertices_output],
+                        coordinates_output_y[index_vertices_output],
+                    ),
+                )
+
+            else:
+                raise NotImplementedError(
+                    "Regridding operations greater than 2D are not supported"
+                )
 
     return weights, shape_values_input, shape_values_output

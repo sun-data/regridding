@@ -13,8 +13,8 @@ def _normalize_axis(
 
 
 def _normalize_input_output_coordinates(
-    coordinates_input: tuple[np.ndarray, ...],
-    coordinates_output: tuple[np.ndarray, ...],
+    coordinates_input: np.ndarray | tuple[np.ndarray, ...],
+    coordinates_output: np.ndarray | tuple[np.ndarray, ...],
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
 ) -> tuple[
@@ -26,6 +26,12 @@ def _normalize_input_output_coordinates(
     tuple[int, ...],
     tuple[int, ...],
 ]:
+    if isinstance(coordinates_input, np.ndarray):
+        coordinates_input = coordinates_input,
+
+    if isinstance(coordinates_output, np.ndarray):
+        coordinates_output = coordinates_output,
+
     shape_coordinates_input = np.broadcast(*coordinates_input).shape
     shape_coordinates_output = np.broadcast(*coordinates_output).shape
 

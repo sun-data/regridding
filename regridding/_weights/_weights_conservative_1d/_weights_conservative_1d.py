@@ -1,0 +1,254 @@
+import sys
+import numpy as np
+import numba
+from . import _grids
+
+__all__ = [
+    "weights_conservative_1d",
+]
+
+
+@numba.njit(cache=True)
+def weights_conservative_1d(
+    grid_input: tuple[np.ndarray],
+    grid_output: tuple[np.ndarray],
+) -> numba.typed.List[tuple[int, int, float]]:
+    """
+    For each cell of `grid_output`,
+    compute the fraction of volume shared with each cell of `grid_input`
+    and save as a list of weights.
+
+    Parameters
+    ----------
+    grid_input
+        The vertices of the old grid.
+        Must have one 2D component where the last axis represents the
+        grid and the first axis represents a stack of independent grids.
+    grid_output
+        The vertices of the new grid.
+        Every component must have the same 3D shape.
+    """
+
+    grid_sweep = grid_input
+    grid_static = grid_output
+
+    x_sweep, = grid_input
+    x_static, = grid_output
+
+    shape_sweep_t, shape_sweep_x = x_sweep.shape
+    shape_static_t, shape_static_x = x_static.shape
+
+    weights = numba.typed.List()
+
+    for t in numba.prange(shape_sweep_t):
+
+        x_sweep_t = x_sweep[t]
+        x_static_t = x_static[t]
+
+        length_input = _grids.cell_length(x_sweep_t)
+
+        x_static_left = x_static_t[0]
+        x_static_right = x_static_t[-1]
+
+        if x_static_left < x_static_right:
+            x_static_lower = x_static_left
+            x_static_upper = x_static_right
+        else:
+            x_static_lower = x_static_right
+            x_static_upper = x_static_left
+
+        weights_t = numba.typed.List()
+        for x in range(0):
+            weights_t.append((0, 0, 0.0))
+
+        index_sweep = 0
+
+        point_1 = x_sweep[index_sweep]
+
+        if x_static_lower < point_1 < x_static_upper:
+            sweep_is_outside_static = False
+            index_static = _grids.index_of_point(
+                point=point_1,
+                grid=x_static_t,
+            )
+        else:
+            sweep_is_outside_static = True
+            index_static = sys.maxsize
+
+        while index_sweep < shape_sweep_x:
+
+            index_sweep_new = index_sweep + 1
+
+            point_2 = x_sweep[index_sweep_new]
+
+            line = point_1, point_2
+
+            if sweep_is_outside_static:
+
+                line, index_sweep, index_static = _step_outside_static(
+                    line=line,
+                    index_sweep=index_sweep,
+                    index_static=index_static,
+                )
+
+                if index_static < sys.maxsize:
+                    sweep_is_outside_static = True
+
+            else:
+
+                line, index_sweep, index_static = _step_inside_static(
+                    line=line,
+                    index_sweep=index_sweep,
+                    index_static=index_static,
+                    grid_static=x_static_t,
+                    length_input=length_input,
+                    weights=weights_t,
+                )
+
+                if not 0 <= index_static < shape_static_x:
+                    break
+
+            point_1 = line[1]
+
+        weights.append(weights_t)
+
+
+@numba.njit(cache=True)
+def _step_outside_static(
+    line: tuple[float, float],
+    index_sweep: int,
+    index_static: int,
+    grid_static: np.ndarray,
+) -> tuple[
+    tuple[float, float],
+    int,
+    int,
+]:
+    """
+    Check if the current line segment crosses into the boundary of the static
+    grid.
+    If it does, return the point of intersection and the index of the static
+    grid where the crossing occurs.
+
+    Parameters
+    ----------
+    line
+        The current line segment of the sweep grid
+    index_sweep
+        The index of the current vertex in the sweep grid
+    index_static
+        The index of the current vertex in the static grid.
+        Since this function is only called outside the static grid,
+        this will usually be an invalid index.
+    grid_static
+        The vertices of the static grid.
+    """
+
+    point_1, point_2 = line
+
+    if point_1 < point_2:
+        point_lower = point_1
+        point_upper = point_2
+    else:
+        point_lower = point_2
+        point_upper = point_1
+
+    num_cell = grid_static.shape[0] - 1
+
+    grid_static_left = grid_static[0]
+    grid_static_right = grid_static[-1]
+
+    if point_lower < grid_static_left < point_upper:
+
+        index_static = 0
+        point_2 = grid_static_left
+
+    elif point_lower < grid_static_right < point_upper:
+
+        index_static = num_cell - 1
+        point_2 = grid_static_right
+
+    else:
+        index_sweep = index_sweep + 1
+
+    return (point_1, point_2), index_sweep, index_static
+
+
+@numba.njit(cache=True)
+def _step_inside_static(
+    line: tuple[float, float],
+    index_sweep: int,
+    index_static: int,
+    grid_static: np.ndarray,
+    length_input: np.ndarray,
+    weights: numba.typed.List[tuple[int, int, float]],
+) -> tuple[
+    tuple[float, float],
+    int,
+    int,
+]:
+    """
+    Check if the current line segment crosses any vertex of the current
+    cell in the static grid.
+    If it does, update the line segment and compute the index of the new
+    point in the static grid.
+    Otherwise, increment the index of the sweep grid.
+    In any case, add the current line segment to the list of weights
+
+    Parameters
+    ----------
+    line
+        The current line segment of the sweep grid
+    index_sweep
+        The index of the current vertex in the sweep grid
+    index_static
+        The index of the current vertex in the static grid.
+        Since this function is only called outside the static grid,
+        this will usually be an invalid index.
+    grid_static
+        The vertices of the static grid.
+    length_input
+        The length of each cell in the current input grid.
+    weights
+        The current list of weights to which new weights will be appended.
+    """
+
+    point_1, point_2 = line
+
+    index_input = index_sweep
+    index_output = index_static
+
+    if point_1 < point_2:
+        point_lower = point_1
+        point_upper = point_2
+    else:
+        point_lower = point_2
+        point_upper = point_1
+
+    grid_static_left = grid_static[index_static]
+    grid_static_right = grid_static[index_static + 1]
+
+    if point_lower < grid_static_left < point_upper:
+
+        index_static = index_static - 1
+        point_2 = grid_static_left
+
+    elif point_lower < grid_static_right < point_upper:
+
+        index_static = index_static + 1
+        point_2 = grid_static_right
+
+    else:
+        index_sweep = index_sweep + 1
+
+    length = point_2 - point_1
+
+    ratio = length / length_input[index_input]
+
+    weight = (index_input, index_output, ratio)
+
+    weights.append(weight)
+
+    line = point_1, point_2
+
+    return line, index_sweep, index_static

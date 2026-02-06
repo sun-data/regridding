@@ -147,27 +147,37 @@ def _step_outside_static(
 
     point_1, point_2 = line
 
-    if point_1 < point_2:
-        point_lower = point_1
-        point_upper = point_2
-    else:
-        point_lower = point_2
-        point_upper = point_1
+    point_static_left = grid_static[0]
+    point_static_right = grid_static[~0]
 
     num_cell = grid_static.shape[0] - 1
 
-    grid_static_left = grid_static[0]
-    grid_static_right = grid_static[-1]
+    if point_static_left < point_static_right:
+        point_static_lower = point_static_left
+        point_static_upper = point_static_right
+        index_static_lower = 0
+        index_static_upper = num_cell - 1
+    else:
+        point_static_lower = point_static_right
+        point_static_upper = point_static_left
+        index_static_lower = num_cell - 1
+        index_static_upper = 0
 
-    if point_lower < grid_static_left < point_upper:
+    if point_1 < point_2:
+        point_static = point_static_lower
+        index_static_new = index_static_lower
+        point_lower = point_1
+        point_upper = point_2
+    else:
+        point_static = point_static_upper
+        index_static_new = index_static_upper
+        point_lower = point_2
+        point_upper = point_1
 
-        index_static = 0
-        point_2 = grid_static_left
+    if point_lower < point_static < point_upper:
 
-    elif point_lower < grid_static_right < point_upper:
-
-        index_static = num_cell - 1
-        point_2 = grid_static_right
+        index_static = index_static_new
+        point_2 = point_static
 
     else:
         index_sweep = index_sweep + 1

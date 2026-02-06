@@ -37,8 +37,6 @@ def _weights_conservative(
         shape_values_output[ax] -= 1
     shape_values_output = tuple(shape_values_output)
 
-    weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
-
     if len(axis_input) == 1:
 
         x_input, = coordinates_input
@@ -55,9 +53,13 @@ def _weights_conservative(
             grid_output=(x_output,),
         )
 
+        weights = np.fromiter(weights, dtype=object)
+
         weights = weights.reshape(shape_orthogonal)
 
     else:
+
+        weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
         for index in np.ndindex(*shape_orthogonal):
             index_vertices_input = list(reversed(index))

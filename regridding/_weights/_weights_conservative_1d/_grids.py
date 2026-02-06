@@ -20,7 +20,7 @@ def cell_length(
         A 1D grid of cell vertices.
     """
 
-    x, = grid
+    x = grid
 
     num_i, = x.shape
 

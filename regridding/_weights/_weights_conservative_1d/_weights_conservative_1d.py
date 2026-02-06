@@ -29,9 +29,6 @@ def weights_conservative_1d(
         Every component must have the same 3D shape.
     """
 
-    grid_sweep = grid_input
-    grid_static = grid_output
-
     x_sweep, = grid_input
     x_static, = grid_output
 
@@ -63,7 +60,7 @@ def weights_conservative_1d(
 
         index_sweep = 0
 
-        point_1 = x_sweep[index_sweep]
+        point_1 = x_sweep_t[index_sweep]
 
         if x_static_lower < point_1 < x_static_upper:
             sweep_is_outside_static = False
@@ -71,15 +68,16 @@ def weights_conservative_1d(
                 point=point_1,
                 grid=x_static_t,
             )
+            index_static = index_static - 1
         else:
             sweep_is_outside_static = True
             index_static = sys.maxsize
 
-        while index_sweep < shape_sweep_x:
+        while index_sweep < (shape_sweep_x - 1):
 
             index_sweep_new = index_sweep + 1
 
-            point_2 = x_sweep[index_sweep_new]
+            point_2 = x_sweep_t[index_sweep_new]
 
             line = point_1, point_2
 
@@ -89,10 +87,11 @@ def weights_conservative_1d(
                     line=line,
                     index_sweep=index_sweep,
                     index_static=index_static,
+                    grid_static=x_static_t,
                 )
 
                 if index_static < sys.maxsize:
-                    sweep_is_outside_static = True
+                    sweep_is_outside_static = False
 
             else:
 
@@ -105,12 +104,14 @@ def weights_conservative_1d(
                     weights=weights_t,
                 )
 
-                if not 0 <= index_static < shape_static_x:
+                if not (0 <= index_static < (shape_static_x - 1)):
                     break
 
             point_1 = line[1]
 
         weights.append(weights_t)
+
+    return weights
 
 
 @numba.njit(cache=True)
@@ -218,26 +219,35 @@ def _step_inside_static(
     index_input = index_sweep
     index_output = index_static
 
+    point_static_left = grid_static[index_static]
+    point_static_right = grid_static[index_static + 1]
+
+    if point_static_left < point_static_right:
+        point_static_lower = point_static_left
+        point_static_upper = point_static_right
+        offset_static_lower = -1
+        offset_static_upper = +1
+    else:
+        point_static_lower = point_static_right
+        point_static_upper = point_static_left
+        offset_static_lower = +1
+        offset_static_upper = -1
+
+
     if point_1 < point_2:
+        point_static = point_static_upper
+        offset_static = offset_static_upper
         point_lower = point_1
         point_upper = point_2
     else:
+        point_static = point_static_lower
+        offset_static = offset_static_lower
         point_lower = point_2
         point_upper = point_1
 
-    grid_static_left = grid_static[index_static]
-    grid_static_right = grid_static[index_static + 1]
-
-    if point_lower < grid_static_left < point_upper:
-
-        index_static = index_static - 1
-        point_2 = grid_static_left
-
-    elif point_lower < grid_static_right < point_upper:
-
-        index_static = index_static + 1
-        point_2 = grid_static_right
-
+    if point_lower < point_static < point_upper:
+        index_static = index_static + offset_static
+        point_2 = point_static
     else:
         index_sweep = index_sweep + 1
 

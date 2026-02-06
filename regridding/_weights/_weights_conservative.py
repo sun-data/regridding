@@ -39,8 +39,8 @@ def _weights_conservative(
 
     if len(axis_input) == 1:
 
-        x_input, = coordinates_input
-        x_output, = coordinates_output
+        (x_input,) = coordinates_input
+        (x_output,) = coordinates_output
 
         x_input = np.moveaxis(x_input, axis_input, ~0)
         x_output = np.moveaxis(x_output, axis_output, ~0)

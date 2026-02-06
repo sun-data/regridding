@@ -29,8 +29,8 @@ def weights_conservative_1d(
         Every component must have the same 3D shape.
     """
 
-    x_sweep, = grid_input
-    x_static, = grid_output
+    (x_sweep,) = grid_input
+    (x_static,) = grid_output
 
     shape_sweep_t, shape_sweep_x = x_sweep.shape
     shape_static_t, shape_static_x = x_static.shape
@@ -232,7 +232,6 @@ def _step_inside_static(
         point_static_upper = point_static_left
         offset_static_lower = +1
         offset_static_upper = -1
-
 
     if point_1 < point_2:
         point_static = point_static_upper

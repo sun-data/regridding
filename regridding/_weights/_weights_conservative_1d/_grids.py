@@ -22,7 +22,7 @@ def cell_length(
 
     x = grid
 
-    num_i, = x.shape
+    (num_i,) = x.shape
 
     result = np.zeros(num_i - 1)
 
@@ -54,7 +54,7 @@ def index_of_point(
         Can be either increasing or decreasing.
     """
 
-    num, = grid.shape
+    (num,) = grid.shape
 
     if num < 2:
         return num

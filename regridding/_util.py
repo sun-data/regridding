@@ -27,10 +27,10 @@ def _normalize_input_output_coordinates(
     tuple[int, ...],
 ]:
     if isinstance(coordinates_input, np.ndarray):
-        coordinates_input = coordinates_input,
+        coordinates_input = (coordinates_input,)
 
     if isinstance(coordinates_output, np.ndarray):
-        coordinates_output = coordinates_output,
+        coordinates_output = (coordinates_output,)
 
     shape_coordinates_input = np.broadcast(*coordinates_input).shape
     shape_coordinates_output = np.broadcast(*coordinates_output).shape

@@ -60,7 +60,7 @@ def regrid_from_weights(
     axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
 
     shape_orthogonal = (
-        1 if i in axis_input else shape_input[i] for i in range(-len(shape_input), 0)
+        shape_input[i] for i in range(-len(shape_input), 0) if i not in axis_input
     )
     weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
     values_input = np.broadcast_to(values_input, shape_input, subok=True)

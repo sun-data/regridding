@@ -90,6 +90,40 @@ def regrid(
 
     |
 
+    Regrid a 1D array using conservative resampling.
+
+    .. jupyter-execute::
+
+        # Define the edges of the input grid
+        x_input = np.linspace(-1, 1, num=21)
+
+        # Define the edges of the output grid
+        # with a small offset to prevent degenerate cells
+        x_output = np.linspace(-1, 1, num=11)[::-1] + 1e-6
+
+        # Compute the centers of the input grid
+        x = (x_input[1:] + x_input[:-1]) / 2
+
+        # Define an array of values for each cell
+        # of the input grid
+        values = np.exp(-(x / 0.25) ** 2 /2)
+
+        # Regrid the array of values onto the output grid
+        values_new = regridding.regrid(
+            coordinates_input=x_input,
+            coordinates_output=x_output,
+            values_input=values,
+            method="conservative",
+        )
+
+        # Plot the result
+        fig, ax = plt.subplots()
+        ax.stairs(values, x_input, label="input")
+        ax.stairs(values_new, x_output, label="output")
+        ax.legend();
+
+    |
+
     Regrid a 2D array using conservative resampling.
 
     .. jupyter-execute::

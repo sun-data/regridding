@@ -55,7 +55,7 @@ def weights_conservative_1d(
             x_static_upper = x_static_left
 
         weights_t = numba.typed.List()
-        for x in range(0):
+        for x in range(0):  # pragma: nocover
             weights_t.append((0, 0, 0.0))
 
         index_sweep = 0

@@ -87,7 +87,7 @@ def _weights_conservative(
                     ),
                 )
 
-            else:
+            else:  # pragma: nocover
                 raise NotImplementedError(
                     "Regridding operations greater than 2D are not supported"
                 )

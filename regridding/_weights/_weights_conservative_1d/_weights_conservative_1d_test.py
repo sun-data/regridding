@@ -41,6 +41,13 @@ import regridding
             2 * np.ones(5),
             ~0,
         ),
+        (
+            np.linspace(-1, 1, num=11),
+            np.linspace(1, 2, num=6) + 1e-6,
+            np.ones(10),
+            0,
+            None,
+        ),
     ],
 )
 def test_regrid_conservative_1d(

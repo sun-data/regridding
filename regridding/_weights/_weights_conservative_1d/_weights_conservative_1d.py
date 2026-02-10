@@ -8,7 +8,10 @@ __all__ = [
 ]
 
 
-@numba.njit(cache=True)
+@numba.njit(
+    cache=True,
+    parallel=True,
+)
 def weights_conservative_1d(
     grid_input: tuple[np.ndarray],
     grid_output: tuple[np.ndarray],
@@ -36,33 +39,51 @@ def weights_conservative_1d(
     shape_static_t, shape_static_x = x_static.shape
 
     weights = numba.typed.List()
+    for t in range(shape_sweep_t):
+        weights_t = numba.typed.List()
+        for x in range(0):  # pragma: nocover
+            weights_t.append((0, 0, 0.0))
+        weights.append(weights_t)
 
     for t in numba.prange(shape_sweep_t):
 
         x_sweep_t = x_sweep[t]
         x_static_t = x_static[t]
 
-        length_input = _grids.cell_length(x_sweep_t)
+        x_sweep_left = x_sweep_t[0]
+        x_sweep_right = x_sweep_t[~0]
 
         x_static_left = x_static_t[0]
-        x_static_right = x_static_t[-1]
+        x_static_right = x_static_t[~0]
+
+        if x_sweep_left < x_sweep_right:
+            reversed_sweep = False
+        else:
+            reversed_sweep = True
+            x_sweep_t = x_sweep_t[::-1]
 
         if x_static_left < x_static_right:
-            x_static_lower = x_static_left
-            x_static_upper = x_static_right
+            reversed_static = False
         else:
-            x_static_lower = x_static_right
-            x_static_upper = x_static_left
+            reversed_static = True
+            x_static_t = x_static_t[::-1]
 
-        weights_t = numba.typed.List()
-        for x in range(0):  # pragma: nocover
-            weights_t.append((0, 0, 0.0))
+        x_static_lower = x_static_t[0]
+        x_static_upper = x_static_t[~0]
+
+        reversed_input = reversed_sweep
+        reversed_output = reversed_static
+
+        length_input = _grids.cell_length(x_sweep_t)
 
         index_sweep = 0
 
         point_1 = x_sweep_t[index_sweep]
 
-        if x_static_lower < point_1 < x_static_upper:
+        if x_static_lower == point_1:
+            sweep_is_outside_static = False
+            index_static = 0
+        elif x_static_lower < point_1 < x_static_upper:
             sweep_is_outside_static = False
             index_static = _grids.index_of_point(
                 point=point_1,
@@ -101,7 +122,9 @@ def weights_conservative_1d(
                     index_static=index_static,
                     grid_static=x_static_t,
                     length_input=length_input,
-                    weights=weights_t,
+                    weights=weights[t],
+                    reversed_input=reversed_input,
+                    reversed_output=reversed_output
                 )
 
                 if not (0 <= index_static < (shape_static_x - 1)):
@@ -147,38 +170,14 @@ def _step_outside_static(
 
     point_1, point_2 = line
 
-    point_static_left = grid_static[0]
-    point_static_right = grid_static[~0]
+    point_static = grid_static[0]
 
-    num_cell = grid_static.shape[0] - 1
-
-    if point_static_left < point_static_right:
-        point_static_lower = point_static_left
-        point_static_upper = point_static_right
-        index_static_lower = 0
-        index_static_upper = num_cell - 1
-    else:
-        point_static_lower = point_static_right
-        point_static_upper = point_static_left
-        index_static_lower = num_cell - 1
-        index_static_upper = 0
-
-    if point_1 < point_2:
-        point_static = point_static_lower
-        index_static_new = index_static_lower
-        point_lower = point_1
-        point_upper = point_2
-    else:
-        point_static = point_static_upper
-        index_static_new = index_static_upper
-        point_lower = point_2
-        point_upper = point_1
-
-    if point_lower < point_static < point_upper:
-
-        index_static = index_static_new
+    if point_1 < point_static < point_2:
+        index_static = 0
         point_2 = point_static
-
+    elif point_static == point_2:
+        index_sweep = index_sweep + 1
+        index_static = 0
     else:
         index_sweep = index_sweep + 1
 
@@ -193,6 +192,8 @@ def _step_inside_static(
     grid_static: np.ndarray,
     length_input: np.ndarray,
     weights: numba.typed.List[tuple[int, int, float]],
+    reversed_input: bool,
+    reversed_output: bool,
 ) -> tuple[
     tuple[float, float],
     int,
@@ -229,34 +230,20 @@ def _step_inside_static(
     index_input = index_sweep
     index_output = index_static
 
-    point_static_left = grid_static[index_static]
-    point_static_right = grid_static[index_static + 1]
+    if reversed_input:
+        index_input = ~index_input
 
-    if point_static_left < point_static_right:
-        point_static_lower = point_static_left
-        point_static_upper = point_static_right
-        offset_static_lower = -1
-        offset_static_upper = +1
-    else:
-        point_static_lower = point_static_right
-        point_static_upper = point_static_left
-        offset_static_lower = +1
-        offset_static_upper = -1
+    if reversed_output:
+        index_output = ~index_output
 
-    if point_1 < point_2:
-        point_static = point_static_upper
-        offset_static = offset_static_upper
-        point_lower = point_1
-        point_upper = point_2
-    else:
-        point_static = point_static_lower
-        offset_static = offset_static_lower
-        point_lower = point_2
-        point_upper = point_1
+    point_static = grid_static[index_static + 1]
 
-    if point_lower < point_static < point_upper:
-        index_static = index_static + offset_static
+    if point_1 < point_static < point_2:
+        index_static = index_static + 1
         point_2 = point_static
+    elif point_static == point_2:
+        index_static = index_static + 1
+        index_sweep = index_sweep + 1
     else:
         index_sweep = index_sweep + 1
 

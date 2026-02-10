@@ -56,14 +56,6 @@ def index_of_point(
 
     (num,) = grid.shape
 
-    grid_left = grid[0]
-    grid_right = grid[-1]
-
-    if grid_right > grid_left:
-        increasing = True
-    else:
-        increasing = False
-
     index_left = 0
     index_right = num
 
@@ -73,15 +65,9 @@ def index_of_point(
 
         grid_middle = grid[index_middle]
 
-        if increasing:
-            if grid_middle > point:
-                index_right = index_middle
-            else:
-                index_left = index_middle
+        if grid_middle > point:
+            index_right = index_middle
         else:
-            if grid_middle < point:
-                index_right = index_middle
-            else:
-                index_left = index_middle
+            index_left = index_middle
 
     return index_right

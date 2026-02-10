@@ -80,17 +80,15 @@ def _normalize_input_output_coordinates(
         shape_input_orthogonal, shape_output_orthogonal
     )
 
-    shape_input = list(shape_orthogonal)
+    shape_input = list(reversed(shape_orthogonal))
     for ax in reversed(axis_input):
-        ax = ax % ndim_input
-        shape_input.insert(ax, shape_coordinates_input[ax])
-    shape_input = tuple(shape_input)
+        shape_input.insert(~ax, shape_coordinates_input[ax])
+    shape_input = tuple(reversed(shape_input))
 
-    shape_output = list(shape_orthogonal)
+    shape_output = list(reversed(shape_orthogonal))
     for ax in reversed(axis_output):
-        ax = ax % ndim_input
-        shape_output.insert(ax, shape_coordinates_output[ax])
-    shape_output = tuple(shape_output)
+        shape_output.insert(~ax, shape_coordinates_output[ax])
+    shape_output = tuple(reversed(shape_output))
 
     coordinates_input = tuple(
         np.broadcast_to(coord, shape_input) for coord in coordinates_input

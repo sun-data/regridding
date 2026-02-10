@@ -68,8 +68,8 @@ def _weights_conservative_1d(
     x_sweep = x_input
     x_static = x_output
 
-    num_sweep, = x_sweep.shape
-    num_static, = x_static.shape
+    (num_sweep,) = x_sweep.shape
+    (num_static,) = x_static.shape
 
     weights = numba.typed.List()
     for x in range(0):  # pragma: nocover
@@ -149,7 +149,7 @@ def _weights_conservative_1d(
                 length_input=length_input,
                 weights=weights,
                 reversed_input=reversed_input,
-                reversed_output=reversed_output
+                reversed_output=reversed_output,
             )
 
             if not (0 <= index_static < (num_static - 1)):

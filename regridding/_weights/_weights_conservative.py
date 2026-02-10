@@ -1,4 +1,6 @@
 from typing import Sequence
+import multiprocessing
+import concurrent.futures
 import numpy as np
 import numba
 from regridding import _util
@@ -37,29 +39,53 @@ def _weights_conservative(
         shape_values_output[ax] -= 1
     shape_values_output = tuple(shape_values_output)
 
+    weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
+
     if len(axis_input) == 1:
 
-        (x_input,) = coordinates_input
-        (x_output,) = coordinates_output
+        threads = 5 * multiprocessing.cpu_count()
 
-        x_input = np.moveaxis(x_input, axis_input, ~0)
-        x_output = np.moveaxis(x_output, axis_output, ~0)
+        with concurrent.futures.ThreadPoolExecutor(threads) as executor:
 
-        x_input = x_input.reshape(-1, x_input.shape[~0])
-        x_output = x_output.reshape(-1, x_output.shape[~0])
+            (x_input,) = coordinates_input
+            (x_output,) = coordinates_output
 
-        weights = weights_conservative_1d(
-            grid_input=(x_input,),
-            grid_output=(x_output,),
-        )
+            x_input = np.moveaxis(x_input, axis_input, ~0)
+            x_output = np.moveaxis(x_output, axis_output, ~0)
 
-        weights = np.fromiter(weights, dtype=object)
+            x_input = x_input.reshape(-1, x_input.shape[~0])
+            x_output = x_output.reshape(-1, x_output.shape[~0])
+
+            weights = weights.reshape(-1)
+
+            step = np.ceil(x_input.shape[0] / threads).astype(int)
+
+            futures = []
+
+            for t in range(threads):
+
+                index_start = t * step
+                index_stop = (t + 1) * step
+
+                future = executor.submit(
+                    weights_conservative_1d,
+                    x_input=x_input,
+                    x_output=x_output,
+                    weights=weights,
+                    index_start=index_start,
+                    index_stop=index_stop,
+                )
+
+                futures.append(future)
+
+                if index_stop >= x_output.shape[0]:
+                    break
+
+            concurrent.futures.wait(futures)
 
         weights = weights.reshape(shape_orthogonal)
 
     else:
-
-        weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
         for index in np.ndindex(*shape_orthogonal):
             index_vertices_input = list(reversed(index))

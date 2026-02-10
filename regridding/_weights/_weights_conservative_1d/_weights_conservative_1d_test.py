@@ -49,8 +49,15 @@ import regridding
             (0,),
         ),
         (
-            np.linspace(np.arange(5), np.arange(5) + 1, num=11, axis=~0),
-            np.linspace(np.arange(5), np.arange(5) + 1, num=6, axis=~0),
+            np.broadcast_to(np.linspace(1, -1, num=11), (3, 4, 11)),
+            np.linspace(1, -1, num=6),
+            np.ones(10),
+            2 * np.ones(5),
+            ~0,
+        ),
+        (
+            np.linspace(1, -1, num=11),
+            np.broadcast_to(np.linspace(1, -1, num=6), (3, 4, 6)),
             np.ones(10),
             2 * np.ones(5),
             ~0,

@@ -8,13 +8,12 @@ __all__ = [
 ]
 
 
-@numba.njit(
-    cache=True,
-    parallel=True,
-)
 def weights_conservative_1d(
-    grid_input: tuple[np.ndarray],
-    grid_output: tuple[np.ndarray],
+    x_input: np.ndarray,
+    x_output: np.ndarray,
+    weights: np.ndarray,
+    index_start: int,
+    index_stop: int,
 ) -> numba.typed.List[tuple[int, int, float]]:
     """
     For each cell of `grid_output`,
@@ -23,116 +22,140 @@ def weights_conservative_1d(
 
     Parameters
     ----------
-    grid_input
+    x_input
         The vertices of the old grid.
-        Must have one 2D component where the last axis represents the
+        Must be a 2D array where the last axis represents the
         grid and the first axis represents a stack of independent grids.
-    grid_output
+    x_output
         The vertices of the new grid.
-        Every component must have the same 3D shape.
+        Must be a 2D array where the last axis represents the
+        grid and the first axis represents a stack of independent grids.
+    weights
+        An array of weights to update.
+        Must be a 1D array of objects.
+    index_start
+        The first index in the stack to update.
+    index_stop
+        The last index in the stack to update.
+    """
+    for i in range(index_start, index_stop):
+        weights[i] = _weights_conservative_1d(
+            x_input=x_input[i],
+            x_output=x_output[i],
+        )
+
+
+@numba.njit(cache=True)
+def _weights_conservative_1d(
+    x_input: np.ndarray,
+    x_output: np.ndarray,
+) -> numba.typed.List[tuple[int, int, float]]:
+    """
+    For each cell of `grid_output`,
+    compute the fraction of volume shared with each cell of `grid_input`
+    and save as a list of weights.
+
+    Parameters
+    ----------
+    x_input
+        The vertices of the old grid.
+        Must be a 1D monotonic array.
+    x_output
+        The vertices of the new grid.
+        Must be a 1D monotonic array.
     """
 
-    (x_sweep,) = grid_input
-    (x_static,) = grid_output
+    x_sweep = x_input
+    x_static = x_output
 
-    shape_sweep_t, shape_sweep_x = x_sweep.shape
-    shape_static_t, shape_static_x = x_static.shape
+    num_sweep, = x_sweep.shape
+    num_static, = x_static.shape
 
     weights = numba.typed.List()
-    for t in range(shape_sweep_t):
-        weights_t = numba.typed.List()
-        for x in range(0):  # pragma: nocover
-            weights_t.append((0, 0, 0.0))
-        weights.append(weights_t)
+    for x in range(0):  # pragma: nocover
+        weights.append((0, 0, 0.0))
 
-    for t in numba.prange(shape_sweep_t):
+    x_sweep_left = x_sweep[0]
+    x_sweep_right = x_sweep[~0]
 
-        x_sweep_t = x_sweep[t]
-        x_static_t = x_static[t]
+    x_static_left = x_static[0]
+    x_static_right = x_static[~0]
 
-        x_sweep_left = x_sweep_t[0]
-        x_sweep_right = x_sweep_t[~0]
+    if x_sweep_left < x_sweep_right:
+        reversed_sweep = False
+    else:
+        reversed_sweep = True
+        x_sweep = x_sweep[::-1]
 
-        x_static_left = x_static_t[0]
-        x_static_right = x_static_t[~0]
+    if x_static_left < x_static_right:
+        reversed_static = False
+    else:
+        reversed_static = True
+        x_static = x_static[::-1]
 
-        if x_sweep_left < x_sweep_right:
-            reversed_sweep = False
-        else:
-            reversed_sweep = True
-            x_sweep_t = x_sweep_t[::-1]
+    reversed_input = reversed_sweep
+    reversed_output = reversed_static
 
-        if x_static_left < x_static_right:
-            reversed_static = False
-        else:
-            reversed_static = True
-            x_static_t = x_static_t[::-1]
+    x_static_left = x_static[0]
+    x_static_right = x_static[~0]
 
-        x_static_lower = x_static_t[0]
-        x_static_upper = x_static_t[~0]
+    length_input = _grids.cell_length(x_sweep)
 
-        reversed_input = reversed_sweep
-        reversed_output = reversed_static
+    index_sweep = 0
 
-        length_input = _grids.cell_length(x_sweep_t)
+    point_1 = x_sweep[index_sweep]
 
-        index_sweep = 0
+    if x_static_left == point_1:
+        sweep_is_outside_static = False
+        index_static = 0
+    elif x_static_left < point_1 < x_static_right:
+        sweep_is_outside_static = False
+        index_static = _grids.index_of_point(
+            point=point_1,
+            grid=x_static,
+        )
+        index_static = index_static - 1
+    else:
+        sweep_is_outside_static = True
+        index_static = sys.maxsize
 
-        point_1 = x_sweep_t[index_sweep]
+    while index_sweep < (num_sweep - 1):
 
-        if x_static_lower == point_1:
-            sweep_is_outside_static = False
-            index_static = 0
-        elif x_static_lower < point_1 < x_static_upper:
-            sweep_is_outside_static = False
-            index_static = _grids.index_of_point(
-                point=point_1,
-                grid=x_static_t,
+        index_sweep_new = index_sweep + 1
+
+        point_2 = x_sweep[index_sweep_new]
+
+        line = point_1, point_2
+
+        if sweep_is_outside_static:
+
+            line, index_sweep, index_static = _step_outside_static(
+                line=line,
+                index_sweep=index_sweep,
+                index_static=index_static,
+                grid_static=x_static,
             )
-            index_static = index_static - 1
+
+            if index_static < sys.maxsize:
+                sweep_is_outside_static = False
+
         else:
-            sweep_is_outside_static = True
-            index_static = sys.maxsize
 
-        while index_sweep < (shape_sweep_x - 1):
+            line, index_sweep, index_static = _step_inside_static(
+                line=line,
+                index_sweep=index_sweep,
+                index_static=index_static,
+                grid_static=x_static,
+                length_input=length_input,
+                weights=weights,
+                reversed_input=reversed_input,
+                reversed_output=reversed_output
+            )
 
-            index_sweep_new = index_sweep + 1
+            if not (0 <= index_static < (num_static - 1)):
+                break
 
-            point_2 = x_sweep_t[index_sweep_new]
-
-            line = point_1, point_2
-
-            if sweep_is_outside_static:
-
-                line, index_sweep, index_static = _step_outside_static(
-                    line=line,
-                    index_sweep=index_sweep,
-                    index_static=index_static,
-                    grid_static=x_static_t,
-                )
-
-                if index_static < sys.maxsize:
-                    sweep_is_outside_static = False
-
-            else:
-
-                line, index_sweep, index_static = _step_inside_static(
-                    line=line,
-                    index_sweep=index_sweep,
-                    index_static=index_static,
-                    grid_static=x_static_t,
-                    length_input=length_input,
-                    weights=weights[t],
-                    reversed_input=reversed_input,
-                    reversed_output=reversed_output
-                )
-
-                if not (0 <= index_static < (shape_static_x - 1)):
-                    break
-
-            point_1 = line[1]
-
-        weights.append(weights_t)
+        point_1 = line[1]
 
     return weights
 

@@ -2,14 +2,14 @@ import pytest
 import numpy as np
 from . import _grids
 
-grid = np.arange(5)
+_grid = np.arange(5)
 
 
 @pytest.mark.parametrize(
     argnames="point,grid,result_expected",
     argvalues=[
-        (0.5, grid, 1),
-        (3.5, grid, 4),
+        (0.5, _grid, 1),
+        (3.5, _grid, 4),
     ],
 )
 def test_index_of_point(

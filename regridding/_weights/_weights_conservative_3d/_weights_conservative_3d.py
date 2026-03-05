@@ -743,13 +743,19 @@ def _calc_and_save_intercept(
 
         index_orthogonal = rg.math.difference_3d(index_sweep, offset_orthogonal)
 
+        apex_sweep = (
+            x_sweep[index_sweep],
+            y_sweep[index_sweep],
+            z_sweep[index_sweep],
+        )
+
         if index_orthogonal[axis_orthogonal_apparent] >= 0:
             point_orthogonal = (
                 x_sweep[index_orthogonal],
                 y_sweep[index_orthogonal],
                 z_sweep[index_orthogonal],
             )
-            normal_sweep = rg.math.difference_3d(point_sweep, point_orthogonal)
+            normal_sweep = rg.math.difference_3d(apex_sweep, point_orthogonal)
         else:
             index_orthogonal = rg.math.sum_3d(index_sweep, offset_orthogonal)
             point_orthogonal = (
@@ -757,7 +763,7 @@ def _calc_and_save_intercept(
                 y_sweep[index_orthogonal],
                 z_sweep[index_orthogonal],
             )
-            normal_sweep = rg.math.difference_3d(point_orthogonal, point_sweep)
+            normal_sweep = rg.math.difference_3d(point_orthogonal, apex_sweep)
 
         if sweep_input:
             normal_input = normal_sweep
@@ -789,7 +795,7 @@ def _calc_and_save_intercept(
                     z_sweep[index_parallel],
                 )
 
-                parallel = rg.math.difference_3d(point_sweep, point_parallel)
+                parallel = rg.math.difference_3d(apex_sweep, point_parallel)
 
                 sgn = rg.math.dot_3d(parallel, direction)
 

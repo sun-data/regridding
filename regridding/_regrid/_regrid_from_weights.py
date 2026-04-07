@@ -54,25 +54,43 @@ def regrid_from_weights(
 
     unit = getattr(values_input, "unit", None)
 
-    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
-
     ndim_input = len(shape_input)
-    axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
+    ndim_output = len(shape_output)
 
-    shape_orthogonal = (
+    axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
+    axis_output = _util._normalize_axis(axis_output, ndim=ndim_output)
+
+    shape_input_orthogonal = tuple(
         shape_input[i] for i in range(-len(shape_input), 0) if i not in axis_input
     )
+    shape_output_orthogonal = tuple(
+        shape_output[i] for i in range(-len(shape_output), 0) if i not in axis_output
+    )
+
+    shape_orthogonal = np.broadcast_shapes(
+        shape_input_orthogonal,
+        shape_output_orthogonal,
+    )
+
+    axis_input = tuple(sorted(axis_input))
+    axis_output = tuple(sorted(axis_output))
+
+    shape_input_new = list(reversed(shape_orthogonal))
+    for ax in reversed(axis_input):
+        shape_input_new.insert(~ax, shape_input[ax])
+    shape_input = list(reversed(shape_input_new))
+
+    shape_output_new = list(reversed(shape_orthogonal))
+    for ax in reversed(axis_output):
+        shape_output_new.insert(~ax, shape_output[ax])
+    shape_output = list(reversed(shape_output_new))
+
+    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
+
     weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
     values_input = np.broadcast_to(values_input, shape_input, subok=True)
 
     if values_output is None:
-        shape_output = np.broadcast_shapes(
-            shape_output,
-            tuple(
-                shape_input[ax] if ax not in axis_input else 1
-                for ax in _util._normalize_axis(None, ndim_input)
-            ),
-        )
         values_output = np.zeros_like(values_input, shape=shape_output)
     else:
         if values_output.shape != shape_output:  # pragma: nocover
@@ -80,9 +98,6 @@ def regrid_from_weights(
                 f"{values_output.shape=} should be equal to {shape_output}"
             )
         values_output.fill(0)
-
-    ndim_output = len(shape_output)
-    axis_output = _util._normalize_axis(axis_output, ndim=ndim_output)
 
     axis_input_numba = ~np.arange(len(axis_input))[::-1]
     axis_output_numba = ~np.arange(len(axis_output))[::-1]

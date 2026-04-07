@@ -41,8 +41,8 @@ def _normalize_input_output_coordinates(
     axis_input = _normalize_axis(axis_input, ndim=ndim_input)
     axis_output = _normalize_axis(axis_output, ndim=ndim_output)
 
-    axis_input = sorted(axis_input, reverse=True)
-    axis_output = sorted(axis_output, reverse=True)
+    axis_input = tuple(sorted(axis_input))
+    axis_output = tuple(sorted(axis_output))
 
     if len(axis_output) != len(axis_input):
         raise ValueError(
@@ -102,7 +102,7 @@ def _normalize_input_output_coordinates(
         coordinates_output,
         axis_input,
         axis_output,
-        shape_input,
-        shape_output,
+        shape_coordinates_input,
+        shape_coordinates_output,
         shape_orthogonal,
     )

@@ -79,7 +79,7 @@ def regrid_from_weights(
     shape_orthogonal = np.broadcast_shapes(
         shape_input_orthogonal,
         shape_output_orthogonal,
-        shape_values_orthogonal
+        shape_values_orthogonal,
     )
 
     axis_input = tuple(sorted(axis_input))

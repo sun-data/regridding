@@ -1,8 +1,6 @@
 from typing import Sequence
 import numpy as np
 import numba
-
-from benchmarks.regrid import values_input
 from regridding import _util
 
 __all__ = [

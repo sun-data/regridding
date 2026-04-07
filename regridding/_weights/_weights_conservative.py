@@ -1,7 +1,10 @@
 from typing import Sequence
+import multiprocessing
+import concurrent.futures
 import numpy as np
 import numba
 from regridding import _util
+from ._weights_conservative_1d import weights_conservative_1d
 from regridding._conservative_ramshaw import _conservative_ramshaw
 
 
@@ -38,38 +41,81 @@ def _weights_conservative(
 
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
-    for index in np.ndindex(*shape_orthogonal):
-        index_vertices_input = list(reversed(index))
+    if len(axis_input) == 1:
 
-        for ax in axis_input:
-            index_vertices_input.insert(~ax, slice(None))
-        index_vertices_input = tuple(reversed(index_vertices_input))
+        threads = 5 * multiprocessing.cpu_count()
 
-        index_vertices_output = list(reversed(index))
-        for ax in axis_output:
-            index_vertices_output.insert(~ax, slice(None))
-        index_vertices_output = tuple(reversed(index_vertices_output))
+        with concurrent.futures.ThreadPoolExecutor(threads) as executor:
 
-        if len(axis_input) == 1:
-            raise NotImplementedError("1D regridding not supported")
+            (x_input,) = coordinates_input
+            (x_output,) = coordinates_output
 
-        elif len(axis_input) == 2:
-            coordinates_input_x, coordinates_input_y = coordinates_input
-            coordinates_output_x, coordinates_output_y = coordinates_output
-            weights[index] = _conservative_ramshaw(
-                grid_input=(
-                    coordinates_input_x[index_vertices_input],
-                    coordinates_input_y[index_vertices_input],
-                ),
-                grid_output=(
-                    coordinates_output_x[index_vertices_output],
-                    coordinates_output_y[index_vertices_output],
-                ),
-            )
+            x_input = np.moveaxis(x_input, axis_input, ~0)
+            x_output = np.moveaxis(x_output, axis_output, ~0)
 
-        else:
-            raise NotImplementedError(
-                "Regridding operations greater than 2D are not supported"
-            )
+            x_input = x_input.reshape(-1, x_input.shape[~0])
+            x_output = x_output.reshape(-1, x_output.shape[~0])
+
+            weights = weights.reshape(-1)
+
+            step = np.ceil(x_input.shape[0] / threads).astype(int)
+
+            futures = []
+
+            for t in range(threads):
+
+                index_start = t * step
+                index_stop = (t + 1) * step
+
+                future = executor.submit(
+                    weights_conservative_1d,
+                    x_input=x_input,
+                    x_output=x_output,
+                    weights=weights,
+                    index_start=index_start,
+                    index_stop=index_stop,
+                )
+
+                futures.append(future)
+
+                if index_stop >= x_output.shape[0]:
+                    break
+
+            concurrent.futures.wait(futures)
+
+        weights = weights.reshape(shape_orthogonal)
+
+    else:
+
+        for index in np.ndindex(*shape_orthogonal):
+            index_vertices_input = list(reversed(index))
+
+            for ax in axis_input:
+                index_vertices_input.insert(~ax, slice(None))
+            index_vertices_input = tuple(reversed(index_vertices_input))
+
+            index_vertices_output = list(reversed(index))
+            for ax in axis_output:
+                index_vertices_output.insert(~ax, slice(None))
+            index_vertices_output = tuple(reversed(index_vertices_output))
+
+            if len(axis_input) == 2:
+                coordinates_input_x, coordinates_input_y = coordinates_input
+                coordinates_output_x, coordinates_output_y = coordinates_output
+                weights[index] = _conservative_ramshaw(
+                    grid_input=(
+                        coordinates_input_x[index_vertices_input],
+                        coordinates_input_y[index_vertices_input],
+                    ),
+                    grid_output=(
+                        coordinates_output_x[index_vertices_output],
+                        coordinates_output_y[index_vertices_output],
+                    ),
+                )
+
+            else:  # pragma: nocover
+                raise NotImplementedError(
+                    "Regridding operations greater than 2D are not supported"
+                )
 
     return weights, shape_values_input, shape_values_output

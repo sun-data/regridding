@@ -13,8 +13,8 @@ def _normalize_axis(
 
 
 def _normalize_input_output_coordinates(
-    coordinates_input: tuple[np.ndarray, ...],
-    coordinates_output: tuple[np.ndarray, ...],
+    coordinates_input: np.ndarray | tuple[np.ndarray, ...],
+    coordinates_output: np.ndarray | tuple[np.ndarray, ...],
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
 ) -> tuple[
@@ -26,6 +26,12 @@ def _normalize_input_output_coordinates(
     tuple[int, ...],
     tuple[int, ...],
 ]:
+    if isinstance(coordinates_input, np.ndarray):
+        coordinates_input = (coordinates_input,)
+
+    if isinstance(coordinates_output, np.ndarray):
+        coordinates_output = (coordinates_output,)
+
     shape_coordinates_input = np.broadcast(*coordinates_input).shape
     shape_coordinates_output = np.broadcast(*coordinates_output).shape
 
@@ -35,8 +41,8 @@ def _normalize_input_output_coordinates(
     axis_input = _normalize_axis(axis_input, ndim=ndim_input)
     axis_output = _normalize_axis(axis_output, ndim=ndim_output)
 
-    axis_input = sorted(axis_input, reverse=True)
-    axis_output = sorted(axis_output, reverse=True)
+    axis_input = tuple(sorted(axis_input, reverse=True))
+    axis_output = tuple(sorted(axis_output, reverse=True))
 
     if len(axis_output) != len(axis_input):
         raise ValueError(
@@ -74,17 +80,15 @@ def _normalize_input_output_coordinates(
         shape_input_orthogonal, shape_output_orthogonal
     )
 
-    shape_input = list(shape_orthogonal)
-    for ax in reversed(axis_input):
-        ax = ax % ndim_input
-        shape_input.insert(ax, shape_coordinates_input[ax])
-    shape_input = tuple(shape_input)
+    shape_input = list(reversed(shape_orthogonal))
+    for ax in axis_input:
+        shape_input.insert(~ax, shape_coordinates_input[ax])
+    shape_input = tuple(reversed(shape_input))
 
-    shape_output = list(shape_orthogonal)
-    for ax in reversed(axis_output):
-        ax = ax % ndim_input
-        shape_output.insert(ax, shape_coordinates_output[ax])
-    shape_output = tuple(shape_output)
+    shape_output = list(reversed(shape_orthogonal))
+    for ax in axis_output:
+        shape_output.insert(~ax, shape_coordinates_output[ax])
+    shape_output = tuple(reversed(shape_output))
 
     coordinates_input = tuple(
         np.broadcast_to(coord, shape_input) for coord in coordinates_input
@@ -98,7 +102,7 @@ def _normalize_input_output_coordinates(
         coordinates_output,
         axis_input,
         axis_output,
-        shape_input,
-        shape_output,
+        shape_coordinates_input,
+        shape_coordinates_output,
         shape_orthogonal,
     )

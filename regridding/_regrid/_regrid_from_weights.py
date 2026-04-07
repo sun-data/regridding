@@ -1,6 +1,8 @@
 from typing import Sequence
 import numpy as np
 import numba
+
+from benchmarks.regrid import values_input
 from regridding import _util
 
 __all__ = [
@@ -61,15 +63,25 @@ def regrid_from_weights(
     axis_output = _util._normalize_axis(axis_output, ndim=ndim_output)
 
     shape_input_orthogonal = tuple(
-        shape_input[i] for i in range(-len(shape_input), 0) if i not in axis_input
+        shape_input[i]
+        for i in _util._normalize_axis(None, ndim=len(shape_input))
+        if i not in axis_input
     )
     shape_output_orthogonal = tuple(
-        shape_output[i] for i in range(-len(shape_output), 0) if i not in axis_output
+        shape_output[i]
+        for i in _util._normalize_axis(None, ndim=len(shape_output))
+        if i not in axis_output
+    )
+    shape_values_orthogonal = tuple(
+        values_input.shape[i]
+        for i in _util._normalize_axis(None, ndim=values_input.ndim)
+        if i not in axis_input
     )
 
     shape_orthogonal = np.broadcast_shapes(
         shape_input_orthogonal,
         shape_output_orthogonal,
+        shape_values_orthogonal
     )
 
     axis_input = tuple(sorted(axis_input))
@@ -78,14 +90,12 @@ def regrid_from_weights(
     shape_input_new = list(reversed(shape_orthogonal))
     for ax in reversed(axis_input):
         shape_input_new.insert(~ax, shape_input[ax])
-    shape_input = list(reversed(shape_input_new))
+    shape_input = tuple(reversed(shape_input_new))
 
     shape_output_new = list(reversed(shape_orthogonal))
     for ax in reversed(axis_output):
         shape_output_new.insert(~ax, shape_output[ax])
-    shape_output = list(reversed(shape_output_new))
-
-    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
+    shape_output = tuple(reversed(shape_output_new))
 
     weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
     values_input = np.broadcast_to(values_input, shape_input, subok=True)

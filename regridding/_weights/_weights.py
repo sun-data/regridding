@@ -156,8 +156,8 @@ def transpose_weights(
     Examples
     --------
 
-        Regrid array of values onto new grid with precalculated weights, and then transform back with transposed
-        weights.
+    Regrid array of values onto new grid with precalculated weights,
+    and then transform back with transposed weights.
 
     .. jupyter-execute::
 
@@ -219,11 +219,36 @@ def transpose_weights(
 
     weights, shape_input, shape_output = weights
 
-    flat_weights = weights.reshape(-1)
-    transposed_weights = np.empty_like(flat_weights)
-    for i, weights_list in enumerate(flat_weights):
-        transposed_weights[i] = numba.typed.List(
-            [(j, i, weight) for i, j, weight in weights_list]
-        )
-    transposed_weights = transposed_weights.reshape(weights.shape)
-    return (transposed_weights, shape_output, shape_input)
+    shape = weights.shape
+
+    weights = numba.typed.List(weights.reshape(-1))
+
+    result = _transpose_weights_numba(weights)
+
+    result = np.fromiter(result, dtype=object)
+
+    result = result.reshape(shape)
+
+    return result, shape_output, shape_input
+
+
+@numba.njit(
+    cache=True,
+    # parallel=True,
+)
+def _transpose_weights_numba(
+    weights: numba.typed.List,
+) -> numba.typed.List:
+
+    result = numba.typed.List()
+
+    for d in numba.prange(len(weights)):
+        d = numba.types.int64(d)
+        weights_d = weights[d]
+        result_d = numba.typed.List()
+        for w in range(len(weights_d)):
+            i_input, i_output, weight = weights_d[w]
+            result_d.append((i_output, i_input, weight))
+        result.append(result_d)
+
+    return result

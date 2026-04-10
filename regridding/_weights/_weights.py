@@ -252,4 +252,3 @@ def _transpose_weights_numba(
         result.append(result_d)
 
     return result
-

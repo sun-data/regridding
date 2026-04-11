@@ -120,6 +120,16 @@ def weights(
         axs[1, 1].pcolormesh(x_output, y_output, values_output_2);
         axs[1, 1].set_title(r"values_output_2");
     """
+
+    coordinates_input = list(coordinates_input)
+    for i in range(len(coordinates_input)):
+        coord_input = coordinates_input[i]
+        coord_output = coordinates_output[i]
+        if hasattr(coord_output, "unit"):
+            coord_input = coord_input << coord_output.unit
+        coordinates_input[i] = coord_input
+    coordinates_input = tuple(coordinates_input)
+
     if method == "multilinear":
         return _weights_multilinear(
             coordinates_input=coordinates_input,

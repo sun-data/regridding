@@ -32,6 +32,15 @@ def _normalize_input_output_coordinates(
     if isinstance(coordinates_output, np.ndarray):
         coordinates_output = (coordinates_output,)
 
+    coordinates_input = list(coordinates_input)
+    for i in range(len(coordinates_input)):
+        coord_input = coordinates_input[i]
+        coord_output = coordinates_output[i]
+        if hasattr(coord_output, "unit"):
+            coord_input = coord_input << coord_output.unit
+        coordinates_input[i] = coord_input
+    coordinates_input = tuple(coordinates_input)
+
     shape_coordinates_input = np.broadcast(*coordinates_input).shape
     shape_coordinates_output = np.broadcast(*coordinates_output).shape
 

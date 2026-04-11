@@ -40,6 +40,15 @@ new_x_broadcasted_2, new_y_broadcasted_2 = np.meshgrid(
             np.square(np.linspace(-1, 1, num=11)),
         ),
         (
+            (np.linspace(-1, 1, num=11) * u.mm,),
+            (np.linspace(-1, 1, num=11) * u.mm,),
+            np.square(np.linspace(-1, 1, num=11)),
+            None,
+            None,
+            None,
+            np.square(np.linspace(-1, 1, num=11)),
+        ),
+        (
             (np.linspace(-1, 1, num=11),),
             (np.linspace(-1, 1, num=11),),
             np.square(np.linspace(-1, 1, num=11)),

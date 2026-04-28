@@ -13,6 +13,7 @@ def _weights_conservative(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
+    weights_input: None | np.ndarray = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     (
         coordinates_input,
@@ -56,6 +57,10 @@ def _weights_conservative(
             x_input = x_input.reshape(-1, x_input.shape[~0])
             x_output = x_output.reshape(-1, x_output.shape[~0])
 
+            if weights_input is not None:
+                weights_input = np.moveaxis(weights_input, axis_input, ~0)
+                weights_input = weights_input.reshape(-1, weights_input.shape[~0])
+
             weights = weights.reshape(-1)
 
             step = np.ceil(x_input.shape[0] / threads).astype(int)
@@ -71,7 +76,8 @@ def _weights_conservative(
                     weights_conservative_1d,
                     x_input=x_input,
                     x_output=x_output,
-                    weights=weights,
+                    weights_input=weights_input,
+                    weights_output=weights,
                     index_start=index_start,
                     index_stop=index_stop,
                 )
@@ -102,6 +108,10 @@ def _weights_conservative(
             if len(axis_input) == 2:
                 coordinates_input_x, coordinates_input_y = coordinates_input
                 coordinates_output_x, coordinates_output_y = coordinates_output
+                if weights_input is not None:
+                    weights_input_index = weights_input[index]
+                else:
+                    weights_input_index = None
                 weights[index] = _conservative_ramshaw(
                     grid_input=(
                         coordinates_input_x[index_vertices_input],
@@ -111,6 +121,7 @@ def _weights_conservative(
                         coordinates_output_x[index_vertices_output],
                         coordinates_output_y[index_vertices_output],
                     ),
+                    weights_input=weights_input_index,
                 )
 
             else:  # pragma: nocover

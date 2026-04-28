@@ -40,6 +40,9 @@ def _weights_conservative(
         shape_values_output[ax] -= 1
     shape_values_output = tuple(shape_values_output)
 
+    if weights_input is not None:
+        weights_input = np.broadcast_to(weights_input, shape_values_input)
+
     weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
 
     if len(axis_input) == 1:

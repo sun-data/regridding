@@ -4,13 +4,20 @@ import regridding
 
 
 @pytest.mark.parametrize(
-    "x_input, x_output, values_input, values_expected, axis_input, axis_output",
-    [
+    argnames="x_input,"
+    "x_output,"
+    "values_input,"
+    "values_expected,"
+    "axis_input,"
+    "axis_output,"
+    "weights_input,",
+    argvalues=[
         (
             np.linspace(-1, 1, num=11),
             np.linspace(-1, 1, num=6),
             np.ones(10),
             2 * np.ones(5),
+            None,
             None,
             None,
         ),
@@ -21,12 +28,14 @@ import regridding
             2 * np.ones(5),
             None,
             None,
+            None,
         ),
         (
             np.linspace(-1, 1, num=11),
             np.linspace(-1, 1, num=6) - 1e-6,
             np.ones(10),
             2 * np.ones(5),
+            None,
             None,
             None,
         ),
@@ -37,6 +46,7 @@ import regridding
             np.ones(20) / 2,
             0,
             ~0,
+            None,
         ),
         (
             np.linspace(-1, 1, num=11),
@@ -45,6 +55,7 @@ import regridding
             2 * np.ones(5),
             ~0,
             0,
+            None,
         ),
         (
             np.linspace(1, -1, num=11),
@@ -53,6 +64,7 @@ import regridding
             2 * np.ones(5),
             (0,),
             0,
+            None,
         ),
         (
             np.broadcast_to(np.linspace(1, -1, num=11), (3, 4, 11)),
@@ -61,6 +73,7 @@ import regridding
             2 * np.ones(5),
             ~0,
             0,
+            None,
         ),
         (
             np.broadcast_to(
@@ -71,6 +84,7 @@ import regridding
             2 * np.ones(5),
             0,
             ~0,
+            None,
         ),
         (
             np.linspace(1, -1, num=11),
@@ -79,12 +93,14 @@ import regridding
             2 * np.ones(5),
             ~0,
             ~0,
+            None,
         ),
         (
             np.linspace(-1, 1, num=11),
             np.linspace(1, 2, num=6),
             np.ones(10),
             0,
+            None,
             None,
             None,
         ),
@@ -95,24 +111,42 @@ import regridding
             2 * np.ones(5),
             ~0,
             ~0,
+            None,
+        ),
+        (
+            np.linspace(-1, 1, num=11),
+            np.linspace(-1, 1, num=6),
+            np.ones(10),
+            2 * np.ones(5),
+            None,
+            None,
+            1,
         ),
     ],
 )
-def test_regrid_conservative_1d(
+def test_weights_conservative_1d(
     x_input: np.ndarray | tuple[np.ndarray],
     x_output: np.ndarray | tuple[np.ndarray],
     values_input: np.ndarray,
     values_expected: np.ndarray,
     axis_input: None | int | tuple[int],
     axis_output: None | int | tuple[int],
+    weights_input: None | np.ndarray,
 ):
-    values_output = regridding.regrid(
+    weights_output = regridding.weights(
         coordinates_input=x_input,
         coordinates_output=x_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        weights_input=weights_input,
+        method="conservative",
+    )
+
+    values_output = regridding.regrid_from_weights(
+        *weights_output,
         values_input=values_input,
         axis_input=axis_input,
         axis_output=axis_output,
-        method="conservative",
     )
 
     assert np.allclose(values_output, values_expected)

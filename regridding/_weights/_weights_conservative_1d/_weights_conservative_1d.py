@@ -11,7 +11,8 @@ __all__ = [
 def weights_conservative_1d(
     x_input: np.ndarray,
     x_output: np.ndarray,
-    weights: np.ndarray,
+    weights_input: None | np.ndarray,
+    weights_output: np.ndarray,
     index_start: int,
     index_stop: int,
 ) -> numba.typed.List[tuple[int, int, float]]:
@@ -30,8 +31,10 @@ def weights_conservative_1d(
         The vertices of the new grid.
         Must be a 2D array where the last axis represents the
         grid and the first axis represents a stack of independent grids.
-    weights
-        An array of weights to update.
+    weights_input
+        An array of weights applied to the input values.
+    weights_output
+        An array of output weights to update.
         Must be a 1D array of objects.
     index_start
         The first index in the stack to update.
@@ -39,9 +42,16 @@ def weights_conservative_1d(
         The last index in the stack to update.
     """
     for i in range(index_start, index_stop):
-        weights[i] = _weights_conservative_1d(
+
+        if weights_input is not None:
+            weights_input_i = weights_input[i]
+        else:
+            weights_input_i = None
+
+        weights_output[i] = _weights_conservative_1d(
             x_input=x_input[i],
             x_output=x_output[i],
+            weights_input=weights_input_i,
         )
 
 
@@ -49,6 +59,7 @@ def weights_conservative_1d(
 def _weights_conservative_1d(
     x_input: np.ndarray,
     x_output: np.ndarray,
+    weights_input: None | np.ndarray,
 ) -> numba.typed.List[tuple[int, int, float]]:
     """
     For each cell of `grid_output`,
@@ -63,6 +74,8 @@ def _weights_conservative_1d(
     x_output
         The vertices of the new grid.
         Must be a 1D monotonic array.
+    weights_input
+        Weights to be applied to the input values.
     """
 
     x_sweep = x_input
@@ -71,9 +84,9 @@ def _weights_conservative_1d(
     (num_sweep,) = x_sweep.shape
     (num_static,) = x_static.shape
 
-    weights = numba.typed.List()
+    weights_output = numba.typed.List()
     for x in range(0):  # pragma: nocover
-        weights.append((0, 0, 0.0))
+        weights_output.append((0, 0, 0.0))
 
     x_sweep_left = x_sweep[0]
     x_sweep_right = x_sweep[~0]
@@ -147,7 +160,8 @@ def _weights_conservative_1d(
                 index_static=index_static,
                 grid_static=x_static,
                 length_input=length_input,
-                weights=weights,
+                weights_input=weights_input,
+                weights_output=weights_output,
                 reversed_input=reversed_input,
                 reversed_output=reversed_output,
             )
@@ -157,7 +171,7 @@ def _weights_conservative_1d(
 
         point_1 = line[1]
 
-    return weights
+    return weights_output
 
 
 @numba.njit(cache=True)
@@ -214,7 +228,8 @@ def _step_inside_static(
     index_static: int,
     grid_static: np.ndarray,
     length_input: np.ndarray,
-    weights: numba.typed.List[tuple[int, int, float]],
+    weights_input: None | np.ndarray,
+    weights_output: numba.typed.List[tuple[int, int, float]],
     reversed_input: bool,
     reversed_output: bool,
 ) -> tuple[
@@ -244,8 +259,10 @@ def _step_inside_static(
         The vertices of the static grid.
     length_input
         The length of each cell in the current input grid.
-    weights
-        The current list of weights to which new weights will be appended.
+    weights_input
+        Weights applied to the values of the input.
+    weights_output
+        The current list of output weights to which new weights will be appended.
     """
 
     point_1, point_2 = line
@@ -274,9 +291,12 @@ def _step_inside_static(
 
     ratio = length / length_input[index_input]
 
+    if weights_input is not None:
+        ratio = ratio * weights_input[index_input]
+
     weight = (index_input, index_output, ratio)
 
-    weights.append(weight)
+    weights_output.append(weight)
 
     line = point_1, point_2
 

@@ -10,6 +10,7 @@ def _weights_multilinear(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
+    weights_input: None | np.ndarray = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     indices_output = regridding.find_indices(
         coordinates_input=coordinates_input,
@@ -24,6 +25,7 @@ def _weights_multilinear(
         coordinates_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
+        weights_input=weights_input,
     )
     return result
 
@@ -34,6 +36,7 @@ def _weights_from_indices_multilinear(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
+    weights_input: None | np.ndarray = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     (
         coordinates_input,
@@ -68,12 +71,17 @@ def _weights_from_indices_multilinear(
         np.moveaxis(v, axis_output, axis_output_numba).reshape(-1, *shape_output_numba)
         for v in coordinates_output
     )
+    if weights_input is not None:
+        weights_input = np.broadcast_to(weights_input, shape_input)
+        weights_input = np.moveaxis(weights_input, axis_input, axis_input_numba)
+        weights_input = weights_input.reshape(-1, *shape_input_numba)
 
     if len(axis_input) == 1:
         weights_list = _weights_from_indices_multilinear_1d(
             indices_output=indices_output,
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
+            weights_input=weights_input,
         )
     else:
         raise ValueError(
@@ -94,6 +102,7 @@ def _weights_from_indices_multilinear_1d(
     indices_output: tuple[np.ndarray],
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
+    weights_input: None | np.ndarray,
 ) -> np.ndarray:
     (i_output,) = indices_output
     (x_input,) = coordinates_input
@@ -119,6 +128,10 @@ def _weights_from_indices_multilinear_1d(
 
             w1 = (x - x0) / (x1 - x0)
             w0 = 1 - w1
+
+            if weights_input is not None:
+                w0 = w0 * weights_input[d, i0]
+                w1 = w1 * weights_input[d, i1]
 
             weights_d.append((i0, i, w0))
             weights_d.append((i1, i, w1))

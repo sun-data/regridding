@@ -15,6 +15,7 @@ def weights(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
+    weights_input: None | np.ndarray = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
@@ -46,6 +47,8 @@ def weights(
         axes in the input grid.
         The number of axes should be equal to the number of
         coordinates in the output grid.
+    weights_input
+        Weights applied to the values of the input grid before resampling.
     method
         The type of regridding to use.
 
@@ -126,6 +129,7 @@ def weights(
             coordinates_output=coordinates_output,
             axis_input=axis_input,
             axis_output=axis_output,
+            weights_input=weights_input,
         )
     elif method == "conservative":
         return _weights_conservative(
@@ -133,6 +137,7 @@ def weights(
             coordinates_output=coordinates_output,
             axis_input=axis_input,
             axis_output=axis_output,
+            weights_input=weights_input,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")

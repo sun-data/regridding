@@ -5,12 +5,12 @@ import regridding
 
 @pytest.mark.parametrize(
     argnames="x_input,"
-             "x_output,"
-             "values_input,"
-             "values_expected,"
-             "axis_input,"
-             "axis_output,"
-             "weights_input,",
+    "x_output,"
+    "values_input,"
+    "values_expected,"
+    "axis_input,"
+    "axis_output,"
+    "weights_input,",
     argvalues=[
         (
             np.linspace(-1, 1, num=11),

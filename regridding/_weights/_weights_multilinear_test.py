@@ -29,13 +29,13 @@ new_x_broadcasted_2, new_y_broadcasted_2 = np.meshgrid(
 
 @pytest.mark.parametrize(
     argnames="coordinates_input,"
-             "coordinates_output,"
-             "values_input,"
-             "values_output,"
-             "axis_input,"
-             "axis_output,"
-             "weights_input,"
-             "result_expected",
+    "coordinates_output,"
+    "values_input,"
+    "values_output,"
+    "axis_input,"
+    "axis_output,"
+    "weights_input,"
+    "result_expected",
     argvalues=[
         (
             (np.linspace(-1, 1, num=11),),

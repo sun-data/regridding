@@ -140,6 +140,9 @@ def weights(
 
 def transpose_weights(
     weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+    weights_input: None | np.ndarray = None,
+    coordinates_input: None | tuple[np.ndarray, ...] = None,
+    coordinates_output: None | tuple[np.ndarray, ...] = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     r"""
     Swap indices, :math:`(i, j, w) \rightarrow (j, i, w)`,
@@ -152,6 +155,17 @@ def transpose_weights(
     ----------
     weights
         Ragged array of weights computed by :func:`regridding.weights`.
+    weights_input
+        An optional array of weights could have been applied to the input values by
+        :func:`regridding.weights`.
+    coordinates_input
+        The coordinates of the input grid.
+        These are needed to compute the volume of each input cell.
+        If :obj:`None` (the default), the cells are assumed to have a volume of unity.
+    coordinates_input
+        The coordinates of the input grid.
+        These are needed to compute the volume of each input cell.
+        If :obj:`None` (the default), the cells are assumed to have a volume of unity.
 
     Examples
     --------
@@ -238,6 +252,7 @@ def transpose_weights(
 )
 def _transpose_weights_numba(
     weights: numba.typed.List,
+
 ) -> numba.typed.List:
 
     result = numba.typed.List()

@@ -129,20 +129,20 @@ def _weights_conservative(
                 )
 
             elif len(axis_input) == 3:
-            x_input, y_input, z_input = coordinates_input
-            x_output, y_output, z_output = coordinates_output
-            weights[index] = weights_conservative_3d(
-                grid_input=(
-                    x_input[index_vertices_input],
-                    y_input[index_vertices_input],
-                    z_input[index_vertices_input],
-                ),
-                grid_output=(
-                    x_output[index_vertices_output],
-                    y_output[index_vertices_output],
-                    z_output[index_vertices_output],
-                ),
-            )
+                x_input, y_input, z_input = coordinates_input
+                x_output, y_output, z_output = coordinates_output
+                weights[index] = weights_conservative_3d(
+                    grid_input=(
+                        x_input[index_vertices_input],
+                        y_input[index_vertices_input],
+                        z_input[index_vertices_input],
+                    ),
+                    grid_output=(
+                        x_output[index_vertices_output],
+                        y_output[index_vertices_output],
+                        z_output[index_vertices_output],
+                    ),
+                )
 
         else:  # pragma: nocover
                 raise NotImplementedError(

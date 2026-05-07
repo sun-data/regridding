@@ -560,7 +560,6 @@ def two_line_segment_intersection(
         q = np.array(q)
 
         plt.figure()
-        plt.plot(
         plt.plot(p[..., 0], p[..., 1], label="line $p$")
         plt.plot(q[..., 0], q[..., 1], label="line $q$")
         plt.scatter(x, y, color="black", zorder=10, label="intersection")

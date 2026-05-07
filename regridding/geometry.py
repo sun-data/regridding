@@ -14,6 +14,8 @@ __all__ = [
     "bounding_boxes_intersect_2d",
     "bounding_boxes_intersect_3d",
     "two_line_segment_intersection_parameters",
+    "two_line_segments_intersect",
+    "two_line_segment_intersection",
     "line_triangle_intersection_parameters",
     "line_intersects_triangle",
     "line_triangle_intersection",
@@ -326,16 +328,19 @@ def bounding_boxes_intersect_3d(
     return intersect_x and intersect_y and intersect_z
 
 
-@numba.njit(cache=True, inline="always", error_model="numpy")
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
 def two_line_segment_intersection_parameters(
-    x_p1: float,
-    y_p1: float,
-    x_p2: float,
-    y_p2: float,
-    x_q1: float,
-    y_q1: float,
-    x_q2: float,
-    y_q2: float,
+    line_1: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+    line_2: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
 ) -> tuple[float, float, float]:
     r"""
     Computes the parameters
@@ -365,62 +370,15 @@ def two_line_segment_intersection_parameters(
 
     Parameters
     ----------
-    x_p1
-        :math:`x` component of the first point in line :math:`p`
-    y_p1
-        :math:`y` component of the first point in line :math:`p`
-    x_p2
-        :math:`x` component of the second point in line :math:`p`
-    y_p2
-        :math:`y` component of the second point in line :math:`p`
-    x_q1
-        :math:`x` component of the first point in line :math:`q`
-    y_q1
-        :math:`y` component of the first point in line :math:`q`
-    x_q2
-        :math:`x` component of the second point in line :math:`q`
-    y_q2
-        :math:`x` component of the second point in line :math:`q`
+    line_1
+        Two 2D points defining the first line segment.
+    line_2
+        Two 2D points defining the second line segment.
 
-    Examples
+    See Also
     --------
-
-    Plot two lines and their intersection
-
-    .. jupyter-execute::
-
-        import matplotlib.pyplot as plt
-        import regridding
-
-        # line P
-        x_p1 = 0
-        y_p1 = 0
-        x_p2 = 2
-        y_p2 = 2
-
-        # line Q
-        x_q1 = 0
-        y_q1 = 1
-        x_q2 = 2
-        y_q2 = 0
-
-        sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
-            x_p1=x_p1, y_p1=y_p1,
-            x_p2=x_p2, y_p2=y_p2,
-            x_q1=x_q1, y_q1=y_q1,
-            x_q2=x_q2, y_q2=y_q2,
-        )
-
-        s = sdet / det
-
-        x = (1 - s) * x_p1 + s * x_p2
-        y = (1 - s) * y_p1 + s * y_p2
-
-        plt.figure()
-        plt.plot([x_p1, x_p2], [y_p1, y_p2], label="line $p$")
-        plt.plot([x_q1, x_q2], [y_q1, y_q2], label="line $q$")
-        plt.scatter(x, y, color="black", zorder=10, label="intersection")
-        plt.legend();
+    :func:`two_line_segments_intersect`: Check if the two line segments intersect.
+    :func:`two_line_segment_intersection`: Compute the point of intersection.
 
     |
 
@@ -430,6 +388,16 @@ def two_line_segment_intersection_parameters(
     .. footbibliography::
 
     """
+
+    p1, p2 = line_1
+    q1, q2 = line_2
+
+    x_p1, y_p1 = p1
+    x_p2, y_p2 = p2
+
+    x_q1, y_q1 = q1
+    x_q2, y_q2 = q2
+
     bounding_boxes_intersect = bounding_boxes_intersect_2d(
         x_p1=x_p1,
         y_p1=y_p1,
@@ -488,6 +456,127 @@ def two_line_segment_intersection_parameters(
     tdet = -c
 
     return sdet, tdet, det
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def two_line_segments_intersect(
+    sdet: float,
+    tdet: float,
+    det: float,
+) -> bool:
+    """
+    Check whether two line segments intersect.
+
+    Uses the parameters computed by
+    :func:`two_line_segment_intersection_parameters` as inputs.
+
+    Parameters
+    ----------
+    sdet
+        The first intersection parameter.
+    tdet
+        The second intersection parameter.
+    det
+        The third intersection parameter.
+    """
+    sgn = math.copysign(1, sdet)
+
+    sdet = sgn * sdet
+    tdet = sgn * tdet
+    det = sgn * det
+
+    if 0 <= sdet < det:
+        if 0 <= tdet < det:
+            return True
+
+    return False
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def two_line_segment_intersection(
+    line: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+    sdet: float,
+    det: float,
+) -> tuple[float, float]:
+    """
+    Compute the point of intersection between two line segments.
+
+    Uses the parameters computed by
+    :func:`two_line_segment_intersection_parameters` as inputs.
+
+    Parameters
+    ----------
+    line
+        A line segment
+    sdet
+        The intersection parameter corresponding to `line`.
+    det
+        The third intersection parameter.
+
+    Examples
+    --------
+    Plot two lines and their intersection.
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import regridding
+
+        # line P
+        p = (
+            (0, 0),
+            (2, 2),
+        )
+
+        # line Q
+        q = (
+            (0, 1),
+            (2, 0),
+        )
+
+        sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
+            line_1=p,
+            line_2=q,
+        )
+
+        x, y = regridding.geometry.two_line_segment_intersection(
+            line=p,
+            sdet=sdet,
+            det=det,
+        )
+
+        # Convert the lines to arrays for easier plotting
+        p = np.array(p)
+        q = np.array(q)
+
+        plt.figure()
+        plt.plot(p[..., 0], p[..., 1], label="line $p$")
+        plt.plot(q[..., 0], q[..., 1], label="line $q$")
+        plt.scatter(x, y, color="black", zorder=10, label="intersection")
+        plt.legend();
+
+    """
+    p1, p2 = line
+
+    x_p1, y_p1 = p1
+    x_p2, y_p2 = p2
+
+    s = sdet / det
+
+    x = (1 - s) * x_p1 + s * x_p2
+    y = (1 - s) * y_p1 + s * y_p2
+
+    return x, y
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")

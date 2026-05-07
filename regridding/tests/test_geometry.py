@@ -191,57 +191,118 @@ def test_bounding_boxes_intersect_3d(
 
 
 @pytest.mark.parametrize(
-    argnames="x_p1,y_p1,x_p2,y_p2,x_q1,y_q1,x_q2,y_q2,sdet_expected,tdet_expected,det_expected",
+    argnames="line_1, line_2, result_expected",
     argvalues=[
-        (0, 0, 1, 1, 2, 0, 3, 1, math.inf, math.inf, 1),
-        (-1, -1, 0, 0, 1, 0, 0, 1, math.inf, math.inf, 1),
-        (1, 0, 0, 1, -1, -1, 0, 0, math.inf, math.inf, 1),
-        (-1, -1, 1, 1, 1, -1, -1, 1, 4, 4, 8),
-        (0, 0, 0, 1, 0, 0, 1, 0, 0, 0, -1),
-        (0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0),
-        (0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0),
-        (0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0),
-        (0, 0, 2, 2, 1, 1, 3, 3, 0, 0, 0),
+        (
+            ((0, 0), (0, 1)),
+            ((1, 0), (1, 1)),
+            False,
+        ),
+        (
+            ((0, 0), (1, 0)),
+            ((0, 1), (1, 1)),
+            False,
+        ),
+        (
+            ((0, 0), (1, 0)),
+            ((2, -1), (2, +1)),
+            False,
+        ),
+        (
+            ((0, -1), (0, +1)),
+            ((-1, 0), (+1, 0)),
+            True,
+        ),
+        (
+            ((0, +1), (0, -1)),
+            ((-1, 0), (+1, 0)),
+            True,
+        ),
+        (
+            ((0, 0), (1, 1)),
+            ((0, 1), (1, 0)),
+            True,
+        ),
+        (
+            ((1, 1), (0, 0)),
+            ((0, 1), (1, 0)),
+            True,
+        ),
     ],
 )
-def test_two_line_segment_intersection_parameters(
-    x_p1: float,
-    y_p1: float,
-    x_p2: float,
-    y_p2: float,
-    x_q1: float,
-    y_q1: float,
-    x_q2: float,
-    y_q2: float,
-    sdet_expected: float,
-    tdet_expected: float,
-    det_expected: float,
+def test_two_line_segments_intersect(
+    line_1: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+    line_2: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+    result_expected: bool,
 ):
     sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
-        x_p1=x_p1,
-        y_p1=y_p1,
-        x_p2=x_p2,
-        y_p2=y_p2,
-        x_q1=x_q1,
-        y_q1=y_q1,
-        x_q2=x_q2,
-        y_q2=y_q2,
+        line_1=line_1,
+        line_2=line_2,
     )
 
-    if math.isnan(sdet_expected):
-        assert math.isnan(sdet)
-    else:
-        assert sdet == sdet_expected
+    result = regridding.geometry.two_line_segments_intersect(
+        sdet=sdet,
+        tdet=tdet,
+        det=det,
+    )
 
-    if math.isnan(tdet_expected):
-        assert math.isnan(tdet)
-    else:
-        assert tdet == tdet_expected
+    assert result == result_expected
 
-    if math.isnan(det_expected):
-        assert math.isnan(det)
-    else:
-        assert det == det_expected
+
+@pytest.mark.parametrize(
+    argnames="line_1, line_2, result_expected",
+    argvalues=[
+        (
+            ((0, -1), (0, +1)),
+            ((-1, 0), (+1, 0)),
+            (0, 0),
+        ),
+        (
+            ((0, +1), (0, -1)),
+            ((-1, 0), (+1, 0)),
+            (0, 0),
+        ),
+        (
+            ((0, 0), (1, 1)),
+            ((0, 1), (1, 0)),
+            (0.5, 0.5),
+        ),
+        (
+            ((1, 1), (0, 0)),
+            ((0, 1), (1, 0)),
+            (0.5, 0.5),
+        ),
+    ],
+)
+def test_two_line_segment_intersection(
+    line_1: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+    line_2: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+    result_expected: tuple[float, float],
+):
+    sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
+        line_1=line_1,
+        line_2=line_2,
+    )
+
+    result = regridding.geometry.two_line_segment_intersection(
+        line=line_1,
+        sdet=sdet,
+        det=det,
+    )
+
+    assert result == result_expected
 
 
 @pytest.mark.parametrize(

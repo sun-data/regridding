@@ -528,6 +528,7 @@ def two_line_segment_intersection(
 
     .. jupyter-execute::
 
+        import numpy as np
         import matplotlib.pyplot as plt
         import regridding
 
@@ -554,9 +555,14 @@ def two_line_segment_intersection(
             det=det,
         )
 
+        # Convert the lines to arrays for easier plotting
+        p = np.array(p)
+        q = np.array(q)
+
         plt.figure()
-        plt.plot([x_p1, x_p2], [y_p1, y_p2], label="line $p$")
-        plt.plot([x_q1, x_q2], [y_q1, y_q2], label="line $q$")
+        plt.plot(
+        plt.plot(p[..., 0], p[..., 1], label="line $p$")
+        plt.plot(q[..., 0], q[..., 1], label="line $q$")
         plt.scatter(x, y, color="black", zorder=10, label="intersection")
         plt.legend();
 

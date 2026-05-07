@@ -278,7 +278,7 @@ def test_two_line_segments_intersect(
             ((0, 1), (1, 0)),
             (0.5, 0.5),
         ),
-    ]
+    ],
 )
 def test_two_line_segment_intersection(
     line_1: tuple[

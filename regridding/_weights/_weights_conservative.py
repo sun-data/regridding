@@ -144,7 +144,7 @@ def _weights_conservative(
                     ),
                 )
 
-        else:  # pragma: nocover
+            else:  # pragma: nocover
                 raise NotImplementedError(
                     "Regridding operations greater than 3D are not supported"
                 )

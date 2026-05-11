@@ -10,6 +10,7 @@ import regridding
 
 __all__ = [
     "line_equation_2d",
+    "point_is_inside_box_2d",
     "point_is_inside_box_3d",
     "bounding_boxes_intersect_2d",
     "bounding_boxes_intersect_3d",
@@ -58,6 +59,49 @@ def line_equation_2d(
     """
     result = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
     return result
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def point_is_inside_box_2d(
+    point: tuple[float, float],
+    box: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+) -> bool:
+    """
+    Check if a given query point is contained within a 2D box specified
+    by two opposite corners.
+
+    Parameters
+    ----------
+    point
+        The query point.
+    box
+        A bounding box specified by two points.
+    """
+
+    x, y = point
+
+    b1, b2 = box
+
+    x1, y1 = b1
+    x2, y2 = b2
+
+    x_check = x1 <= x <= x2
+
+    if not x_check:
+        return False
+
+    y_check = y1 <= y <= y2
+
+    if not y_check:
+        return False
+
+    return True
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
@@ -757,7 +801,11 @@ def line_triangle_intersection(
     return regridding.math.sum_3d(l_a, tl_ab)
 
 
-@numba.njit(cache=True, inline="always", error_model="numpy")
+@numba.njit(
+    cache=True,
+    fastmath=True,
+    error_model="numpy",
+)
 def point_is_inside_polygon(
     x: float,
     y: float,
@@ -790,18 +838,15 @@ def point_is_inside_polygon(
 
     """
 
-    vertices_x = vertices_x - x
-    vertices_y = vertices_y - y
-
     w = 0
 
     for v in range(len(vertices_x)):
         i = v - 1
 
-        x0 = vertices_x[i + 0]
-        y0 = vertices_y[i + 0]
-        x1 = vertices_x[i + 1]
-        y1 = vertices_y[i + 1]
+        x0 = vertices_x[i + 0] - x
+        y0 = vertices_y[i + 0] - y
+        x1 = vertices_x[i + 1] - x
+        y1 = vertices_y[i + 1] - y
 
         if y0 * y1 < 0:
 
@@ -984,6 +1029,35 @@ def point_is_inside_polyhedron(
         return True
     else:
         return False
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def area_triangle(
+    vertex_1: tuple[float, float],
+    vertex_2: tuple[float, float],
+) -> float:
+    """
+    Compute the signed area of the triangle formed by two vertices and the origin.
+
+    If the vertices are oriented counterclockwise, the volume is positive,
+    otherwise it is negative.
+
+    Parameters
+    ----------
+    vertex_1
+        The first vertex of the triangle.
+    vertex_2
+        The second vertex of the triangle.
+    """
+    x_p1, y_p1 = vertex_1
+    x_p2, y_p2 = vertex_2
+
+    area = (x_p1 * y_p2 - x_p2 * y_p1) / 2
+
+    return area
 
 
 @numba.njit(cache=True)

@@ -5,7 +5,7 @@ import numpy as np
 import numba
 from regridding import _util
 from ._weights_conservative_1d import weights_conservative_1d
-from regridding._conservative_ramshaw import _conservative_ramshaw
+from ._weights_conservative_2d import weights_conservative_2d
 
 
 def _weights_conservative(
@@ -115,7 +115,7 @@ def _weights_conservative(
                     weights_input_index = weights_input[index]
                 else:
                     weights_input_index = None
-                weights[index] = _conservative_ramshaw(
+                weights[index] = weights_conservative_2d(
                     grid_input=(
                         coordinates_input_x[index_vertices_input],
                         coordinates_input_y[index_vertices_input],

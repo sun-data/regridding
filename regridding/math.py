@@ -64,6 +64,31 @@ def negate_3d(
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
+def sum_2d(
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> tuple[float, float]:
+    r"""
+    Compute the sum :math:`a + b` between two 2D vectors :math:`a`
+    and :math:`b`.
+
+    Parameters
+    ----------
+    a
+        A 2D vector.
+    b
+        Another 2D vector.
+    """
+    x_a, y_a = a
+    x_b, y_b = b
+
+    x = x_a + x_b
+    y = y_a + y_b
+
+    return x, y
+
+
+@numba.njit(cache=True, inline="always", error_model="numpy")
 def sum_3d(
     a: tuple[float, float, float],
     b: tuple[float, float, float],

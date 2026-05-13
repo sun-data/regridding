@@ -11,7 +11,6 @@ from . import _arrays
 
 __all__ = [
     "shape_centers",
-    "cell_axes",
     "cell_normals",
     "cell_boundary",
     "grid_boundary",

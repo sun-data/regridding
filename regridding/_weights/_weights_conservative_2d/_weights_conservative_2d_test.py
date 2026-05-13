@@ -139,7 +139,7 @@ y = np.linspace(-1, 1, num=6)
             ),
             (
                 x + 1e-6,
-                y + 1e-6,
+                y - 1e-6,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -155,7 +155,7 @@ y = np.linspace(-1, 1, num=6)
             ),
             (
                 x + 1e-6,
-                y + 1e-6,
+                y - 1e-6,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -171,7 +171,7 @@ y = np.linspace(-1, 1, num=6)
             ),
             (
                 x + 1e-6,
-                y + 1e-6,
+                y - 1e-6,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -187,7 +187,7 @@ y = np.linspace(-1, 1, num=6)
             ),
             (
                 x + 1e-6,
-                y + 1e-6,
+                y - 1e-6,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -199,7 +199,7 @@ y = np.linspace(-1, 1, num=6)
         (
             (
                 x + 1e-6,
-                y + 1e-6,
+                y - 1e-6,
             ),
             (
                 x * np.cos(90 * u.deg) - y * np.sin(90 * u.deg),

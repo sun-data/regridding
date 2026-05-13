@@ -1,5 +1,4 @@
 import sys
-import math
 import numpy as np
 import numba
 from numba import literal_unroll
@@ -47,7 +46,7 @@ def weights_conservative_2d(
     """
 
     weights_output = numba.typed.List()
-    for x in range(0):
+    for x in range(0):  # pragma: nocover
         weights_output.append((0, 0, 0.0))
 
     volume_input = _grids.grid_volume(grid_input)
@@ -220,7 +219,7 @@ def _sweep_along_axis(
 
     for i in range(shape_sweep_x):
         w = numba.typed.List()
-        for _ in range(0):
+        for _ in range(0):  # pragma: nocover
             w.append((0, 0, 0.0))
         weight_output.append(w)
 

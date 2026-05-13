@@ -1,4 +1,5 @@
 import pytest
+import sys
 import numpy as np
 from . import _grids
 
@@ -62,12 +63,21 @@ def test_volume_grid(
             ),
             (0, 2),
         ),
+        (
+            (-1, -1),
+            np.meshgrid(
+                -np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            (sys.maxsize, sys.maxsize),
+        ),
     ],
 )
 def test_index_of_point_brute(
-    point: tuple[float, float, float],
-    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
-    result_expected: np.ndarray,
+    point: tuple[float, float],
+    grid: tuple[np.ndarray, np.ndarray],
+    result_expected: tuple[int, int],
 ):
     result = _grids.index_of_point_brute(
         point=point,

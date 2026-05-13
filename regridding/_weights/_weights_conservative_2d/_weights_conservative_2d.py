@@ -115,12 +115,10 @@ def _sweep_grid(
     x_sweep, y_sweep = grid_sweep
     x_static, y_static = grid_static
 
-    bbox_static = (
-        (x_static.min(), y_static.min()),
-        (x_static.max(), y_static.max()),
-    )
+    bbox_static_lower = (x_static.min(), y_static.min())
+    bbox_static_upper = (x_static.max(), y_static.max())
 
-    boundary_static = _grids.grid_boundary(grid_static)
+    boundary_static_x, boundary_static_y = _grids.grid_boundary(grid_static)
 
     for axis in literal_unroll(axes):
 
@@ -130,8 +128,10 @@ def _sweep_grid(
                 _arrays.align_axis_right(y_sweep, axis),
             ),
             grid_static=grid_static,
-            bbox_static=bbox_static,
-            boundary_static=boundary_static,
+            bbox_static_lower=bbox_static_lower,
+            bbox_static_upper=bbox_static_upper,
+            boundary_static_x=boundary_static_x,
+            boundary_static_y=boundary_static_y,
             volume_input=volume_input,
             shape_cells_input=shape_cells_input,
             shape_cells_output=shape_cells_output,
@@ -145,13 +145,15 @@ def _sweep_grid(
 @numba.njit(
     cache=True,
     fastmath=True,
-    # parallel=True,
+    parallel=True,
 )
 def _sweep_along_axis(
     grid_sweep: tuple[np.ndarray, np.ndarray],
     grid_static: tuple[np.ndarray, np.ndarray],
-    bbox_static: tuple[tuple[float, float], tuple[float, float]],
-    boundary_static: tuple[np.ndarray, np.ndarray],
+    bbox_static_lower: tuple[float, float],
+    bbox_static_upper: tuple[float, float],
+    boundary_static_x: np.ndarray,
+    boundary_static_y: np.ndarray,
     volume_input: np.ndarray,
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
@@ -172,10 +174,14 @@ def _sweep_along_axis(
         The last axis of this grid must be the sweep axis.
     grid_static
         Coordinates of the static grid.
-    bbox_static
-        Two points defining the bounding box of the static grid.
-    boundary_static
-        A sequence of triangles defining the outer surface of the static grid.
+    bbox_static_lower
+        The lower-left corner of the static grid's bounding box.
+    bbox_static_upper
+        The upper-right corner of the static grid's bounding box
+    boundary_static_x
+        The :math:`x` coordinate of the boundary of the static grid.
+    boundary_static_y
+        The :math:`y` coordinate of the boundary of the static grid.
     volume_input
         The volume of each cell in the input grid.
     shape_cells_input
@@ -210,8 +216,6 @@ def _sweep_along_axis(
 
     shape_sweep_x, shape_sweep_y = shape_sweep
 
-    x_boundary, y_boundary = boundary_static
-
     weight_output = numba.typed.List()
 
     for i in range(shape_sweep_x):
@@ -236,6 +240,8 @@ def _sweep_along_axis(
 
         point_1 = x_sweep_ij, y_sweep_ij
 
+        bbox_static = (bbox_static_lower, bbox_static_upper)
+
         if rg.geometry.point_is_inside_box_2d(
             point=point_1,
             box=bbox_static,
@@ -243,8 +249,8 @@ def _sweep_along_axis(
             if rg.geometry.point_is_inside_polygon(
                 x=x_sweep_ij,
                 y=y_sweep_ij,
-                vertices_x=x_boundary,
-                vertices_y=y_boundary,
+                vertices_x=boundary_static_x,
+                vertices_y=boundary_static_y,
             ):
                 index_static = _grids.index_of_point_brute(
                     point=point_1,
@@ -252,10 +258,9 @@ def _sweep_along_axis(
                 )
                 sweep_is_outside_static = False
 
-        while j < shape_sweep_y:
+        while index_sweep[1] < (shape_sweep_y - 1):
 
-            j = j + 1
-            index_sweep_new = i, j
+            index_sweep_new = index_sweep[0], index_sweep[1] + 1
 
             point_2 = (
                 x_sweep[index_sweep_new],
@@ -309,6 +314,7 @@ def _sweep_along_axis(
 @numba.njit(
     cache=True,
     fastmath=True,
+    # inline="always",
     error_model="numpy",
 )
 def _step_outside_static(
@@ -352,7 +358,8 @@ def _step_outside_static(
 
     shape_cells_static = _grids.shape_centers(x.shape)
 
-    s_min = math.inf
+    found_intercept = False
+    t_min = np.inf
 
     for axis in _arrays.axes:
 
@@ -377,17 +384,17 @@ def _step_outside_static(
 
                 edge = (vertex_0, vertex_1)
 
-                sdet, tdet, det = rg.geometry.two_line_segment_intersection_parameters(
+                t, u = rg.geometry.two_line_segment_intersection_parameters(
                     line_1=line,
                     line_2=edge,
                 )
 
-                if rg.geometry.two_line_segments_intersect(sdet, tdet, det):
+                if rg.geometry.two_line_segments_intersect(t, u):
 
-                    s = sdet / det
+                    if t < t_min:
 
-                    if s < s_min:
-                        s_min = s
+                        found_intercept = True
+                        t_min = t
 
                         if direction_face > 0:
                             index_static = i0, shape_cells_static[axis] - 1
@@ -400,11 +407,10 @@ def _step_outside_static(
 
                         p2 = rg.geometry.two_line_segment_intersection(
                             line=line,
-                            sdet=sdet,
-                            det=det,
+                            t=t,
                         )
 
-    if math.isinf(s_min):
+    if not found_intercept:
         i, j = index_sweep
         index_sweep = i, j + 1
 
@@ -414,6 +420,7 @@ def _step_outside_static(
 @numba.njit(
     cache=True,
     fastmath=True,
+    # inline="always",
     error_model="numpy",
 )
 def _step_inside_static(
@@ -493,39 +500,36 @@ def _step_inside_static(
         grid=grid_static,
     )
 
-    for t in range(len(x_vertices)):
+    for v in range(len(x_vertices)):
 
-        x0 = x_vertices[t - 1]
-        y0 = y_vertices[t - 1]
+        x0 = x_vertices[v - 1]
+        y0 = y_vertices[v - 1]
 
-        x1 = x_vertices[t]
-        y1 = y_vertices[t]
+        x1 = x_vertices[v]
+        y1 = y_vertices[v]
 
         edge = (
             (x0, y0),
             (x1, y1),
         )
 
-        sdet, tdet, det = rg.geometry.two_line_segment_intersection_parameters(
+        t, u = rg.geometry.two_line_segment_intersection_parameters(
             line_1=line,
             line_2=edge,
         )
 
-        if rg.geometry.two_line_segments_intersect(sdet, tdet, det):
+        if rg.geometry.two_line_segments_intersect(t, u):
 
-            s = sdet / det
-
-            if s > 1e-8:
+            if t > 1e-6:
 
                 p2 = rg.geometry.two_line_segment_intersection(
                     line=line,
-                    sdet=sdet,
-                    det=det,
+                    t=t,
                 )
 
                 index_static_new = rg.math.sum_2d(
                     a=index_static,
-                    b=_grids.cell_normals[t],
+                    b=_grids.cell_normals[v],
                 )
 
                 index_sweep_new = index_sweep
@@ -559,7 +563,7 @@ def _step_inside_static(
 @numba.njit(
     cache=True,
     fastmath=True,
-    boundscheck=True,
+    inline="always",
 )
 def _calc_and_save_weights(
     line: tuple[
@@ -590,6 +594,9 @@ def _calc_and_save_weights(
     p1, p2 = line
 
     area_sweep = rg.geometry.area_triangle(p1, p2)
+
+    if axis_sweep == 0:
+        area_sweep = -area_sweep
 
     if i_left >= 0:
 
@@ -641,6 +648,7 @@ def _calc_and_save_weights(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def _grid_sweep_static(
     grid_input: tuple[np.ndarray, np.ndarray],
@@ -678,6 +686,7 @@ def _grid_sweep_static(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def _index_input_output(
     index_sweep: tuple[int, int],

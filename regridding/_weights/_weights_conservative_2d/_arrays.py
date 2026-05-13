@@ -29,6 +29,7 @@ vector_unit = (
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def index_in_bounds(
     index: tuple[int, int],
@@ -64,6 +65,7 @@ def index_in_bounds(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def index_flat(
     index: tuple[int, int],
@@ -92,6 +94,7 @@ def index_flat(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def index_2d(
     index: int,
@@ -120,6 +123,7 @@ def index_2d(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def align_axis_right(
     a: np.ndarray,

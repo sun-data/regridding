@@ -22,6 +22,7 @@ __all__ = [
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def shape_centers(
     shape: tuple[int, int],
@@ -44,6 +45,7 @@ def shape_centers(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def grid_volume(
     grid: tuple[np.ndarray, np.ndarray],
@@ -76,6 +78,8 @@ def grid_volume(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
+    parallel=True,
 )
 def _grid_volume_sweep(
     grid: tuple[np.ndarray, np.ndarray],
@@ -107,11 +111,9 @@ def _grid_volume_sweep(
 
     num_i, num_j = x.shape
 
-    for i in numba.prange(num_i):
+    for j in numba.prange(num_j - 1):
 
-        i = numba.types.int64(i)
-
-        for j in range(num_j - 1):
+        for i in range(num_i):
 
             i_left = i - 1
             i_right = i
@@ -133,29 +135,11 @@ def _grid_volume_sweep(
                 out[i_right, j] -= area
 
 
-cell_axes = (
-    2,
-    2,
-    2,
-    2,
-    0,
-    0,
-    0,
-    0,
-    1,
-    1,
-    1,
-    1,
-)
-"""
-The index of the axis normal to each face in :func:`cell_boundary`.
-"""
-
 cell_normals = (
+    (-1, 0),
     (0, -1),
     (+1, 0),
     (0, +1),
-    (-1, 0),
 )
 """
 Vectors normal to each face in :func:`cell_boundary`.
@@ -165,6 +149,7 @@ Vectors normal to each face in :func:`cell_boundary`.
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def cell_boundary(
     index: tuple[int, int],
@@ -191,7 +176,7 @@ def cell_boundary(
     i_10 = i + 1, j + 0
     i_11 = i + 1, j + 1
 
-    indices = (i_00, i_01, i_10, i_11)
+    indices = (i_00, i_10, i_11, i_01)
 
     x_vertices = np.array([x[i] for i in indices])
     y_vertices = np.array([y[i] for i in indices])
@@ -202,6 +187,7 @@ def cell_boundary(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def grid_boundary(
     grid: tuple[np.ndarray, np.ndarray],
@@ -228,25 +214,25 @@ def grid_boundary(
     n = 0
 
     j = 0
-    for i in range(shape_x):
+    for i in range(shape_x - 1):
         x_vertices[n] = x[i, j]
         y_vertices[n] = y[i, j]
         n = n + 1
 
     i = ~0
-    for j in range(shape_y):
+    for j in range(shape_y - 1):
         x_vertices[n] = x[i, j]
         y_vertices[n] = y[i, j]
         n = n + 1
 
     j = ~0
-    for i in range(shape_x):
+    for i in range(shape_x - 1):
         x_vertices[n] = x[~i, j]
         y_vertices[n] = y[~i, j]
         n = n + 1
 
     i = 0
-    for j in range(shape_y):
+    for j in range(shape_y - 1):
         x_vertices[n] = x[i, ~j]
         y_vertices[n] = y[i, ~j]
         n = n + 1
@@ -257,6 +243,7 @@ def grid_boundary(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def index_of_point_brute(
     point: tuple[float, float],

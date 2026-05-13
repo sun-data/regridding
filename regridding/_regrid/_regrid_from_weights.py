@@ -99,7 +99,7 @@ def regrid_from_weights(
     values_input = np.broadcast_to(values_input, shape_input, subok=True)
 
     if values_output is None:
-        values_output = np.zeros_like(values_input, shape=shape_output)
+        values_output = np.zeros_like(values_input, shape=shape_output, dtype=float)
     else:
         if values_output.shape != shape_output:  # pragma: nocover
             raise ValueError(

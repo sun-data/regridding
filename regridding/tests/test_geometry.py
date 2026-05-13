@@ -241,16 +241,12 @@ def test_two_line_segments_intersect(
     ],
     result_expected: bool,
 ):
-    sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
+    t, u = regridding.geometry.two_line_segment_intersection_parameters(
         line_1=line_1,
         line_2=line_2,
     )
 
-    result = regridding.geometry.two_line_segments_intersect(
-        sdet=sdet,
-        tdet=tdet,
-        det=det,
-    )
+    result = regridding.geometry.two_line_segments_intersect(t, u)
 
     assert result == result_expected
 
@@ -291,16 +287,12 @@ def test_two_line_segment_intersection(
     ],
     result_expected: tuple[float, float],
 ):
-    sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
+    t, u = regridding.geometry.two_line_segment_intersection_parameters(
         line_1=line_1,
         line_2=line_2,
     )
 
-    result = regridding.geometry.two_line_segment_intersection(
-        line=line_1,
-        sdet=sdet,
-        det=det,
-    )
+    result = regridding.geometry.two_line_segment_intersection(line_1, t)
 
     assert result == result_expected
 

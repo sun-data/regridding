@@ -3,71 +3,214 @@ import numpy as np
 import astropy.units as u
 import regridding
 
-x = np.linspace(-1, 1, num=10)
-y = np.linspace(-1, 1, num=11)
-x_broadcasted, y_broadcasted = np.meshgrid(
-    x,
-    y,
-    indexing="ij",
-)
+box_x = np.linspace(-1, 1, num=2)[..., np.newaxis]
+box_y = np.linspace(-1, 1, num=2)
 
-new_y = np.linspace(-1, 1, num=5)
-new_x = np.linspace(-1, 1, num=6)
-
-new_x_broadcasted, new_y_broadcasted = np.meshgrid(
-    x,
-    new_y,
-    indexing="ij",
-)
-
-new_x_broadcasted_2, new_y_broadcasted_2 = np.meshgrid(
-    new_x,
-    y,
-    indexing="ij",
-)
+x = np.linspace(-1, 1, num=6)[..., np.newaxis]
+y = np.linspace(-1, 1, num=6)
 
 
 @pytest.mark.parametrize(
     argnames="coordinates_input,"
-    "values_input,"
-    "axis_input,"
     "coordinates_output,"
+    "values_input,"
     "values_output,"
+    "axis_input,"
     "axis_output,"
-    "weights_input",
+    "weights_input,"
+    "result_expected",
     argvalues=[
         (
-            (x_broadcasted, y_broadcasted),
-            np.random.normal(size=(10 - 1, 11 - 1)) * u.ph,
+            (
+                box_x,
+                box_y,
+            ),
+            (
+                2 * box_x,
+                2 * box_y,
+            ),
+            np.array([[1]]),
             None,
-            (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
             None,
             None,
             None,
+            np.array([[1]]),
         ),
         (
             (
-                x_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
-                y_broadcasted[..., np.newaxis] + np.array([0, 0.001]),
+                -box_x,
+                -box_y,
             ),
-            np.random.normal(size=(x.shape[0] - 1, y.shape[0] - 1, 2)),
-            (0, 1),
             (
-                1.1 * (x_broadcasted[..., np.newaxis] + np.array([0, 0.001])) + 0.01,
-                1.2 * (y_broadcasted[..., np.newaxis] + np.array([0, 0.01])) + 0.001,
+                2 * box_x,
+                2 * box_y,
             ),
+            np.array([[1]]),
             None,
-            (0, 1),
             None,
+            None,
+            None,
+            np.array([[1]]),
         ),
         (
-            (x_broadcasted, y_broadcasted),
-            np.random.normal(size=(10 - 1, 11 - 1)) * u.ph,
+            (
+                2 * box_x,
+                2 * box_y,
+            ),
+            (
+                box_x,
+                box_y,
+            ),
+            np.array([[1]]),
             None,
-            (1.1 * x_broadcasted + 0.01, 1.2 * y_broadcasted + 0.01),
             None,
             None,
-            1,
+            None,
+            np.array([[0.25]]),
+        ),
+        (
+            (
+                box_x,
+                2 * box_y,
+            ),
+            (
+                2 * box_x,
+                box_y,
+            ),
+            np.array([[1]]),
+            None,
+            None,
+            None,
+            None,
+            np.array([[0.5]]),
+        ),
+        (
+            (
+                2 * box_x,
+                box_y,
+            ),
+            (
+                box_x,
+                2 * box_y,
+            ),
+            np.array([[1]]),
+            None,
+            None,
+            None,
+            None,
+            np.array([[0.5]]),
+        ),
+        (
+            (
+                np.linspace(-1, 1, num=3)[..., np.newaxis],
+                np.linspace(-1, 1, num=3),
+            ),
+            (
+                2 * box_x,
+                2 * box_y,
+            ),
+            np.ones((2, 2)),
+            None,
+            None,
+            None,
+            None,
+            np.array([[4]]),
+        ),
+        (
+            (
+                box_x,
+                box_y,
+            ),
+            (
+                np.linspace(-2, 2, num=3)[..., np.newaxis],
+                np.linspace(-2, 2, num=3),
+            ),
+            np.ones((1, 1)),
+            None,
+            None,
+            None,
+            None,
+            np.ones((2, 2)) / 4,
+        ),
+        (
+            (
+                x,
+                y,
+            ),
+            (
+                x + 1e-6,
+                y + 1e-6,
+            ),
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+            None,
+            None,
+            None,
+            None,
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+        ),
+        (
+            (
+                x * np.cos(90 * u.deg) - y * np.sin(90 * u.deg),
+                x * np.sin(90 * u.deg) + y * np.cos(90 * u.deg),
+            ),
+            (
+                x + 1e-6,
+                y + 1e-6,
+            ),
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+            None,
+            None,
+            None,
+            None,
+            np.rot90(np.random.RandomState(42).uniform(0, 10, size=(5, 5))),
+        ),
+        (
+            (
+                x * np.cos(180 * u.deg) - y * np.sin(180 * u.deg),
+                x * np.sin(180 * u.deg) + y * np.cos(180 * u.deg),
+            ),
+            (
+                x + 1e-6,
+                y + 1e-6,
+            ),
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+            None,
+            None,
+            None,
+            None,
+            np.rot90(np.random.RandomState(42).uniform(0, 10, size=(5, 5)), k=2),
+        ),
+        (
+            (
+                x * np.cos(270 * u.deg) - y * np.sin(270 * u.deg),
+                x * np.sin(270 * u.deg) + y * np.cos(270 * u.deg),
+            ),
+            (
+                x + 1e-6,
+                y + 1e-6,
+            ),
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+            None,
+            None,
+            None,
+            None,
+            np.rot90(np.random.RandomState(42).uniform(0, 10, size=(5, 5)), k=3),
+        ),
+        (
+            (
+                x + 1e-6,
+                y + 1e-6,
+            ),
+            (
+                x * np.cos(90 * u.deg) - y * np.sin(90 * u.deg),
+                x * np.sin(90 * u.deg) + y * np.cos(90 * u.deg),
+            ),
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+            None,
+            None,
+            None,
+            None,
+            np.rot90(np.random.RandomState(42).uniform(0, 10, size=(5, 5)), k=-1),
         ),
     ],
 )
@@ -80,6 +223,7 @@ def test_weights_conservative_2d(
     axis_input: None | int | tuple[int, ...],
     axis_output: None | int | tuple[int, ...],
     weights_input: None | np.ndarray,
+    result_expected: np.ndarray,
 ):
     with capsys.disabled():
         weights = regridding.weights(
@@ -100,12 +244,6 @@ def test_weights_conservative_2d(
 
         result_shape = np.array(np.broadcast(*coordinates_output).shape)
 
-        if axis_input is None:
-            result_shape = result_shape - 1
-        else:
-            for ax in axis_input:
-                result_shape[ax] = result_shape[ax] - 1
+        assert np.allclose(result, result_expected, rtol=1e-3)
 
-        assert np.issubdtype(result.dtype, float)
-        assert result.shape == tuple(result_shape)
-        assert np.isclose(result.sum(), values_input.sum())
+        assert result.shape == result_expected.shape

@@ -242,8 +242,6 @@ def test_weights_conservative_2d(
             axis_output=axis_output,
         )
 
-        result_shape = np.array(np.broadcast(*coordinates_output).shape)
-
         assert np.allclose(result, result_expected, rtol=1e-3)
 
         assert result.shape == result_expected.shape

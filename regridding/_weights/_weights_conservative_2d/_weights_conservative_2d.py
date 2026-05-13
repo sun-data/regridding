@@ -233,6 +233,7 @@ def _sweep_along_axis(
         index_static = sys.maxsize, sys.maxsize
 
         sweep_is_outside_static = True
+        index_edge_last = sys.maxsize
 
         x_sweep_ij = x_sweep[index_sweep]
         y_sweep_ij = y_sweep[index_sweep]
@@ -270,10 +271,11 @@ def _sweep_along_axis(
 
             if sweep_is_outside_static:
 
-                line, index_sweep, index_static = _step_outside_static(
+                line, index_sweep, index_static, index_edge_last = _step_outside_static(
                     line=line,
                     index_sweep=index_sweep,
                     index_static=index_static,
+                    index_edge_last=index_edge_last,
                     grid_static=grid_static,
                 )
 
@@ -281,10 +283,11 @@ def _sweep_along_axis(
 
             else:
 
-                line, index_sweep, index_static = _step_inside_static(
+                line, index_sweep, index_static, index_edge_last = _step_inside_static(
                     line=line,
                     index_sweep=index_sweep,
                     index_static=index_static,
+                    index_edge_last=index_edge_last,
                     grid_sweep=grid_sweep,
                     grid_static=grid_static,
                     volume_input=volume_input,
@@ -306,8 +309,7 @@ def _sweep_along_axis(
 
     for i in range(shape_sweep_x):
         weight_output_i = weight_output[i]
-        for w in range(len(weight_output_i)):
-            weights_output.append(weight_output_i[w])
+        weights_output.extend(weight_output_i)
 
 
 @numba.njit(
@@ -323,6 +325,7 @@ def _step_outside_static(
     ],
     index_sweep: tuple[int, int],
     index_static: tuple[int, int],
+    index_edge_last: int,
     grid_static: tuple[np.ndarray, np.ndarray],
 ) -> tuple[
     tuple[
@@ -331,6 +334,7 @@ def _step_outside_static(
     ],
     tuple[int, int],
     tuple[int, int],
+    int,
 ]:
     """
     Check if the current line segment crosses the boundary.
@@ -347,6 +351,9 @@ def _step_outside_static(
     index_static
         The index of the current cell in the static grid.
         This is assumed to be a valid, positive index.
+    index_edge_last
+        The 1D index corresponding to the edge of the static grid crossed in
+        the last step.
     grid_static
         The vertices of the static grid.
     """
@@ -360,14 +367,14 @@ def _step_outside_static(
     found_intercept = False
     t_min = np.inf
 
-    for axis in _arrays.axes:
+    for axis in (_arrays.axis_x, _arrays.axis_y):
 
         x_aligned = _arrays.align_axis_right(x, axis)
         y_aligned = _arrays.align_axis_right(y, axis)
 
         num_i, num_j = x_aligned.shape
 
-        for direction_face in (-1, 1):
+        for direction_face in (0, 1):
 
             if direction_face > 0:
                 j_edge = ~0
@@ -409,11 +416,16 @@ def _step_outside_static(
                             t=t,
                         )
 
+                        index_edge_last = _arrays.index_flat(
+                            index=(direction_face, axis),
+                            shape=(2, 2),
+                        )
+
     if not found_intercept:
         i, j = index_sweep
         index_sweep = i, j + 1
 
-    return (p1, p2), index_sweep, index_static
+    return (p1, p2), index_sweep, index_static, index_edge_last
 
 
 @numba.njit(
@@ -429,6 +441,7 @@ def _step_inside_static(
     ],
     index_sweep: tuple[int, int],
     index_static: tuple[int, int],
+    index_edge_last: int,
     grid_sweep: tuple[np.ndarray, np.ndarray],
     grid_static: tuple[np.ndarray, np.ndarray],
     volume_input: np.ndarray,
@@ -445,6 +458,7 @@ def _step_inside_static(
     ],
     tuple[int, int],
     tuple[int, int],
+    int,
 ]:
     """
     Check if the current line segment crosses any edge of the current cell
@@ -463,6 +477,9 @@ def _step_inside_static(
     index_static
         The index of the current cell in the static grid.
         This is assumed to be a valid, positive index.
+    index_edge_last
+        The 1D index corresponding to the edge of the static grid crossed in
+        the last step.
     grid_sweep
         The vertices of the sweep grid.
         The last axis of this grid must be the sweep axis.
@@ -501,6 +518,9 @@ def _step_inside_static(
 
     for v in range(len(x_vertices)):
 
+        if v == index_edge_last:
+            continue
+
         x0 = x_vertices[v - 1]
         y0 = y_vertices[v - 1]
 
@@ -519,26 +539,26 @@ def _step_inside_static(
 
         if rg.geometry.two_line_segments_intersect(t, u):
 
-            if t > 1e-6:
+            p2 = rg.geometry.two_line_segment_intersection(
+                line=line,
+                t=t,
+            )
 
-                p2 = rg.geometry.two_line_segment_intersection(
-                    line=line,
-                    t=t,
-                )
+            index_static_new = rg.math.sum_2d(
+                a=index_static,
+                b=_grids.cell_normals[v],
+            )
 
-                index_static_new = rg.math.sum_2d(
-                    a=index_static,
-                    b=_grids.cell_normals[v],
-                )
+            index_sweep_new = index_sweep
+            index_edge_last = (v + 2) % 4
 
-                index_sweep_new = index_sweep
-
-                break
+            break
 
     else:
         i, j = index_sweep
         index_sweep_new = i, j + 1
         index_static_new = index_static
+        index_edge_last = sys.maxsize
 
     line = p1, p2
 
@@ -556,7 +576,7 @@ def _step_inside_static(
         axis_sweep=axis_sweep,
     )
 
-    return line, index_sweep_new, index_static_new
+    return line, index_sweep_new, index_static_new, index_edge_last
 
 
 @numba.njit(

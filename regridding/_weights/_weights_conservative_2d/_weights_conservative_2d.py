@@ -579,7 +579,7 @@ def _calc_and_save_weights(
     weights_input: None | np.ndarray,
     weights_output: numba.typed.List[tuple[int, int, float]],
     sweep_input: bool,
-    axis_sweep: int
+    axis_sweep: int,
 ):
 
     x_sweep, y_sweep = grid_sweep

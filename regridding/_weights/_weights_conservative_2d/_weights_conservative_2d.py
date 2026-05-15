@@ -336,7 +336,7 @@ def _sweep_along_axis(
 @numba.njit(
     cache=True,
     fastmath=True,
-    inline="always",
+    # inline="always",
     error_model="numpy",
 )
 def _step_outside_static(

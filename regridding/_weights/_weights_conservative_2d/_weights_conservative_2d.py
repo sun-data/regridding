@@ -465,7 +465,7 @@ def _step_outside_static(
     if not found_intercept:
         index_sweep_y = index_sweep_y + 1
 
-    return(
+    return (
         x1,
         y1,
         x2,

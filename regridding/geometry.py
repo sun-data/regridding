@@ -523,14 +523,14 @@ def two_line_segment_intersection(
         )
 
         t, u = regridding.geometry.two_line_segment_intersection_parameters(
-            p1=p[0]
+            p1=p[0],
             p2=p[1],
             q1=q[0],
             q2=q[1],
         )
 
         x, y = regridding.geometry.two_line_segment_intersection(
-            p1=p[0]
+            p1=p[0],
             p2=p[1],
             t=t,
         )

@@ -223,22 +223,21 @@ def _sweep_along_axis(
             w.append((0, 0, 0.0))
         weight_output.append(w)
 
-    for i in numba.prange(shape_sweep_x):
+    for index_sweep_x in numba.prange(shape_sweep_x):
 
-        i = numba.types.int64(i)
-        j = 0
+        index_sweep_x = numba.types.int64(index_sweep_x)
+        index_sweep_y = 0
 
-        index_sweep = i, j
-
-        index_static = sys.maxsize, sys.maxsize
+        index_static_x = sys.maxsize
+        index_static_y = sys.maxsize
 
         sweep_is_outside_static = True
         index_edge_last = sys.maxsize
 
-        x_sweep_ij = x_sweep[index_sweep]
-        y_sweep_ij = y_sweep[index_sweep]
+        x1 = x_sweep[index_sweep_x, index_sweep_y]
+        y1 = y_sweep[index_sweep_x, index_sweep_y]
 
-        point_1 = x_sweep_ij, y_sweep_ij
+        point_1 = x1, y1
 
         bbox_static = (bbox_static_lower, bbox_static_upper)
 
@@ -247,46 +246,67 @@ def _sweep_along_axis(
             box=bbox_static,
         ):
             if rg.geometry.point_is_inside_polygon(
-                x=x_sweep_ij,
-                y=y_sweep_ij,
+                x=x1,
+                y=y1,
                 vertices_x=boundary_static_x,
                 vertices_y=boundary_static_y,
             ):
-                index_static = _grids.index_of_point_brute(
+                index_static_x, index_static_y = _grids.index_of_point_brute(
                     point=point_1,
                     grid=grid_static,
                 )
                 sweep_is_outside_static = False
 
-        while index_sweep[1] < (shape_sweep_y - 1):
+        while index_sweep_y < (shape_sweep_y - 1):
 
-            index_sweep_new = index_sweep[0], index_sweep[1] + 1
-
-            point_2 = (
-                x_sweep[index_sweep_new],
-                y_sweep[index_sweep_new],
-            )
-
-            line = point_1, point_2
+            x2 = x_sweep[index_sweep_x, index_sweep_y + 1]
+            y2 = y_sweep[index_sweep_x, index_sweep_y + 1]
 
             if sweep_is_outside_static:
 
-                line, index_sweep, index_static, index_edge_last = _step_outside_static(
-                    line=line,
-                    index_sweep=index_sweep,
-                    index_static=index_static,
+                (
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    index_sweep_y,
+                    index_static_x,
+                    index_static_y,
+                    index_edge_last,
+                ) = _step_outside_static(
+                    x1=x1,
+                    y1=y1,
+                    x2=x2,
+                    y2=y2,
+                    index_sweep_y=index_sweep_y,
+                    index_static_x=index_static_x,
+                    index_static_y=index_static_y,
                     index_edge_last=index_edge_last,
                     grid_static=grid_static,
                 )
 
-                sweep_is_outside_static = index_static[0] == sys.maxsize
+                sweep_is_outside_static = index_static_x == sys.maxsize
 
             else:
 
-                line, index_sweep, index_static, index_edge_last = _step_inside_static(
-                    line=line,
-                    index_sweep=index_sweep,
-                    index_static=index_static,
+                (
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    index_sweep_y,
+                    index_static_x,
+                    index_static_y,
+                    index_edge_last,
+                ) = _step_inside_static(
+                    x1=x1,
+                    y1=y1,
+                    x2=x2,
+                    y2=y2,
+                    index_sweep_x=index_sweep_x,
+                    index_sweep_y=index_sweep_y,
+                    index_static_x=index_static_x,
+                    index_static_y=index_static_y,
                     index_edge_last=index_edge_last,
                     grid_sweep=grid_sweep,
                     grid_static=grid_static,
@@ -294,18 +314,19 @@ def _sweep_along_axis(
                     shape_cells_input=shape_cells_input,
                     shape_cells_output=shape_cells_output,
                     weights_input=weights_input,
-                    weights_output=weight_output[i],
+                    weights_output=weight_output[index_sweep_x],
                     sweep_input=sweep_input,
                     axis_sweep=axis_sweep,
                 )
 
                 if not _arrays.index_in_bounds(
-                    index=index_static,
+                    index=(index_static_x, index_static_y),
                     shape=shape_cells_static,
                 ):
                     break
 
-            point_1 = line[1]
+            x1 = x2
+            y1 = y2
 
     for i in range(shape_sweep_x):
         weight_output_i = weight_output[i]
@@ -315,25 +336,28 @@ def _sweep_along_axis(
 @numba.njit(
     cache=True,
     fastmath=True,
-    # inline="always",
+    inline="always",
     error_model="numpy",
 )
 def _step_outside_static(
-    line: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    index_sweep: tuple[int, int],
-    index_static: tuple[int, int],
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    index_sweep_y: int,
+    index_static_x: int,
+    index_static_y: int,
     index_edge_last: int,
     grid_static: tuple[np.ndarray, np.ndarray],
 ) -> tuple[
-    tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    tuple[int, int],
-    tuple[int, int],
+    float,
+    float,
+    float,
+    float,
+    # int,
+    int,
+    int,
+    int,
     int,
 ]:
     """
@@ -343,14 +367,20 @@ def _step_outside_static(
 
     Parameters
     ----------
-    line
-        The current line segment of the sweep grid.
-    index_sweep
-        The index of the current vertex in the sweep grid
-        This is assumed to be a valid, positive index.
-    index_static
-        The index of the current cell in the static grid.
-        This is assumed to be a valid, positive index.
+    x1
+        The :math:`x`-coordinate of the line segment's starting point.
+    y1
+        The :math:`y`-coordinate of the line segment's starting point.
+    x2
+        The :math:`x`-coordinate of the line segment's ending point.
+    y2
+        The :math:`y`-coordinate of the line segment's ending point.
+    index_sweep_y
+        The vertical index of the current vertex in the sweep grid.
+    index_static_x
+        The horizontal index of the current vertex in the static grid.
+    index_static_y
+        The vertical index of the current vertex in the static grid.
     index_edge_last
         The 1D index corresponding to the edge of the static grid crossed in
         the last step.
@@ -358,7 +388,8 @@ def _step_outside_static(
         The vertices of the static grid.
     """
 
-    p1, p2 = line
+    p1 = (x1, y1)
+    p2 = (x2, y2)
 
     x, y = grid_static
 
@@ -367,7 +398,7 @@ def _step_outside_static(
     found_intercept = False
     t_min = np.inf
 
-    for axis in (_arrays.axis_x, _arrays.axis_y):
+    for axis in axes:
 
         x_aligned = _arrays.align_axis_right(x, axis)
         y_aligned = _arrays.align_axis_right(y, axis)
@@ -385,14 +416,19 @@ def _step_outside_static(
 
                 i1 = i0 + 1
 
-                vertex_0 = (x_aligned[i0, j_edge], y_aligned[i0, j_edge])
-                vertex_1 = (x_aligned[i1, j_edge], y_aligned[i1, j_edge])
+                x3 = x_aligned[i0, j_edge]
+                y3 = y_aligned[i0, j_edge]
+                x4 = x_aligned[i1, j_edge]
+                y4 = y_aligned[i1, j_edge]
 
-                edge = (vertex_0, vertex_1)
+                q1 = (x3, y3)
+                q2 = (x4, y4)
 
                 t, u = rg.geometry.two_line_segment_intersection_parameters(
-                    line_1=line,
-                    line_2=edge,
+                    p1=p1,
+                    p2=p2,
+                    q1=q1,
+                    q2=q2,
                 )
 
                 if rg.geometry.two_line_segments_intersect(t, u):
@@ -402,17 +438,22 @@ def _step_outside_static(
                         found_intercept = True
                         t_min = t
 
+                        m = i0
                         if direction_face > 0:
-                            index_static = i0, shape_cells_static[axis] - 1
+                            n = shape_cells_static[axis] - 1
                         else:
-                            index_static = i0, 0
+                            n = 0
 
                         if axis == axis_x:
-                            m, n = index_static
-                            index_static = n, m
+                            index_static_x = n
+                            index_static_y = m
+                        else:
+                            index_static_x = m
+                            index_static_y = n
 
-                        p2 = rg.geometry.two_line_segment_intersection(
-                            line=line,
+                        x2, y2 = rg.geometry.two_line_segment_intersection(
+                            p1=p1,
+                            p2=p2,
                             t=t,
                         )
 
@@ -422,25 +463,35 @@ def _step_outside_static(
                         )
 
     if not found_intercept:
-        i, j = index_sweep
-        index_sweep = i, j + 1
+        index_sweep_y = index_sweep_y + 1
 
-    return (p1, p2), index_sweep, index_static, index_edge_last
+    return(
+        x1,
+        y1,
+        x2,
+        y2,
+        index_sweep_y,
+        index_static_x,
+        index_static_y,
+        index_edge_last,
+    )
 
 
 @numba.njit(
     cache=True,
     fastmath=True,
-    # inline="always",
+    inline="always",
     error_model="numpy",
 )
 def _step_inside_static(
-    line: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    index_sweep: tuple[int, int],
-    index_static: tuple[int, int],
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    index_sweep_x: int,
+    index_sweep_y: int,
+    index_static_x: int,
+    index_static_y: int,
     index_edge_last: int,
     grid_sweep: tuple[np.ndarray, np.ndarray],
     grid_static: tuple[np.ndarray, np.ndarray],
@@ -452,12 +503,13 @@ def _step_inside_static(
     sweep_input: bool,
     axis_sweep: int,
 ) -> tuple[
-    tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    tuple[int, int],
-    tuple[int, int],
+    float,
+    float,
+    float,
+    float,
+    int,
+    int,
+    int,
     int,
 ]:
     """
@@ -469,14 +521,22 @@ def _step_inside_static(
 
     Parameters
     ----------
-    line
-        The current line segment of the sweep grid.
-    index_sweep
-        The index of the current vertex in the sweep grid
-        This is assumed to be a valid, positive index.
-    index_static
-        The index of the current cell in the static grid.
-        This is assumed to be a valid, positive index.
+    x1
+        The :math:`x`-coordinate of the line segment's starting point.
+    y1
+        The :math:`y`-coordinate of the line segment's starting point.
+    x2
+        The :math:`x`-coordinate of the line segment's ending point.
+    y2
+        The :math:`y`-coordinate of the line segment's ending point.
+    index_sweep_x
+        The horizontal index of the current vertex in the sweep grid.
+    index_sweep_y
+        The vertical index of the current vertex in the sweep grid.
+    index_static_x
+        The horizontal index of the current vertex in the static grid.
+    index_static_y
+        The vertical index of the current vertex in the static grid.
     index_edge_last
         The 1D index corresponding to the edge of the static grid crossed in
         the last step.
@@ -508,64 +568,69 @@ def _step_inside_static(
     axis_sweep
         The logical axis of the sweep grid to iterate along.
     """
+    p1 = (x1, y1)
+    p2 = (x2, y2)
 
-    p1, p2 = line
+    x, y = grid_static
 
-    x_vertices, y_vertices = _grids.cell_boundary(
-        index=index_static,
-        grid=grid_static,
-    )
-
-    for v in range(len(x_vertices)):
+    for v in range(len(_grids.indices_cell_vertex)):
 
         if v == index_edge_last:
             continue
 
-        x0 = x_vertices[v - 1]
-        y0 = y_vertices[v - 1]
+        i3_vertex, j3_vertex = _grids.indices_cell_vertex[v - 1]
+        i4_vertex, j4_vertex = _grids.indices_cell_vertex[v]
 
-        x1 = x_vertices[v]
-        y1 = y_vertices[v]
+        i3_vertex = i3_vertex + index_static_x
+        i4_vertex = i4_vertex + index_static_x
 
-        edge = (
-            (x0, y0),
-            (x1, y1),
-        )
+        j3_vertex = j3_vertex + index_static_y
+        j4_vertex = j4_vertex + index_static_y
+
+        x3 = x[i3_vertex, j3_vertex]
+        y3 = y[i3_vertex, j3_vertex]
+
+        x4 = x[i4_vertex, j4_vertex]
+        y4 = y[i4_vertex, j4_vertex]
+
+        q1 = (x3, y3)
+        q2 = (x4, y4)
 
         t, u = rg.geometry.two_line_segment_intersection_parameters(
-            line_1=line,
-            line_2=edge,
+            p1=p1,
+            p2=p2,
+            q1=q1,
+            q2=q2,
         )
 
         if rg.geometry.two_line_segments_intersect(t, u):
 
-            p2 = rg.geometry.two_line_segment_intersection(
-                line=line,
+            x2, y2 = rg.geometry.two_line_segment_intersection(
+                p1=p1,
+                p2=p2,
                 t=t,
             )
 
-            index_static_new = rg.math.sum_2d(
-                a=index_static,
-                b=_grids.cell_normals[v],
-            )
+            nx, ny = _grids.cell_normals[v]
 
-            index_sweep_new = index_sweep
+            _index_sweep_y = index_sweep_y
+            _index_static_x = index_static_x + nx
+            _index_static_y = index_static_y + ny
             index_edge_last = (v + 2) % 4
 
             break
 
     else:
-        i, j = index_sweep
-        index_sweep_new = i, j + 1
-        index_static_new = index_static
+        _index_sweep_y = index_sweep_y + 1
+        _index_static_x = index_static_x
+        _index_static_y = index_static_y
         index_edge_last = sys.maxsize
 
-    line = p1, p2
-
     _calc_and_save_weights(
-        line=line,
-        index_sweep=index_sweep,
-        index_static=index_static,
+        p1=(x1, y1),
+        p2=(x2, y2),
+        index_sweep=(index_sweep_x, index_sweep_y),
+        index_static=(index_static_x, index_static_y),
         grid_sweep=grid_sweep,
         volume_input=volume_input,
         shape_cells_input=shape_cells_input,
@@ -576,7 +641,16 @@ def _step_inside_static(
         axis_sweep=axis_sweep,
     )
 
-    return line, index_sweep_new, index_static_new, index_edge_last
+    return (
+        x1,
+        y1,
+        x2,
+        y2,
+        _index_sweep_y,
+        _index_static_x,
+        _index_static_y,
+        index_edge_last,
+    )
 
 
 @numba.njit(
@@ -585,10 +659,8 @@ def _step_inside_static(
     inline="always",
 )
 def _calc_and_save_weights(
-    line: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
     index_sweep: tuple[int, int],
     index_static: tuple[int, int],
     grid_sweep: tuple[np.ndarray, np.ndarray],
@@ -609,8 +681,6 @@ def _calc_and_save_weights(
 
     i_left = i - 1
     i_right = i
-
-    p1, p2 = line
 
     area_sweep = rg.geometry.area_triangle(p1, p2)
 

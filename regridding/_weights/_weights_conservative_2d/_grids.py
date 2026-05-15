@@ -12,7 +12,6 @@ from . import _arrays
 __all__ = [
     "shape_centers",
     "cell_normals",
-    "cell_boundary",
     "grid_boundary",
     "index_of_point_brute",
 ]
@@ -120,10 +119,15 @@ def _grid_volume_sweep(
             j1 = j
             j2 = j + 1
 
-            v1 = x[i, j1], y[i, j1]
-            v2 = x[i, j2], y[i, j2]
+            x1 = x[i, j1]
+            y1 = y[i, j1]
+            x2 = x[i, j2]
+            y2 = y[i, j2]
 
-            area = rg.geometry.area_triangle(v1, v2)
+            vertex_1 = (x1, y1)
+            vertex_2 = (x2, y2)
+
+            area = rg.geometry.area_triangle(vertex_1, vertex_2)
 
             if i_left >= 0:
 
@@ -144,43 +148,13 @@ cell_normals = (
 Vectors normal to each face in :func:`cell_boundary`.
 """
 
-
-@numba.njit(
-    cache=True,
-    fastmath=True,
-    inline="always",
+indices_cell_vertex = (
+    (0, 0),
+    (1, 0),
+    (1, 1),
+    (0, 1),
 )
-def cell_boundary(
-    index: tuple[int, int],
-    grid: tuple[np.ndarray, np.ndarray],
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    For a given cell in a grid of cell vertices,
-    compute the four edges composing the boundary.
-
-    Parameters
-    ----------
-    index
-        The index of the cell to compute the boundary of.
-    grid
-        A grid of cell vertices.
-
-    """
-    i, j = index
-
-    x, y = grid
-
-    i_00 = i + 0, j + 0
-    i_01 = i + 0, j + 1
-    i_10 = i + 1, j + 0
-    i_11 = i + 1, j + 1
-
-    indices = (i_00, i_10, i_11, i_01)
-
-    x_vertices = np.array([x[i] for i in indices])
-    y_vertices = np.array([y[i] for i in indices])
-
-    return x_vertices, y_vertices
+"""The indices of each vertex in a cell"""
 
 
 @numba.njit(
@@ -269,15 +243,28 @@ def index_of_point_brute(
 
     shape_x, shape_y = x.shape
 
+    vertices_x = np.empty(4)
+    vertices_y = np.empty(4)
+
     for i in range(shape_x - 1):
         for j in range(shape_y - 1):
 
             index = i, j
 
-            vertices_x, vertices_y = cell_boundary(
-                index=index,
-                grid=grid,
-            )
+            v1 = i + 0, j + 0
+            v2 = i + 1, j + 0
+            v3 = i + 1, j + 1
+            v4 = i + 0, j + 1
+
+            vertices_x[0] = x[v1]
+            vertices_x[1] = x[v2]
+            vertices_x[2] = x[v3]
+            vertices_x[3] = x[v4]
+
+            vertices_y[0] = y[v1]
+            vertices_y[1] = y[v2]
+            vertices_y[2] = y[v3]
+            vertices_y[3] = y[v4]
 
             if rg.geometry.point_is_inside_polygon(
                 x=px,

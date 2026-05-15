@@ -64,6 +64,7 @@ def line_equation_2d(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def point_is_inside_box_2d(
     point: tuple[float, float],
@@ -373,14 +374,10 @@ def bounding_boxes_intersect_3d(
     error_model="numpy",
 )
 def two_line_segment_intersection_parameters(
-    line_1: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    line_2: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    q1: tuple[float, float],
+    q2: tuple[float, float],
 ) -> tuple[float, float]:
     r"""
     Computes the parameters
@@ -393,10 +390,14 @@ def two_line_segment_intersection_parameters(
 
     Parameters
     ----------
-    line_1
-        Two 2D points defining the first line segment.
-    line_2
-        Two 2D points defining the second line segment.
+    p1
+        The starting point of the first line segment.
+    p2
+        The ending point of the first line segment.
+    q1
+        The starting point of the second line segment.
+    q2
+        The ending point of the second line segment.
 
     See Also
     --------
@@ -411,9 +412,6 @@ def two_line_segment_intersection_parameters(
     .. footbibliography::
 
     """
-
-    p1, p2 = line_1
-    q1, q2 = line_2
 
     x1, y1 = p1
     x2, y2 = p2
@@ -483,24 +481,24 @@ def two_line_segments_intersect(
     inline="always",
 )
 def two_line_segment_intersection(
-    line: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
     t: float,
 ) -> tuple[float, float]:
     """
     Compute the point of intersection between two line segments.
 
-    Uses the parameters computed by
-    :func:`two_line_segment_intersection_parameters` as inputs.
+    Uses the parameter computed by
+    :func:`two_line_segment_intersection_parameters` as an input.
 
     Parameters
     ----------
-    line
-        A line segment
+    p1
+        The starting point of the line segment.
+    p2
+        The ending point of the line segment.
     t
-        The intersection parameter corresponding to `line`.
+        The intersection parameter corresponding to `p1` and `p2`.
 
     Examples
     --------
@@ -525,12 +523,15 @@ def two_line_segment_intersection(
         )
 
         t, u = regridding.geometry.two_line_segment_intersection_parameters(
-            line_1=p,
-            line_2=q,
+            p1=p[0]
+            p2=p[1],
+            q1=q[0],
+            q2=q[1],
         )
 
         x, y = regridding.geometry.two_line_segment_intersection(
-            line=p,
+            p1=p[0]
+            p2=p[1],
             t=t,
         )
 
@@ -545,7 +546,6 @@ def two_line_segment_intersection(
         plt.legend();
 
     """
-    p1, p2 = line
 
     x1, y1 = p1
     x2, y2 = p2

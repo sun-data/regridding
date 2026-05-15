@@ -480,7 +480,7 @@ def _step_outside_static(
 @numba.njit(
     cache=True,
     fastmath=True,
-    inline="always",
+    # inline="always",
     error_model="numpy",
 )
 def _step_inside_static(

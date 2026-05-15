@@ -74,10 +74,13 @@ def weights(
         y_input = np.linspace(-4, 4, num=101)
         x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
 
+        # Define small shift to avoid degenerate grids
+        epsilon = 1e-6
+
         # Define rotated output grid
         angle = 0.2
-        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
-        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle) + epsilon
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle) + epsilon
 
         # Define two arrays of values defined on the same grid
         values_input_1 = np.cos(np.square(x_input)) * np.cos(np.square(y_input))
@@ -175,10 +178,13 @@ def transpose_weights(
         y_input = np.linspace(-4, 4, num=11)
         x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
 
+        # Define small shift to avoid degenerate grids
+        epsilon = 1e-6
+
         # Define rotated output grid
         angle = 0.2
-        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
-        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle) + epsilon
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle) + epsilon
 
         # Define arrays of values defined on the same grid
         values_input = np.zeros((10, 10))

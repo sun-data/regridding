@@ -6,7 +6,7 @@ import numba
 from regridding import _util
 from ._weights_conservative_1d import weights_conservative_1d
 from ._weights_conservative_2d import weights_conservative_2d
-
+from regridding._conservative_ramshaw import _conservative_ramshaw
 
 def _weights_conservative(
     coordinates_input: tuple[np.ndarray, ...],
@@ -115,6 +115,7 @@ def _weights_conservative(
                     weights_input_index = weights_input[index]
                 else:
                     weights_input_index = None
+                # weights[index] = _conservative_ramshaw(
                 weights[index] = weights_conservative_2d(
                     grid_input=(
                         coordinates_input_x[index_vertices_input],

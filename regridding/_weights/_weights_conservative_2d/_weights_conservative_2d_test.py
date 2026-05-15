@@ -212,6 +212,22 @@ y = np.linspace(-1, 1, num=6)
             None,
             np.rot90(np.random.RandomState(42).uniform(0, 10, size=(5, 5)), k=-1),
         ),
+        (
+            (
+                x,
+                y,
+            ),
+            (
+                x + 1e-6,
+                y - 1e-6,
+            ),
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+            None,
+            None,
+            None,
+            1,
+            np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
+        ),
     ],
 )
 def test_weights_conservative_2d(

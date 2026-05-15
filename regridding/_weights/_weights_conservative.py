@@ -7,6 +7,7 @@ from regridding import _util
 from ._weights_conservative_1d import weights_conservative_1d
 from ._weights_conservative_2d import weights_conservative_2d
 
+
 def _weights_conservative(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],

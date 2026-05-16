@@ -116,9 +116,12 @@ Regrid a 2D array using conservative resampling.
     a_input[:, ::pitch] = 1
     a_input[pitch//2::pitch, pitch//2::pitch] = 1
 
+    # Define small shift to avoid degenerate grids
+    epsilon = 1e-6
+
     # Define a rectilinear output grid using the limits of the input grid
-    x_output = np.linspace(x_input.min(), x_input.max(), num_x // 2)
-    y_output = np.linspace(y_input.min(), y_input.max(), num_y // 2)
+    x_output = np.linspace(x_input.min(), x_input.max(), num_x // 2) + epsilon
+    y_output = np.linspace(y_input.min(), y_input.max(), num_y // 2) + epsilon
     x_output, y_output = np.meshgrid(x_output, y_output, indexing="ij")
 
     # Regrid the test pattern onto the new grid

@@ -10,6 +10,7 @@ import regridding
 
 __all__ = [
     "line_equation_2d",
+    "point_is_inside_box_2d",
     "point_is_inside_box_3d",
     "bounding_boxes_intersect_2d",
     "bounding_boxes_intersect_3d",
@@ -58,6 +59,50 @@ def line_equation_2d(
     """
     result = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
     return result
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+    inline="always",
+)
+def point_is_inside_box_2d(
+    point: tuple[float, float],
+    box: tuple[
+        tuple[float, float],
+        tuple[float, float],
+    ],
+) -> bool:
+    """
+    Check if a given query point is contained within a 2D box specified
+    by two opposite corners.
+
+    Parameters
+    ----------
+    point
+        The query point.
+    box
+        A bounding box specified by two points.
+    """
+
+    x, y = point
+
+    b1, b2 = box
+
+    x1, y1 = b1
+    x2, y2 = b2
+
+    x_check = x1 <= x <= x2
+
+    if not x_check:
+        return False
+
+    y_check = y1 <= y <= y2
+
+    if not y_check:
+        return False
+
+    return True
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
@@ -222,27 +267,21 @@ def bounding_boxes_intersect_2d(
     """
     if x_p1 > x_p2:
         x_p1, x_p2 = x_p2, x_p1
-    if y_p1 > y_p2:
-        y_p1, y_p2 = y_p2, y_p1
     if x_q1 > x_q2:
         x_q1, x_q2 = x_q2, x_q1
+
+    if not (x_p1 <= x_q2 and x_q1 <= x_p2):
+        return False
+
+    if y_p1 > y_p2:
+        y_p1, y_p2 = y_p2, y_p1
     if y_q1 > y_q2:
         y_q1, y_q2 = y_q2, y_q1
 
-    dx_p = x_p2 - x_p1
-    dy_p = y_p2 - y_p1
-    dx_q = x_q2 - x_q1
-    dy_q = y_q2 - y_q1
+    if not (y_p1 <= y_q2 and y_q1 <= y_p2):
+        return False
 
-    x_p = x_p1 + dx_p / 2
-    y_p = y_p1 + dy_p / 2
-    x_q = x_q1 + dx_q / 2
-    y_q = y_q1 + dy_q / 2
-
-    intersect_x = (2 * abs(x_p - x_q)) <= (dx_p + dx_q)
-    intersect_y = (2 * abs(y_p - y_q)) <= (dy_p + dy_q)
-
-    return intersect_x and intersect_y
+    return True
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
@@ -331,49 +370,34 @@ def bounding_boxes_intersect_3d(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
+    error_model="numpy",
 )
 def two_line_segment_intersection_parameters(
-    line_1: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    line_2: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-) -> tuple[float, float, float]:
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    q1: tuple[float, float],
+    q2: tuple[float, float],
+) -> tuple[float, float]:
     r"""
     Computes the parameters
-    (:math:`\text{sdet}`, :math:`\text{tdet}`, and :math:`\text{det}`)
+    (:math:`t` and :math:`u`)
     associated with the intersection of two 2D line segments,
     :math:`p` and :math:`q`.
 
-    This function uses the method described in :footcite:t:`GraphicsGemsIII`.
-    :math:`\text{sdet}`, :math:`\text{tdet}`, and :math:`\text{det}` are expected
-    to be used to compute the quantities
-
-    .. math::
-
-        s &= \text{sdet} / \text{det} \\
-        t &= \text{tdet} / \text{det},
-
-    which can be used to compute the intersection :math:`(x, y)` using the
-    parametric equations of the lines:
-
-    .. math::
-
-        x &= (1 - s) * x_{\text{q1}} + s * x_{\text{q2}} = (1 - t) * x_{\text{p1}} + t * x_{\text{p2}} \\
-        y &= (1 - s) * y_{\text{q1}} + s * y_{\text{q2}} = (1 - t) * y_{\text{p1}} + t * y_{\text{p2}}.
-
-    The quantities :math:`s` and :math:`t` are not computed directly
-    because doing so leads to a loss of precision.
+    This function uses the method described in the
+    `Line-line intersection Wikipedia article <https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection#Given_two_points_on_each_line_segment>`_.
 
     Parameters
     ----------
-    line_1
-        Two 2D points defining the first line segment.
-    line_2
-        Two 2D points defining the second line segment.
+    p1
+        The starting point of the first line segment.
+    p2
+        The ending point of the first line segment.
+    q1
+        The starting point of the second line segment.
+    q2
+        The ending point of the second line segment.
 
     See Also
     --------
@@ -389,83 +413,46 @@ def two_line_segment_intersection_parameters(
 
     """
 
-    p1, p2 = line_1
-    q1, q2 = line_2
+    x1, y1 = p1
+    x2, y2 = p2
 
-    x_p1, y_p1 = p1
-    x_p2, y_p2 = p2
-
-    x_q1, y_q1 = q1
-    x_q2, y_q2 = q2
+    x3, y3 = q1
+    x4, y4 = q2
 
     bounding_boxes_intersect = bounding_boxes_intersect_2d(
-        x_p1=x_p1,
-        y_p1=y_p1,
-        x_p2=x_p2,
-        y_p2=y_p2,
-        x_q1=x_q1,
-        y_q1=y_q1,
-        x_q2=x_q2,
-        y_q2=y_q2,
+        x_p1=x1,
+        y_p1=y1,
+        x_p2=x2,
+        y_p2=y2,
+        x_q1=x3,
+        y_q1=y3,
+        x_q2=x4,
+        y_q2=y4,
     )
     if not bounding_boxes_intersect:
-        return math.inf, math.inf, 1
+        return math.inf, math.inf
 
-    a = line_equation_2d(
-        x=x_q1,
-        y=y_q1,
-        x1=x_p1,
-        y1=y_p1,
-        x2=x_p2,
-        y2=y_p2,
-    )
-    b = line_equation_2d(
-        x=x_q2,
-        y=y_q2,
-        x1=x_p1,
-        y1=y_p1,
-        x2=x_p2,
-        y2=y_p2,
-    )
-    if (a != 0) and (b != 0):
-        if regridding.math.sign(a) == regridding.math.sign(b):
-            return math.inf, math.inf, 1
+    tdet = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)
 
-    c = line_equation_2d(
-        x=x_p1,
-        y=y_p1,
-        x1=x_q1,
-        y1=y_q1,
-        x2=x_q2,
-        y2=y_q2,
-    )
-    d = line_equation_2d(
-        x=x_p2,
-        y=y_p2,
-        x1=x_q1,
-        y1=y_q1,
-        x2=x_q2,
-        y2=y_q2,
-    )
-    if (c != 0) and (d != 0):
-        if regridding.math.sign(c) == regridding.math.sign(d):
-            return math.inf, math.inf, 1
+    udet = (x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)
 
-    det = a - b
-    sdet = +a
-    tdet = -c
+    det = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
 
-    return sdet, tdet, det
+    t = tdet / det
+
+    u = -udet / det
+
+    return t, u
 
 
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def two_line_segments_intersect(
-    sdet: float,
-    tdet: float,
-    det: float,
+    t: float,
+    u: float,
 ) -> bool:
     """
     Check whether two line segments intersect.
@@ -475,21 +462,14 @@ def two_line_segments_intersect(
 
     Parameters
     ----------
-    sdet
+    t
         The first intersection parameter.
-    tdet
+    u
         The second intersection parameter.
-    det
-        The third intersection parameter.
     """
-    sgn = math.copysign(1, sdet)
 
-    sdet = sgn * sdet
-    tdet = sgn * tdet
-    det = sgn * det
-
-    if 0 <= sdet < det:
-        if 0 <= tdet < det:
+    if 0 <= t < 1:
+        if 0 <= u < 1:
             return True
 
     return False
@@ -498,29 +478,27 @@ def two_line_segments_intersect(
 @numba.njit(
     cache=True,
     fastmath=True,
+    inline="always",
 )
 def two_line_segment_intersection(
-    line: tuple[
-        tuple[float, float],
-        tuple[float, float],
-    ],
-    sdet: float,
-    det: float,
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    t: float,
 ) -> tuple[float, float]:
     """
     Compute the point of intersection between two line segments.
 
-    Uses the parameters computed by
-    :func:`two_line_segment_intersection_parameters` as inputs.
+    Uses the parameter computed by
+    :func:`two_line_segment_intersection_parameters` as an input.
 
     Parameters
     ----------
-    line
-        A line segment
-    sdet
-        The intersection parameter corresponding to `line`.
-    det
-        The third intersection parameter.
+    p1
+        The starting point of the line segment.
+    p2
+        The ending point of the line segment.
+    t
+        The intersection parameter corresponding to `p1` and `p2`.
 
     Examples
     --------
@@ -544,15 +522,17 @@ def two_line_segment_intersection(
             (2, 0),
         )
 
-        sdet, tdet, det = regridding.geometry.two_line_segment_intersection_parameters(
-            line_1=p,
-            line_2=q,
+        t, u = regridding.geometry.two_line_segment_intersection_parameters(
+            p1=p[0],
+            p2=p[1],
+            q1=q[0],
+            q2=q[1],
         )
 
         x, y = regridding.geometry.two_line_segment_intersection(
-            line=p,
-            sdet=sdet,
-            det=det,
+            p1=p[0],
+            p2=p[1],
+            t=t,
         )
 
         # Convert the lines to arrays for easier plotting
@@ -566,15 +546,12 @@ def two_line_segment_intersection(
         plt.legend();
 
     """
-    p1, p2 = line
 
-    x_p1, y_p1 = p1
-    x_p2, y_p2 = p2
+    x1, y1 = p1
+    x2, y2 = p2
 
-    s = sdet / det
-
-    x = (1 - s) * x_p1 + s * x_p2
-    y = (1 - s) * y_p1 + s * y_p2
+    x = x1 + t * (x2 - x1)
+    y = y1 + t * (y2 - y1)
 
     return x, y
 
@@ -757,7 +734,12 @@ def line_triangle_intersection(
     return regridding.math.sum_3d(l_a, tl_ab)
 
 
-@numba.njit(cache=True, inline="always", error_model="numpy")
+@numba.njit(
+    cache=True,
+    fastmath=True,
+    inline="always",
+    error_model="numpy",
+)
 def point_is_inside_polygon(
     x: float,
     y: float,
@@ -790,18 +772,15 @@ def point_is_inside_polygon(
 
     """
 
-    vertices_x = vertices_x - x
-    vertices_y = vertices_y - y
-
     w = 0
 
     for v in range(len(vertices_x)):
         i = v - 1
 
-        x0 = vertices_x[i + 0]
-        y0 = vertices_y[i + 0]
-        x1 = vertices_x[i + 1]
-        y1 = vertices_y[i + 1]
+        x0 = vertices_x[i + 0] - x
+        y0 = vertices_y[i + 0] - y
+        x1 = vertices_x[i + 1] - x
+        y1 = vertices_y[i + 1] - y
 
         if y0 * y1 < 0:
 
@@ -984,6 +963,36 @@ def point_is_inside_polyhedron(
         return True
     else:
         return False
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+    inline="always",
+)
+def area_triangle(
+    vertex_1: tuple[float, float],
+    vertex_2: tuple[float, float],
+) -> float:
+    """
+    Compute the signed area of the triangle formed by two vertices and the origin.
+
+    If the vertices are oriented counterclockwise, the volume is positive,
+    otherwise it is negative.
+
+    Parameters
+    ----------
+    vertex_1
+        The first vertex of the triangle.
+    vertex_2
+        The second vertex of the triangle.
+    """
+    x_p1, y_p1 = vertex_1
+    x_p2, y_p2 = vertex_2
+
+    area = (x_p1 * y_p2 - x_p2 * y_p1) / 2
+
+    return area
 
 
 @numba.njit(cache=True)

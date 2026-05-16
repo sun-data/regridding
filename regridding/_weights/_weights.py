@@ -17,6 +17,7 @@ def weights(
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
+    perturb: None | bool = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -51,6 +52,12 @@ def weights(
         Weights applied to the values of the input grid before resampling.
     method
         The type of regridding to use.
+    perturb
+        Whether to perturb `coordinates_output` by a small value to avoid degenerate
+        grids. This is helpful for some methods, like ``conservative``, which
+        cannot handle degenerate grids.
+        If :obj:`None` (the default), no perturbation is applied unless `method`
+        is ``conservative``.
 
     See Also
     --------
@@ -133,6 +140,7 @@ def weights(
             axis_input=axis_input,
             axis_output=axis_output,
             weights_input=weights_input,
+            perturb=perturb,
         )
     elif method == "conservative":
         return _weights_conservative(
@@ -141,6 +149,7 @@ def weights(
             axis_input=axis_input,
             axis_output=axis_output,
             weights_input=weights_input,
+            perturb=perturb,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")

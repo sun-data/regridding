@@ -14,7 +14,12 @@ def _weights_conservative(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
+    perturb: None | bool = True,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+
+    if perturb is None:
+        perturb = True
+
     (
         coordinates_input,
         coordinates_output,
@@ -28,6 +33,7 @@ def _weights_conservative(
         coordinates_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
+        perturb=perturb,
     )
 
     shape_values_input = list(shape_input)

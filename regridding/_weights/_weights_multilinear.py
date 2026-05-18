@@ -27,6 +27,7 @@ def _weights_multilinear(
         axis_input=axis_input,
         axis_output=axis_output,
         weights_input=weights_input,
+        perturb=perturb,
     )
     return result
 

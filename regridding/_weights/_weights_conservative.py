@@ -18,10 +18,10 @@ def _weights_conservative(
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
 
     if perturb is None:
-        if len(coordinates_input) > 1:
-            perturb = True
-        else:
-            perturb = False
+        perturb = False
+        if not isinstance(coordinates_input, np.ndarray):
+            if len(coordinates_input) > 1:
+                perturb = True
 
     (
         coordinates_input,

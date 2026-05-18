@@ -11,6 +11,7 @@ def _weights_multilinear(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
+    perturb: None | bool = False,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     indices_output = regridding.find_indices(
         coordinates_input=coordinates_input,
@@ -26,6 +27,7 @@ def _weights_multilinear(
         axis_input=axis_input,
         axis_output=axis_output,
         weights_input=weights_input,
+        perturb=perturb,
     )
     return result
 
@@ -37,7 +39,12 @@ def _weights_from_indices_multilinear(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
+    perturb: None | bool = False,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+
+    if perturb is None:
+        perturb = False
+
     (
         coordinates_input,
         coordinates_output,
@@ -51,6 +58,7 @@ def _weights_from_indices_multilinear(
         coordinates_output=coordinates_output,
         axis_input=axis_input,
         axis_output=axis_output,
+        perturb=perturb,
     )
 
     axis_input_numba = ~np.arange(len(axis_input))[::-1]

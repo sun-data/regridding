@@ -16,6 +16,7 @@ def regrid(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
+    perturb: None | bool = None,
 ) -> np.ndarray:
     """
     Regrid an array of values defined on a logically-rectangular curvilinear
@@ -47,7 +48,16 @@ def regrid(
     method
         The type of regridding to use.
         The ``conservative`` method uses the algorithm described in
-        :footcite:t:`Ramshaw1985`
+        :footcite:t:`Ramshaw1985`.
+    perturb
+        Whether to perturb `coordinates_output` by a small value to avoid degenerate
+        grids. This is helpful for some methods, like ``conservative``, which
+        sometimes cannot handle degenerate grids.
+        If :obj:`None` (the default), no perturbation is applied unless `method`
+        is ``conservative`` and the dimensions of the grid are 2D or higher.
+        If :obj:`True`, each point is perturbed using a normal distribution
+        with standard deviation equal to ``1e-9`` of the grid width.
+
 
     See Also
     --------
@@ -64,6 +74,7 @@ def regrid(
         axis_input=axis_input,
         axis_output=axis_output,
         method=method,
+        perturb=perturb,
     )
     result = regrid_from_weights(
         weights=weights,

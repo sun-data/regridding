@@ -323,7 +323,13 @@ def _sweep_along_axis(
                     index=(index_static_x, index_static_y),
                     shape=shape_cells_static,
                 ):
-                    break
+                    index_sweep_y = index_sweep_y + 1
+                    x2 = x_sweep[index_sweep_x, index_sweep_y]
+                    y2 = y_sweep[index_sweep_x, index_sweep_y]
+                    index_static_x = sys.maxsize
+                    index_static_y = sys.maxsize
+                    index_edge_last = sys.maxsize
+                    sweep_is_outside_static = True
 
             x1 = x2
             y1 = y2

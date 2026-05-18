@@ -17,6 +17,7 @@ def weights(
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
+    perturb: None | bool = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -51,6 +52,14 @@ def weights(
         Weights applied to the values of the input grid before resampling.
     method
         The type of regridding to use.
+    perturb
+        Whether to perturb `coordinates_output` by a small value to avoid degenerate
+        grids. This is helpful for some methods, like ``conservative``, which
+        sometimes cannot handle degenerate grids.
+        If :obj:`None` (the default), no perturbation is applied unless `method`
+        is ``conservative`` and the dimensions of the grid are 2D or higher.
+        If :obj:`True`, each point is perturbed using a normal distribution
+        with standard deviation equal to ``1e-9`` of the grid width.
 
     See Also
     --------
@@ -74,13 +83,10 @@ def weights(
         y_input = np.linspace(-4, 4, num=101)
         x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
 
-        # Define small shift to avoid degenerate grids
-        epsilon = 1e-6
-
         # Define rotated output grid
         angle = 0.2
-        x_output = x_input * np.cos(angle) - y_input * np.sin(angle) + epsilon
-        y_output = x_input * np.sin(angle) + y_input * np.cos(angle) + epsilon
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
 
         # Define two arrays of values defined on the same grid
         values_input_1 = np.cos(np.square(x_input)) * np.cos(np.square(y_input))
@@ -133,6 +139,7 @@ def weights(
             axis_input=axis_input,
             axis_output=axis_output,
             weights_input=weights_input,
+            perturb=perturb,
         )
     elif method == "conservative":
         return _weights_conservative(
@@ -141,6 +148,7 @@ def weights(
             axis_input=axis_input,
             axis_output=axis_output,
             weights_input=weights_input,
+            perturb=perturb,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
@@ -178,13 +186,10 @@ def transpose_weights(
         y_input = np.linspace(-4, 4, num=11)
         x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
 
-        # Define small shift to avoid degenerate grids
-        epsilon = 1e-6
-
         # Define rotated output grid
         angle = 0.2
-        x_output = x_input * np.cos(angle) - y_input * np.sin(angle) + epsilon
-        y_output = x_input * np.sin(angle) + y_input * np.cos(angle) + epsilon
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
 
         # Define arrays of values defined on the same grid
         values_input = np.zeros((10, 10))

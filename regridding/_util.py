@@ -106,7 +106,7 @@ def _normalize_input_output_coordinates(
     coordinates_output = tuple(
         np.broadcast_to(coord, shape_output) for coord in coordinates_output
     )
-    
+
     if perturb:
         epsilon = 1e-6
         _coordinates_output = []

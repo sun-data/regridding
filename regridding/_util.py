@@ -108,7 +108,7 @@ def _normalize_input_output_coordinates(
     )
 
     if perturb:
-        epsilon = 1e-6
+        epsilon = 1e-9
         _coordinates_output = []
         for coord in coordinates_output:
             ptp = np.ptp(coord, axis=axis_output, keepdims=True)

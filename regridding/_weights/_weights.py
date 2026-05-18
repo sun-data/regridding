@@ -55,11 +55,11 @@ def weights(
     perturb
         Whether to perturb `coordinates_output` by a small value to avoid degenerate
         grids. This is helpful for some methods, like ``conservative``, which
-        cannot handle degenerate grids.
+        sometimes cannot handle degenerate grids.
         If :obj:`None` (the default), no perturbation is applied unless `method`
         is ``conservative`` and the dimensions of the grid are 2D or higher.
         If :obj:`True`, each point is perturbed using a normal distribution
-        with standard deviation equal to ``1e-6`` of the grid width.
+        with standard deviation equal to ``1e-9`` of the grid width.
 
     See Also
     --------

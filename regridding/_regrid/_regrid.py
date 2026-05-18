@@ -54,7 +54,7 @@ def regrid(
         grids. This is helpful for some methods, like ``conservative``, which
         cannot handle degenerate grids.
         If :obj:`None` (the default), no perturbation is applied unless `method`
-        is ``conservative``.
+        is ``conservative`` and the dimensions of the grid are 2D or higher..
         If :obj:`True`, each point is perturbed using a normal distribution
         with standard deviation equal to ``1e-6`` of the grid width.
 

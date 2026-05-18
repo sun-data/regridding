@@ -17,6 +17,7 @@ def _normalize_input_output_coordinates(
     coordinates_output: np.ndarray | tuple[np.ndarray, ...],
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
+    perturb: bool = False,
 ) -> tuple[
     tuple[np.ndarray, ...],
     tuple[np.ndarray, ...],
@@ -105,6 +106,15 @@ def _normalize_input_output_coordinates(
     coordinates_output = tuple(
         np.broadcast_to(coord, shape_output) for coord in coordinates_output
     )
+    
+    if perturb:
+        epsilon = 1e-6
+        _coordinates_output = []
+        for coord in coordinates_output:
+            ptp = np.ptp(coord, axis=axis_output, keepdims=True)
+            coord = np.random.normal(coord, ptp * epsilon)
+            _coordinates_output.append(coord)
+        coordinates_output = tuple(_coordinates_output)
 
     return (
         coordinates_input,

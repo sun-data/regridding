@@ -58,6 +58,8 @@ def weights(
         cannot handle degenerate grids.
         If :obj:`None` (the default), no perturbation is applied unless `method`
         is ``conservative``.
+        If :obj:`True`, each point is perturbed using a normal distribution
+        with standard deviation equal to ``1e-6`` of the grid width.
 
     See Also
     --------
@@ -81,13 +83,10 @@ def weights(
         y_input = np.linspace(-4, 4, num=101)
         x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
 
-        # Define small shift to avoid degenerate grids
-        epsilon = 1e-6
-
         # Define rotated output grid
         angle = 0.2
-        x_output = x_input * np.cos(angle) - y_input * np.sin(angle) + epsilon
-        y_output = x_input * np.sin(angle) + y_input * np.cos(angle) + epsilon
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
 
         # Define two arrays of values defined on the same grid
         values_input_1 = np.cos(np.square(x_input)) * np.cos(np.square(y_input))
@@ -187,13 +186,10 @@ def transpose_weights(
         y_input = np.linspace(-4, 4, num=11)
         x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
 
-        # Define small shift to avoid degenerate grids
-        epsilon = 1e-6
-
         # Define rotated output grid
         angle = 0.2
-        x_output = x_input * np.cos(angle) - y_input * np.sin(angle) + epsilon
-        y_output = x_input * np.sin(angle) + y_input * np.cos(angle) + epsilon
+        x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
+        y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
 
         # Define arrays of values defined on the same grid
         values_input = np.zeros((10, 10))

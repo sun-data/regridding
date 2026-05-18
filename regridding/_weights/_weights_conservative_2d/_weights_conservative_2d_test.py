@@ -138,8 +138,8 @@ y = np.linspace(-1, 1, num=6)
                 y,
             ),
             (
-                x + 1e-6,
-                y - 1e-6,
+                x,
+                y,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -154,8 +154,8 @@ y = np.linspace(-1, 1, num=6)
                 x * np.sin(90 * u.deg) + y * np.cos(90 * u.deg),
             ),
             (
-                x + 1e-6,
-                y - 1e-6,
+                x,
+                y,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -170,8 +170,8 @@ y = np.linspace(-1, 1, num=6)
                 x * np.sin(180 * u.deg) + y * np.cos(180 * u.deg),
             ),
             (
-                x + 1e-6,
-                y - 1e-6,
+                x,
+                y,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -186,8 +186,8 @@ y = np.linspace(-1, 1, num=6)
                 x * np.sin(270 * u.deg) + y * np.cos(270 * u.deg),
             ),
             (
-                x + 1e-6,
-                y - 1e-6,
+                x,
+                y,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -198,8 +198,8 @@ y = np.linspace(-1, 1, num=6)
         ),
         (
             (
-                x + 1e-6,
-                y - 1e-6,
+                x,
+                y,
             ),
             (
                 x * np.cos(90 * u.deg) - y * np.sin(90 * u.deg),
@@ -218,8 +218,8 @@ y = np.linspace(-1, 1, num=6)
                 y,
             ),
             (
-                x + 1e-6,
-                y - 1e-6,
+                x,
+                y,
             ),
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
             None,
@@ -231,7 +231,6 @@ y = np.linspace(-1, 1, num=6)
     ],
 )
 def test_weights_conservative_2d(
-    capsys,
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
     values_input: np.ndarray,
@@ -241,23 +240,22 @@ def test_weights_conservative_2d(
     weights_input: None | np.ndarray,
     result_expected: np.ndarray,
 ):
-    with capsys.disabled():
-        weights = regridding.weights(
-            coordinates_input=coordinates_input,
-            coordinates_output=coordinates_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
-            weights_input=weights_input,
-            method="conservative",
-        )
-        result = regridding.regrid_from_weights(
-            *weights,
-            values_input=values_input,
-            values_output=values_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
-        )
+    weights = regridding.weights(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        weights_input=weights_input,
+        method="conservative",
+    )
+    result = regridding.regrid_from_weights(
+        *weights,
+        values_input=values_input,
+        values_output=values_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
 
-        assert np.allclose(result, result_expected, rtol=1e-3)
+    assert np.allclose(result, result_expected, rtol=1e-3)
 
-        assert result.shape == result_expected.shape
+    assert result.shape == result_expected.shape

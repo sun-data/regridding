@@ -70,11 +70,14 @@ def regrid_from_weights(
         for i in _util._normalize_axis(None, ndim=len(shape_output))
         if i not in axis_output
     )
-    shape_values_orthogonal = tuple(
-        values_input.shape[i]
-        for i in _util._normalize_axis(None, ndim=values_input.ndim)
-        if i not in axis_input
-    )
+    if np.ndim(values_input) > 0:
+        shape_values_orthogonal = tuple(
+            values_input.shape[i]
+            for i in _util._normalize_axis(None, ndim=values_input.ndim)
+            if i not in axis_input
+        )
+    else:
+        shape_values_orthogonal = ()
 
     shape_orthogonal = np.broadcast_shapes(
         shape_input_orthogonal,

@@ -206,12 +206,8 @@ def _sweep_along_axis(
     """
 
     x_sweep, y_sweep = grid_sweep
-    x_static, y_static = grid_static
 
     shape_sweep = x_sweep.shape
-    shape_static = x_static.shape
-
-    shape_cells_static = _grids.shape_centers(shape_static)
 
     shape_sweep_x, shape_sweep_y = shape_sweep
 
@@ -470,7 +466,6 @@ def _step_outside_static(
                         )
 
                         sweep_is_outside_static = False
-
 
     if not found_intercept:
         index_sweep_y = index_sweep_y + 1

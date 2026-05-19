@@ -12,6 +12,7 @@ y = np.linspace(-1, 1, num=6)
 x2 = np.linspace(-1, 1, num=11)[..., np.newaxis]
 y2 = np.linspace(-1, 1, num=11)
 
+
 @pytest.mark.parametrize(
     argnames="coordinates_input,"
     "coordinates_output,"

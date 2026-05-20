@@ -121,6 +121,27 @@ def test_transpose_weights(
         ),
         (
             regridding.weights(
+                coordinates_input=x1,
+                coordinates_output=x2,
+                axis_input=0,
+                axis_output=0,
+                method="conservative",
+            ),
+            x1,
+            x2,
+            0,
+            0,
+            None,
+            regridding.weights(
+                coordinates_input=x2,
+                coordinates_output=x1,
+                axis_input=0,
+                axis_output=0,
+                method="conservative",
+            ),
+        ),
+        (
+            regridding.weights(
                 coordinates_input=(x1, y1),
                 coordinates_output=(x2, y2),
                 method="conservative",
@@ -159,11 +180,15 @@ def test_transpose_weights_conservative(
     values = regridding.regrid_from_weights(
         *weights_transposed,
         values_input=np.array(10),
+        axis_input=axis_input,
+        axis_output=axis_output,
     )
 
     values_expected = regridding.regrid_from_weights(
         *result_expected,
         values_input=np.array(10),
+        axis_input=axis_input,
+        axis_output=axis_output,
     )
 
     assert np.allclose(values, values_expected)

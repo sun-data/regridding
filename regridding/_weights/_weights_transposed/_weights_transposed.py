@@ -206,21 +206,11 @@ def transpose_weights_conservative(
         weights_input = np.moveaxis(weights_input, axis_input, axis_numba_input)
         weights_input = weights_input.reshape(size_orthogonal, -1)
 
-    if len(coordinates_input) == 1:
-        volume_input = cell_length(coordinates_input[0])
-    elif len(coordinates_input) == 2:
-        volume_input = cell_area(coordinates_input)
-    else:  # pragma: nocover
-        raise ValueError("Coordinates greater than 2D not supported.")
+    volume_input = _cell_volume(coordinates_input, axis_input)
     volume_input = np.moveaxis(volume_input, axis_input, axis_numba_input)
     volume_input = volume_input.reshape(size_orthogonal, -1)
 
-    if len(coordinates_output) == 1:
-        volume_output = cell_length(coordinates_output[0])
-    elif len(coordinates_output) == 2:
-        volume_output = cell_area(coordinates_output)
-    else:  # pragma: nocover
-        raise ValueError("Coordinates greater than 2D not supported.")
+    volume_output = _cell_volume(coordinates_output, axis_output)
     volume_output = np.moveaxis(volume_output, axis_output, axis_numba_output)
     volume_output = volume_output.reshape(size_orthogonal, -1)
 
@@ -270,5 +260,88 @@ def _transpose_weights_conservative_numba(
             result_d.append((i_output, i_input, weight))
 
         result.append(result_d)
+
+    return result
+
+
+def _cell_volume(
+    grid: tuple[np.ndarray, ...],
+    axis: tuple[int, ...],
+) -> np.ndarray:
+    """
+    Compute the :math:`n`-dimensional volume of each cell in a grid.
+
+    Parameters
+    ----------
+    grid
+        1- or 2-dimensional grid.
+    """
+
+    shape = grid[0].shape
+
+    axis_numba = ~np.arange(len(axis))[::-1]
+    
+    shape_numba = tuple(shape[ax] for ax in axis)
+
+    if len(grid) == 1:
+        x, = grid
+        x = np.moveaxis(x, axis, axis_numba)
+        x_ = np.reshape(x, (-1, ) + shape_numba)
+        result = _cell_volume_1d(grid=(x_,))
+        result = np.reshape(result, x_.shape[:-1] + result.shape[-1:])
+        result = np.moveaxis(result, axis_numba, axis)
+
+    elif len(grid) == 2:
+        x, y = grid
+        x = np.moveaxis(x, axis, axis_numba)
+        y = np.moveaxis(y, axis, axis_numba)
+        x_ = np.reshape(x, (-1, ) + shape_numba)
+        y_ = np.reshape(y, (-1, ) + shape_numba)
+        result = _cell_volume_2d(grid=(x_, y_))
+        result = np.reshape(result, x_.shape[:-2] + result.shape[-2:])
+        result = np.moveaxis(result, axis_numba, axis)
+
+    else:
+        raise ValueError("Grids greater than 2D not supported.")
+
+    return result
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def _cell_volume_1d(
+    grid: tuple[np.ndarray],
+) -> np.ndarray:
+    
+    x, = grid
+    
+    shape_t, shape_x = x.shape
+    
+    result = np.empty((shape_t, shape_x - 1))
+    
+    for t in range(shape_t):
+        result[t] = cell_length(x[t])
+        
+    return result
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def _cell_volume_2d(
+    grid: tuple[np.ndarray, np.ndarray],
+) -> np.ndarray:
+
+    x, y = grid
+
+    shape_t, shape_x, shape_y = x.shape
+
+    result = np.empty((shape_t, shape_x - 1, shape_y - 1))
+
+    for t in range(shape_t):
+        result[t] = cell_area(grid=(x[t], y[t]))
 
     return result

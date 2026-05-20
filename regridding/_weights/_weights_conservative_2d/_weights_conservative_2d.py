@@ -206,12 +206,8 @@ def _sweep_along_axis(
     """
 
     x_sweep, y_sweep = grid_sweep
-    x_static, y_static = grid_static
 
     shape_sweep = x_sweep.shape
-    shape_static = x_static.shape
-
-    shape_cells_static = _grids.shape_centers(shape_static)
 
     shape_sweep_x, shape_sweep_y = shape_sweep
 
@@ -273,6 +269,7 @@ def _sweep_along_axis(
                     index_static_x,
                     index_static_y,
                     index_edge_last,
+                    sweep_is_outside_static,
                 ) = _step_outside_static(
                     x1=x1,
                     y1=y1,
@@ -281,11 +278,9 @@ def _sweep_along_axis(
                     index_sweep_y=index_sweep_y,
                     index_static_x=index_static_x,
                     index_static_y=index_static_y,
-                    index_edge_last=index_edge_last,
+                    index_static_last=index_edge_last,
                     grid_static=grid_static,
                 )
-
-                sweep_is_outside_static = index_static_x == sys.maxsize
 
             else:
 
@@ -298,6 +293,7 @@ def _sweep_along_axis(
                     index_static_x,
                     index_static_y,
                     index_edge_last,
+                    sweep_is_outside_static,
                 ) = _step_inside_static(
                     x1=x1,
                     y1=y1,
@@ -318,18 +314,6 @@ def _sweep_along_axis(
                     sweep_input=sweep_input,
                     axis_sweep=axis_sweep,
                 )
-
-                if not _arrays.index_in_bounds(
-                    index=(index_static_x, index_static_y),
-                    shape=shape_cells_static,
-                ):
-                    index_sweep_y = index_sweep_y + 1
-                    x2 = x_sweep[index_sweep_x, index_sweep_y]
-                    y2 = y_sweep[index_sweep_x, index_sweep_y]
-                    index_static_x = sys.maxsize
-                    index_static_y = sys.maxsize
-                    index_edge_last = sys.maxsize
-                    sweep_is_outside_static = True
 
             x1 = x2
             y1 = y2
@@ -353,7 +337,7 @@ def _step_outside_static(
     index_sweep_y: int,
     index_static_x: int,
     index_static_y: int,
-    index_edge_last: int,
+    index_static_last: int,
     grid_static: tuple[np.ndarray, np.ndarray],
 ) -> tuple[
     float,
@@ -364,6 +348,7 @@ def _step_outside_static(
     int,
     int,
     int,
+    bool,
 ]:
     """
     Check if the current line segment crosses the boundary.
@@ -386,12 +371,14 @@ def _step_outside_static(
         The horizontal index of the current vertex in the static grid.
     index_static_y
         The vertical index of the current vertex in the static grid.
-    index_edge_last
-        The 1D index corresponding to the edge of the static grid crossed in
-        the last step.
+    index_static_last
+        The 1D index corresponding to the previous cell in the static grid.
     grid_static
         The vertices of the static grid.
     """
+
+    index_edge_last = sys.maxsize
+    sweep_is_outside_static = True
 
     p1 = (x1, y1)
     p2 = (x2, y2)
@@ -440,9 +427,6 @@ def _step_outside_static(
 
                     if t < t_min:
 
-                        found_intercept = True
-                        t_min = t
-
                         m = i0
                         if direction_face > 0:
                             n = shape_cells_static[axis] - 1
@@ -450,11 +434,25 @@ def _step_outside_static(
                             n = 0
 
                         if axis == axis_x:
-                            index_static_x = n
-                            index_static_y = m
+                            _index_static_x = n
+                            _index_static_y = m
                         else:
-                            index_static_x = m
-                            index_static_y = n
+                            _index_static_x = m
+                            _index_static_y = n
+
+                        index_static_flat = _arrays.index_flat(
+                            index=(_index_static_x, _index_static_y),
+                            shape=shape_cells_static,
+                        )
+
+                        if index_static_flat == index_static_last:
+                            continue
+
+                        found_intercept = True
+                        t_min = t
+
+                        index_static_x = _index_static_x
+                        index_static_y = _index_static_y
 
                         x2, y2 = rg.geometry.two_line_segment_intersection(
                             p1=p1,
@@ -466,6 +464,8 @@ def _step_outside_static(
                             index=(direction_face, axis),
                             shape=(2, 2),
                         )
+
+                        sweep_is_outside_static = False
 
     if not found_intercept:
         index_sweep_y = index_sweep_y + 1
@@ -479,6 +479,7 @@ def _step_outside_static(
         index_static_x,
         index_static_y,
         index_edge_last,
+        sweep_is_outside_static,
     )
 
 
@@ -516,6 +517,7 @@ def _step_inside_static(
     int,
     int,
     int,
+    bool,
 ]:
     """
     Check if the current line segment crosses any edge of the current cell
@@ -573,10 +575,17 @@ def _step_inside_static(
     axis_sweep
         The logical axis of the sweep grid to iterate along.
     """
+    sweep_is_outside_static = False
+
     p1 = (x1, y1)
     p2 = (x2, y2)
 
     x, y = grid_static
+
+    if sweep_input:
+        shape_cells_static = shape_cells_output
+    else:
+        shape_cells_static = shape_cells_input
 
     for v in range(len(_grids.indices_cell_vertex)):
 
@@ -646,6 +655,18 @@ def _step_inside_static(
         axis_sweep=axis_sweep,
     )
 
+    if not _arrays.index_in_bounds(
+        index=(_index_static_x, _index_static_y),
+        shape=shape_cells_static,
+    ):
+        index_edge_last = _arrays.index_flat(
+            index=(index_static_x, index_static_y),
+            shape=shape_cells_static,
+        )
+        _index_static_x = sys.maxsize
+        _index_static_y = sys.maxsize
+        sweep_is_outside_static = True
+
     return (
         x1,
         y1,
@@ -655,6 +676,7 @@ def _step_inside_static(
         _index_static_x,
         _index_static_y,
         index_edge_last,
+        sweep_is_outside_static,
     )
 
 

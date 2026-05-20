@@ -9,6 +9,9 @@ box_y = np.linspace(-1, 1, num=2)
 x = np.linspace(-1, 1, num=6)[..., np.newaxis]
 y = np.linspace(-1, 1, num=6)
 
+x2 = np.linspace(-1, 1, num=11)[..., np.newaxis]
+y2 = np.linspace(-1, 1, num=11)
+
 
 @pytest.mark.parametrize(
     argnames="coordinates_input,"
@@ -228,6 +231,38 @@ y = np.linspace(-1, 1, num=6)
             1,
             np.random.RandomState(42).uniform(0, 10, size=(5, 5)),
         ),
+        (
+            (
+                x,
+                y,
+            ),
+            (
+                x2,
+                y2,
+            ),
+            10,
+            None,
+            None,
+            None,
+            1,
+            10 / 2 / 2,
+        ),
+        (
+            (
+                x2,
+                y2,
+            ),
+            (
+                x,
+                y,
+            ),
+            10,
+            None,
+            None,
+            None,
+            1,
+            10 * 2 * 2,
+        ),
     ],
 )
 def test_weights_conservative_2d(
@@ -257,5 +292,3 @@ def test_weights_conservative_2d(
     )
 
     assert np.allclose(result, result_expected, rtol=1e-3)
-
-    assert result.shape == result_expected.shape

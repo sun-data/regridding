@@ -170,14 +170,12 @@ def transpose_weights_conservative(
             sharex=True,
             sharey=True,
             constrained_layout=True,
-            vmin=0,
-            vmax=1,
         )
-        axs[0].pcolormesh(x_input, y_input, values_input);
+        axs[0].pcolormesh(x_input, y_input, values_input, vmin=0, vmax=1);
         axs[0].set_title(r"original");
-        axs[1].pcolormesh(x_output, y_output, values_output);
+        axs[1].pcolormesh(x_output, y_output, values_output, vmin=0, vmax=1);
         axs[1].set_title(r"rotated");
-        axs[2].pcolormesh(x_input, y_input, values_transposed);
+        axs[2].pcolormesh(x_input, y_input, values_transposed, vmin=0, vmax=1);
         axs[2].set_title(r"rotated and tranposed");
     """
 

@@ -44,12 +44,11 @@ def transpose_weights(
 
 @numba.njit(
     cache=True,
-    parallel=True,
+    fastmath=True,
 )
 def _transpose_weights_numba(
     weights: numba.typed.List,
 ) -> numba.typed.List:
-
     result = numba.typed.List()
 
     for d in numba.prange(len(weights)):
@@ -235,7 +234,6 @@ def transpose_weights_conservative(
 @numba.njit(
     cache=True,
     fastmath=True,
-    parallel=True,
 )
 def _transpose_weights_conservative_numba(
     weights: numba.typed.List,
@@ -280,13 +278,13 @@ def _cell_volume(
     shape = grid[0].shape
 
     axis_numba = ~np.arange(len(axis))[::-1]
-    
+
     shape_numba = tuple(shape[ax] for ax in axis)
 
     if len(grid) == 1:
-        x, = grid
+        (x,) = grid
         x = np.moveaxis(x, axis, axis_numba)
-        x_ = np.reshape(x, (-1, ) + shape_numba)
+        x_ = np.reshape(x, (-1,) + shape_numba)
         result = _cell_volume_1d(grid=(x_,))
         result = np.reshape(result, x_.shape[:-1] + result.shape[-1:])
         result = np.moveaxis(result, axis_numba, axis)
@@ -295,8 +293,8 @@ def _cell_volume(
         x, y = grid
         x = np.moveaxis(x, axis, axis_numba)
         y = np.moveaxis(y, axis, axis_numba)
-        x_ = np.reshape(x, (-1, ) + shape_numba)
-        y_ = np.reshape(y, (-1, ) + shape_numba)
+        x_ = np.reshape(x, (-1,) + shape_numba)
+        y_ = np.reshape(y, (-1,) + shape_numba)
         result = _cell_volume_2d(grid=(x_, y_))
         result = np.reshape(result, x_.shape[:-2] + result.shape[-2:])
         result = np.moveaxis(result, axis_numba, axis)
@@ -314,16 +312,15 @@ def _cell_volume(
 def _cell_volume_1d(
     grid: tuple[np.ndarray],
 ) -> np.ndarray:
-    
-    x, = grid
-    
+    (x,) = grid
+
     shape_t, shape_x = x.shape
-    
+
     result = np.empty((shape_t, shape_x - 1))
-    
+
     for t in range(shape_t):
         result[t] = cell_length(x[t])
-        
+
     return result
 
 
@@ -334,7 +331,6 @@ def _cell_volume_1d(
 def _cell_volume_2d(
     grid: tuple[np.ndarray, np.ndarray],
 ) -> np.ndarray:
-
     x, y = grid
 
     shape_t, shape_x, shape_y = x.shape

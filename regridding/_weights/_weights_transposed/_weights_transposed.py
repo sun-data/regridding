@@ -176,6 +176,9 @@ def transpose_weights_conservative(
         axs[1].set_title(r"rotated");
         axs[2].pcolormesh(x_input, y_input, values_transposed, vmin=0, vmax=1);
         axs[2].set_title(r"rotated and tranposed");
+        axs[0].set_aspect("equal");
+        axs[1].set_aspect("equal");
+        axs[2].set_aspect("equal");
     """
 
     weights, shape_input, shape_output = weights

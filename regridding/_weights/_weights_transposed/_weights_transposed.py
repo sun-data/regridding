@@ -86,11 +86,11 @@ def transpose_weights_conservative(
         Ragged array of weights computed by :func:`regridding.weights`.
     coordinates_input
         Vertices of each cell in the input grid provided to :func:`~regridding.weights`.
-        If provided, each transposed weight will be `multiplied` by the volume
+        Each transposed weight will be `multiplied` by the volume
         of the corresponding cell in the input grid.
     coordinates_output
         Vertices of each cell in the output grid.
-        If provided, each transposed weight will be `divided` by the volume
+        Each transposed weight will be `divided` by the volume
         of the corresponding cell in the output grid.
     axis_input
         Logical axes of the input grid to resample.
@@ -107,7 +107,7 @@ def transpose_weights_conservative(
     weights_input
         An optional array of weights that were applied to the input values
         by :func:`regridding.weights`.
-        If provided, each transposed weight will be `divided` by its corresponding
+        Each transposed weight will be `divided` by its corresponding
         input weight.
 
     Examples

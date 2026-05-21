@@ -247,7 +247,7 @@ def _transpose_weights_conservative_numba(
 
     for d in range(len(weights)):
         result_d = numba.typed.List()
-        for _ in range(0):
+        for _ in range(0):  # pragma: nocover
             result_d.append((0, 0, 0.0))
         result.append(result_d)
 

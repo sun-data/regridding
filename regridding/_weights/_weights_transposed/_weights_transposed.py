@@ -309,7 +309,7 @@ def _cell_volume(
         result = np.reshape(result, x_.shape[:-2] + result.shape[-2:])
         result = np.moveaxis(result, axis_numba, axis)
 
-    else:
+    else:  # pragma: nocover
         raise ValueError("Grids greater than 2D not supported.")
 
     return result

@@ -107,8 +107,10 @@ def transpose_weights_conservative(
     weights_input
         An optional array of weights that were applied to the input values
         by :func:`regridding.weights`.
-        Each transposed weight will be `divided` by its corresponding
-        input weight.
+        The transpose `inverts` this input weighting (retaining a factor of
+        :math:`1 / \text{weights\_input}`) so that regridding a
+        forward-transformed array with the transposed weights recovers the
+        original input values.
 
     Examples
     --------
@@ -264,7 +266,12 @@ def _transpose_weights_conservative_numba(
             i_input, i_output, weight = weights_d[w]
 
             if weights_input is not None:
-                weight = weight / weights_input[d][i_input]
+                # Divide by the input weight twice: once to remove the weight
+                # that the forward transform multiplied into `weight`, and again
+                # so the transpose *inverts* that weighting (retaining a factor
+                # of ``1 / weights_input``). This makes the round trip recover
+                # the original input values.
+                weight = weight / weights_input[d][i_input] / weights_input[d][i_input]
 
             weight = weight * volume_input_d[i_input] / volume_output_d[i_output]
 

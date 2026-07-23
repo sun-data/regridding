@@ -116,6 +116,7 @@ def test_transpose_weights(
             regridding.weights(
                 coordinates_input=y2,
                 coordinates_output=y1,
+                weights_input=1 / 2,
                 method="conservative",
             ),
         ),
@@ -192,3 +193,60 @@ def test_transpose_weights_conservative(
     )
 
     assert np.allclose(values, values_expected)
+
+
+def test_transpose_weights_conservative_inverts_weights_input():
+    """
+    A conservative transpose given ``weights_input`` must *invert* that input
+    weighting, not merely remove it: transposing a forward-weighted array must
+    equal transposing the geometry alone applied to the pre-weighted values and
+    then dividing by the weights. This keeps a weighted round trip
+    ``Wᵀ(W(r))`` free of any residual ``weights_input`` factor.
+    """
+    rng = np.random.default_rng(0)
+
+    grid_input = np.linspace(-1, 1, num=21)
+    grid_output = grid_input + 0.03
+
+    weights_input = rng.uniform(0.5, 3, size=grid_input.size - 1)
+    values = rng.uniform(1, 2, size=grid_input.size - 1)
+
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        weights_input=weights_input,
+        method="conservative",
+    )
+    weights_transposed = regridding.transpose_weights_conservative(
+        weights=weights,
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        weights_input=weights_input,
+    )
+    result = regridding.regrid_from_weights(
+        *weights_transposed,
+        values_input=regridding.regrid_from_weights(*weights, values_input=values),
+    )
+
+    weights_geometry = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+    )
+    weights_geometry_transposed = regridding.transpose_weights_conservative(
+        weights=weights_geometry,
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+    )
+    result_expected = (
+        regridding.regrid_from_weights(
+            *weights_geometry_transposed,
+            values_input=regridding.regrid_from_weights(
+                *weights_geometry,
+                values_input=weights_input * values,
+            ),
+        )
+        / weights_input
+    )
+
+    assert np.allclose(result, result_expected)

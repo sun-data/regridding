@@ -54,8 +54,12 @@ def _coalesce(
     if values.shape[0] == 0:
         return indices_input, indices_output, values
 
-    bound = np.int64(indices_output.max()) + 1
-    key = indices_input * bound + indices_output
+    # the builders can emit negative (wraparound) indices for descending
+    # grids, so key relative to the minimum instead of assuming zero
+    base_input = np.int64(indices_input.min())
+    base_output = np.int64(indices_output.min())
+    span_output = np.int64(indices_output.max()) - base_output + 1
+    key = (indices_input - base_input) * span_output + (indices_output - base_output)
 
     order = np.argsort(key, kind="stable")
     key = key[order]
@@ -67,7 +71,11 @@ def _coalesce(
     starts = np.flatnonzero(boundary)
 
     key = key[starts]
-    return key // bound, key % bound, np.add.reduceat(values, starts)
+    return (
+        key // span_output + base_input,
+        key % span_output + base_output,
+        np.add.reduceat(values, starts),
+    )
 
 
 @numba.njit(cache=True)

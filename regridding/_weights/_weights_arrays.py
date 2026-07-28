@@ -20,6 +20,13 @@ def _weights_to_arrays(
     tuple of flat arrays, releasing each list as it is converted so the peak
     memory is one copy plus the growing arrays.
 
+    Repeated ``(input, output)`` pairs — the conservative clipper emits
+    several fragment triples per distinct pair — are merged by summing their
+    weights, which is exact (applying the weights is linear) and shrinks the
+    result by the mean multiplicity.  The output of each element is sorted
+    by ``(indices_input, indices_output)`` with unique pairs, a canonical
+    form.
+
     Parameters
     ----------
     weights
@@ -33,10 +40,34 @@ def _weights_to_arrays(
 
     result = np.empty(flat.size, dtype=object)
     for k in range(flat.size):
-        result[k] = _triples_to_arrays(flat[k])
+        result[k] = _coalesce(*_triples_to_arrays(flat[k]))
         flat[k] = None
 
     return result.reshape(shape), shape_input, shape_output
+
+
+def _coalesce(
+    indices_input: np.ndarray,
+    indices_output: np.ndarray,
+    values: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if values.shape[0] == 0:
+        return indices_input, indices_output, values
+
+    bound = np.int64(indices_output.max()) + 1
+    key = indices_input * bound + indices_output
+
+    order = np.argsort(key, kind="stable")
+    key = key[order]
+    values = values[order]
+
+    boundary = np.empty(key.shape[0], dtype=bool)
+    boundary[0] = True
+    np.not_equal(key[1:], key[:-1], out=boundary[1:])
+    starts = np.flatnonzero(boundary)
+
+    key = key[starts]
+    return key // bound, key % bound, np.add.reduceat(values, starts)
 
 
 @numba.njit(cache=True)

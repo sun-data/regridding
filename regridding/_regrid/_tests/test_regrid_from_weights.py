@@ -47,6 +47,15 @@ class TestWeightsArrayFormat:
             assert np.issubdtype(indices_output.dtype, np.integer)
             assert np.issubdtype(values.dtype, np.floating)
 
+    def test_pairs_unique(
+        self,
+        weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+    ):
+        for element in weights[0].reshape(-1):
+            indices_input, indices_output, values = element
+            key = indices_input * (indices_output.max() + 1) + indices_output
+            assert np.unique(key).size == key.size
+
     def test_pickle(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],

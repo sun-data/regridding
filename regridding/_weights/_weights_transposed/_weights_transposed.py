@@ -16,7 +16,8 @@ def transpose_weights(
     r"""
     Transpose the sparse matrix of weights calculated by :func:`regridding.weights`.
 
-    This function works by swapping the indices, :math:`(i, j, w) \rightarrow (j, i, w)`.
+    This function works by swapping the index arrays of each element,
+    :math:`(i, j, w) \rightarrow (j, i, w)`, without copying the values.
 
     Transposed weights can be used with :func:`regridding.regrid_from_weights`
     to perform a transform in the opposite direction.
@@ -24,43 +25,20 @@ def transpose_weights(
     Parameters
     ----------
     weights
-        Ragged array of weights computed by :func:`regridding.weights`.
+        Array of weights computed by :func:`regridding.weights`.
     """
 
     weights, shape_input, shape_output = weights
 
     shape = weights.shape
+    flat = weights.reshape(-1)
 
-    weights = numba.typed.List(weights.reshape(-1))
+    result = np.empty(flat.size, dtype=object)
+    for d in range(flat.size):
+        indices_input, indices_output, values = flat[d]
+        result[d] = (indices_output, indices_input, values)
 
-    result = _transpose_weights_numba(weights)
-
-    result = np.fromiter(result, dtype=object)
-
-    result = result.reshape(shape)
-
-    return result, shape_output, shape_input
-
-
-@numba.njit(
-    cache=True,
-    fastmath=True,
-)
-def _transpose_weights_numba(
-    weights: numba.typed.List,
-) -> numba.typed.List:
-    result = numba.typed.List()
-
-    for d in numba.prange(len(weights)):
-        d = numba.types.int64(d)
-        weights_d = weights[d]
-        result_d = numba.typed.List()
-        for w in range(len(weights_d)):
-            i_input, i_output, weight = weights_d[w]
-            result_d.append((i_output, i_input, weight))
-        result.append(result_d)
-
-    return result
+    return result.reshape(shape), shape_output, shape_input
 
 
 def transpose_weights_conservative(
@@ -83,7 +61,7 @@ def transpose_weights_conservative(
     Parameters
     ----------
     weights
-        Ragged array of weights computed by :func:`regridding.weights`.
+        Array of weights computed by :func:`regridding.weights`.
     coordinates_input
         Vertices of each cell in the input grid provided to :func:`~regridding.weights`.
         Each transposed weight will be `multiplied` by the volume
@@ -107,10 +85,8 @@ def transpose_weights_conservative(
     weights_input
         An optional array of weights that were applied to the input values
         by :func:`regridding.weights`.
-        The transpose `inverts` this input weighting (retaining a factor of
-        :math:`1 / \text{weights\_input}`) so that regridding a
-        forward-transformed array with the transposed weights recovers the
-        original input values.
+        Each transposed weight will be `divided` by its corresponding
+        input weight.
 
     Examples
     --------
@@ -219,67 +195,27 @@ def transpose_weights_conservative(
     volume_output = volume_output.reshape(size_orthogonal, -1)
 
     shape = weights.shape
+    flat = weights.reshape(-1)
 
-    weights = numba.typed.List(weights.reshape(-1))
+    result = np.empty(flat.size, dtype=object)
+    for d in range(flat.size):
+        indices_input, indices_output, values = flat[d]
 
-    result = _transpose_weights_conservative_numba(
-        weights,
-        weights_input=weights_input,
-        volume_input=volume_input,
-        volume_output=volume_output,
-    )
+        values = np.array(values, dtype=np.float64)
+        if weights_input is not None:
+            # Divide by the input weight twice: once to remove the weight
+            # that the forward transform multiplied into the values, and again
+            # so the transpose *inverts* that weighting (retaining a factor
+            # of ``1 / weights_input``). This makes the round trip recover
+            # the original input values.
+            values = values / np.square(weights_input[d][indices_input])
+        values = (
+            values * volume_input[d][indices_input] / volume_output[d][indices_output]
+        )
 
-    result = np.fromiter(result, dtype=object)
+        result[d] = (indices_output, indices_input, values)
 
-    result = result.reshape(shape)
-
-    return result, shape_output, shape_input
-
-
-@numba.njit(
-    cache=True,
-    fastmath=True,
-    parallel=True,
-)
-def _transpose_weights_conservative_numba(
-    weights: numba.typed.List,
-    volume_input: np.ndarray,
-    volume_output: np.ndarray,
-    weights_input: None | np.ndarray,
-) -> numba.typed.List:
-
-    result = numba.typed.List()
-
-    for d in range(len(weights)):
-        result_d = numba.typed.List()
-        for _ in range(0):  # pragma: nocover
-            result_d.append((0, 0, 0.0))
-        result.append(result_d)
-
-    for d in numba.prange(len(weights)):
-        d = numba.types.int64(d)
-        weights_d = weights[d]
-        result_d = result[d]
-        volume_input_d = volume_input[d]
-        volume_output_d = volume_output[d]
-        for w in range(len(weights_d)):
-            i_input, i_output, weight = weights_d[w]
-
-            if weights_input is not None:
-                # Divide by the input weight twice: once to remove the weight
-                # that the forward transform multiplied into `weight`, and again
-                # so the transpose *inverts* that weighting (retaining a factor
-                # of ``1 / weights_input``). This makes the round trip recover
-                # the original input values.
-                weight = weight / weights_input[d][i_input] / weights_input[d][i_input]
-
-            weight = weight * volume_input_d[i_input] / volume_output_d[i_output]
-
-            result_d.append((i_output, i_input, weight))
-
-        result[d] = result_d
-
-    return result
+    return result.reshape(shape), shape_output, shape_input
 
 
 def _cell_volume(

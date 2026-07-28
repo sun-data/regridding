@@ -24,9 +24,9 @@ def regrid_from_weights(
     Parameters
     ----------
     weights
-        Ragged array of weights computed by :func:`regridding.weights`,
-        or its flat-array form computed by
-        :func:`regridding.weights_to_arrays`.
+        Array of weights computed by :func:`regridding.weights`, whose
+        elements are ``(indices_input, indices_output, values)`` tuples of
+        flat arrays.
     shape_input
         Broadcasted shape of the input coordinates computed by :func:`regridding.weights`.
     shape_output
@@ -131,18 +131,11 @@ def regrid_from_weights(
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
 
-    if isinstance(weights[0], tuple):
-        _regrid_from_weights_arrays(
-            weights=weights,
-            values_input=values_input,
-            values_output=values_output,
-        )
-    else:
-        _regrid_from_weights(
-            weights=weights,
-            values_input=values_input,
-            values_output=values_output,
-        )
+    _regrid_from_weights(
+        weights=weights,
+        values_input=values_input,
+        values_output=values_output,
+    )
 
     values_output = values_output.reshape(*shape_output_tmp)
 
@@ -156,23 +149,6 @@ def regrid_from_weights(
 
 @numba.njit(cache=True, parallel=True)
 def _regrid_from_weights(
-    weights: numba.typed.List,
-    values_input: np.ndarray,
-    values_output: np.ndarray,
-) -> None:
-
-    for d in numba.prange(len(weights)):
-        d = numba.types.int64(d)
-        weights_d = weights[d]
-        values_input_d = values_input[d].reshape(-1)
-        values_output_d = values_output[d].reshape(-1)
-        for w in range(len(weights_d)):
-            i_input, i_output, weight = weights_d[w]
-            values_output_d[int(i_output)] += weight * values_input_d[int(i_input)]
-
-
-@numba.njit(cache=True, parallel=True)
-def _regrid_from_weights_arrays(
     weights: numba.typed.List,
     values_input: np.ndarray,
     values_output: np.ndarray,

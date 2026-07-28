@@ -2,80 +2,39 @@ import numpy as np
 import numba
 
 __all__ = [
-    "weights_to_arrays",
-    "weights_from_arrays",
+    "_weights_to_arrays",
 ]
 
 
-def weights_to_arrays(
+def _weights_to_arrays(
     weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     r"""
-    Convert ragged weights into flat arrays.
+    Convert ragged typed-list weights into the public flat-array form.
 
-    The ragged weights computed by :func:`regridding.weights` are
-    :class:`numba.typed.List` objects, which cannot be pickled.
-    This function converts each list of ``(input, output, weight)`` triples
-    into a tuple of three flat :class:`numpy.ndarray` instances,
-    ``(indices_input, indices_output, values)``, which can be pickled,
-    memory-mapped, and applied directly by
-    :func:`regridding.regrid_from_weights`.
-
-    The array form also uses about half the memory of the typed lists,
-    which matters when the number of triples is large.
+    The internal weight builders accumulate ``(input, output, weight)``
+    triples in :class:`numba.typed.List` objects, which is the natural
+    container while overlaps are being discovered but cannot be pickled and
+    costs roughly twice the memory of the equivalent flat arrays.  This
+    converts each element into a ``(indices_input, indices_output, values)``
+    tuple of flat arrays, releasing each list as it is converted so the peak
+    memory is one copy plus the growing arrays.
 
     Parameters
     ----------
     weights
-        Ragged array of weights computed by :func:`regridding.weights`
-        (or one of the transpose functions).
-
-    See Also
-    --------
-    :func:`weights_from_arrays`: The inverse of this function.
+        Ragged array of weights accumulated by an internal builder.
     """
 
     weights, shape_input, shape_output = weights
 
     shape = weights.shape
+    flat = weights.reshape(-1)
 
-    result = np.empty(weights.size, dtype=object)
-    for k, triples in enumerate(weights.reshape(-1)):
-        result[k] = _triples_to_arrays(triples)
-
-    return result.reshape(shape), shape_input, shape_output
-
-
-def weights_from_arrays(
-    weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
-    r"""
-    Convert flat-array weights back into ragged typed lists.
-
-    This is the inverse of :func:`weights_to_arrays`.
-
-    Parameters
-    ----------
-    weights
-        Array of ``(indices_input, indices_output, values)`` tuples computed
-        by :func:`weights_to_arrays`.
-
-    See Also
-    --------
-    :func:`weights_to_arrays`: The inverse of this function.
-    """
-
-    weights, shape_input, shape_output = weights
-
-    shape = weights.shape
-
-    result = np.empty(weights.size, dtype=object)
-    for k, (indices_input, indices_output, values) in enumerate(weights.reshape(-1)):
-        result[k] = _arrays_to_triples(
-            np.ascontiguousarray(indices_input, dtype=np.int64),
-            np.ascontiguousarray(indices_output, dtype=np.int64),
-            np.ascontiguousarray(values, dtype=np.float64),
-        )
+    result = np.empty(flat.size, dtype=object)
+    for k in range(flat.size):
+        result[k] = _triples_to_arrays(flat[k])
+        flat[k] = None
 
     return result.reshape(shape), shape_input, shape_output
 
@@ -94,17 +53,3 @@ def _triples_to_arrays(
         indices_output[w] = j
         values[w] = weight
     return indices_input, indices_output, values
-
-
-@numba.njit(cache=True)
-def _arrays_to_triples(
-    indices_input: np.ndarray,
-    indices_output: np.ndarray,
-    values: np.ndarray,
-) -> numba.typed.List:
-    triples = numba.typed.List()
-    triples.append((numba.int64(0), numba.int64(0), 0.0))
-    triples.pop()
-    for w in range(values.shape[0]):
-        triples.append((indices_input[w], indices_output[w], values[w]))
-    return triples

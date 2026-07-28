@@ -34,45 +34,24 @@ values_input = np.random.default_rng(42).random((10, 11))
         ),
     ],
 )
-class TestWeightsArrays:
-    def test_weights_to_arrays(
+class TestWeightsArrayFormat:
+    def test_format(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
     ):
-        result = regridding.weights_to_arrays(weights)
-
-        assert result[1] == weights[1]
-        assert result[2] == weights[2]
-        for element_arrays, element_triples in zip(
-            result[0].reshape(-1),
-            weights[0].reshape(-1),
-        ):
-            indices_input, indices_output, values = element_arrays
-            assert indices_input.shape[0] == len(element_triples)
-            assert indices_output.shape[0] == len(element_triples)
-            assert values.shape[0] == len(element_triples)
-
-    def test_weights_from_arrays(
-        self,
-        weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
-        result = regridding.weights_from_arrays(regridding.weights_to_arrays(weights))
-
-        assert result[1] == weights[1]
-        assert result[2] == weights[2]
-        for element_result, element_expected in zip(
-            result[0].reshape(-1),
-            weights[0].reshape(-1),
-        ):
-            assert list(element_result) == list(element_expected)
+        for element in weights[0].reshape(-1):
+            indices_input, indices_output, values = element
+            assert indices_input.ndim == 1
+            assert indices_input.shape == indices_output.shape == values.shape
+            assert np.issubdtype(indices_input.dtype, np.integer)
+            assert np.issubdtype(indices_output.dtype, np.integer)
+            assert np.issubdtype(values.dtype, np.floating)
 
     def test_pickle(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
     ):
-        arrays = regridding.weights_to_arrays(weights)
-
-        unpickled = pickle.loads(pickle.dumps(arrays))
+        unpickled = pickle.loads(pickle.dumps(weights))
 
         result = regridding.regrid_from_weights(
             *unpickled,
@@ -89,16 +68,39 @@ class TestWeightsArrays:
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
     ):
         result = regridding.regrid_from_weights(
-            *regridding.weights_to_arrays(weights),
-            values_input=values_input,
-        )
-        result_expected = regridding.regrid_from_weights(
             *weights,
             values_input=values_input,
         )
-        assert np.array_equal(result, result_expected)
 
-    def test_regrid_from_weights_transposed(
+        result_expected = regridding.regrid(
+            coordinates_input=(x_input_broadcasted, y_input_broadcasted),
+            coordinates_output=(x_output_broadcasted, y_output_broadcasted),
+            values_input=values_input,
+            method="conservative",
+        )
+        assert result.shape == result_expected.shape
+        # regrid() builds its own weights with fresh grid perturbation, so
+        # the comparison is approximate rather than bitwise
+        assert np.isclose(result.sum(), result_expected.sum(), rtol=1e-3)
+        assert np.allclose(result, result_expected, rtol=1e-3, atol=1e-6)
+
+    def test_transpose_weights(
+        self,
+        weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+    ):
+        result = regridding.transpose_weights(weights)
+
+        assert result[1] == weights[2]
+        assert result[2] == weights[1]
+        for transposed, original in zip(
+            result[0].reshape(-1),
+            weights[0].reshape(-1),
+        ):
+            assert transposed[0] is original[1]
+            assert transposed[1] is original[0]
+            assert transposed[2] is original[2]
+
+    def test_transpose_weights_conservative(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
     ):
@@ -107,17 +109,21 @@ class TestWeightsArrays:
             coordinates_input=(x_input_broadcasted, y_input_broadcasted),
             coordinates_output=(x_output_broadcasted, y_output_broadcasted),
         )
-        values = regridding.regrid_from_weights(
+
+        assert weights_transposed[1] == weights[2]
+        assert weights_transposed[2] == weights[1]
+
+        values_output = regridding.regrid_from_weights(
             *weights,
             values_input=values_input,
         )
-
-        result = regridding.regrid_from_weights(
-            *regridding.weights_to_arrays(weights_transposed),
-            values_input=values,
-        )
-        result_expected = regridding.regrid_from_weights(
+        values_transposed = regridding.regrid_from_weights(
             *weights_transposed,
-            values_input=values,
+            values_input=values_output,
         )
-        assert np.array_equal(result, result_expected)
+
+        assert values_transposed.shape == values_input.shape
+        # the rotated output grid clips corner flux, so the round trip can
+        # only lose flux at the boundary, never gain it
+        assert values_transposed.sum() <= values_input.sum() * (1 + 1e-6)
+        assert values_transposed.sum() >= 0.8 * values_input.sum()

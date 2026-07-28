@@ -126,7 +126,12 @@ def regrid_from_weights(
     values_input = values_input.reshape(-1, *shape_input_numba)
     values_output = values_output.reshape(-1, *shape_output_numba)
 
-    weights = numba.typed.List(weights.reshape(-1))
+    flat = weights.reshape(-1)
+    unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None
+
+    weights = numba.typed.List()
+    for indices_input, indices_output, values in flat:
+        weights.append((indices_input, indices_output, np.asarray(values)))
 
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
@@ -140,6 +145,9 @@ def regrid_from_weights(
     values_output = values_output.reshape(*shape_output_tmp)
 
     values_output = np.moveaxis(values_output, axis_output_numba, axis_output)
+
+    if unit_weights is not None:
+        unit = unit_weights if unit is None else unit * unit_weights
 
     if unit is not None:
         values_output = values_output << unit

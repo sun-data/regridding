@@ -135,6 +135,12 @@ def weights(
         axs[1, 1].pcolormesh(x_output, y_output, values_output_2);
         axs[1, 1].set_title(r"values_output_2");
     """
+    # the numba builders cannot ingest united quantities, but the flat-array
+    # form can carry them: strip the unit here and reattach it to the values
+    unit_weights = getattr(weights_input, "unit", None)
+    if unit_weights is not None:
+        weights_input = weights_input.value
+
     if method == "multilinear":
         result = _weights_multilinear(
             coordinates_input=coordinates_input,
@@ -156,4 +162,14 @@ def weights(
     else:
         raise ValueError(f"unrecognized method '{method}'")
 
-    return _weights_to_arrays(result)
+    result = _weights_to_arrays(result)
+
+    if unit_weights is not None:
+        array, shape_input, shape_output = result
+        flat = array.reshape(-1)
+        for k in range(flat.size):
+            indices_input, indices_output, values = flat[k]
+            flat[k] = (indices_input, indices_output, values << unit_weights)
+        result = array, shape_input, shape_output
+
+    return result

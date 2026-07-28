@@ -47,6 +47,30 @@ class TestWeightsArrayFormat:
             assert np.issubdtype(indices_output.dtype, np.integer)
             assert np.issubdtype(values.dtype, np.floating)
 
+    def test_weights_input_quantity(
+        self,
+        weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+    ):
+        u = pytest.importorskip("astropy.units")
+
+        weights_quantity = regridding.weights(
+            coordinates_input=(x_input_broadcasted, y_input_broadcasted),
+            coordinates_output=(x_output_broadcasted, y_output_broadcasted),
+            weights_input=2 * np.ones((10, 11)) * u.cm**2,
+            method="conservative",
+        )
+
+        result = regridding.regrid_from_weights(
+            *weights_quantity,
+            values_input=values_input * u.ph,
+        )
+        result_expected = regridding.regrid_from_weights(
+            *weights,
+            values_input=values_input,
+        )
+        assert result.unit == u.ph * u.cm**2
+        assert np.allclose(result.value, 2 * result_expected, rtol=1e-3, atol=1e-6)
+
     def test_pairs_unique(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],

@@ -34,7 +34,10 @@ def fill(
     kwargs
         Additional method-specific keyword arguments.
         For the Gauss-Seidel method, the valid keyword arguments are:
-        - ``guess=np.median(a[where], axis)``, the first guess at the fill value.
+
+        - ``guess=None``, the starting value of the missing elements,
+          a scalar or an array broadcastable against `a`.
+          If :obj:`None`, the median of the valid elements along `axis` is used.
         - ``num_iterations=100``, the number of red-black Gauss-Seidel iterations to perform.
 
     Examples

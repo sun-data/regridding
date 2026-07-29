@@ -275,6 +275,12 @@ def test_weights_conservative_2d(
     weights_input: None | np.ndarray,
     result_expected: np.ndarray,
 ):
+
+    x, y = coordinates_output
+    x = x + 1e-6
+    y = y + 1e-6
+    coordinates_output = (x, y)
+
     weights = regridding.weights(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
@@ -282,6 +288,7 @@ def test_weights_conservative_2d(
         axis_output=axis_output,
         weights_input=weights_input,
         method="conservative",
+        perturb=False,
     )
     result = regridding.regrid_from_weights(
         *weights,

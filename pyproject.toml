@@ -51,3 +51,6 @@ Documentation = "https://regridding.readthedocs.io/en/latest"
 omit = [
     "benchmarks/*",
 ]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

@@ -2,6 +2,7 @@ from typing import Sequence, Literal
 import numpy as np
 from ._weights_multilinear import _weights_multilinear
 from ._weights_conservative import _weights_conservative
+from ._weights_arrays import _weights_to_arrays
 
 __all__ = [
     "weights",
@@ -24,8 +25,12 @@ def weights(
     The results of this function are designed to be used by
     :func:`regridding.regrid_from_weights`
 
-    This function returns a tuple containing a ragged array of weights,
-    the shape of the input coordinates, and the shape of the output coordinates.
+    This function returns a tuple containing an array of weights,
+    the shape of the input coordinates, and the shape of the output
+    coordinates.  Each element of the weights array is a tuple of three flat
+    arrays, ``(indices_input, indices_output, values)``, describing the
+    sparse mapping for one orthogonal element; this form pickles and
+    memory-maps cleanly.
 
     Parameters
     ----------
@@ -130,8 +135,14 @@ def weights(
         axs[1, 1].pcolormesh(x_output, y_output, values_output_2);
         axs[1, 1].set_title(r"values_output_2");
     """
+    # the numba builders cannot ingest united quantities, but the flat-array
+    # form can carry them: strip the unit here and reattach it to the values
+    unit_weights = getattr(weights_input, "unit", None)
+    if unit_weights is not None:
+        weights_input = weights_input.value
+
     if method == "multilinear":
-        return _weights_multilinear(
+        result = _weights_multilinear(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,
@@ -140,7 +151,7 @@ def weights(
             perturb=perturb,
         )
     elif method == "conservative":
-        return _weights_conservative(
+        result = _weights_conservative(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,
@@ -150,3 +161,15 @@ def weights(
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
+
+    result = _weights_to_arrays(result)
+
+    if unit_weights is not None:
+        array, shape_input, shape_output = result
+        flat = array.reshape(-1)
+        for k in range(flat.size):
+            indices_input, indices_output, values = flat[k]
+            flat[k] = (indices_input, indices_output, values << unit_weights)
+        result = array, shape_input, shape_output
+
+    return result

@@ -176,6 +176,15 @@ def transpose_weights_conservative(
         axis_output=axis_output,
     )
 
+    # `_normalize_input_output_coordinates` returns the axes in descending
+    # order, but the flat cell indices stored in `weights` (and used by
+    # `regrid_from_weights`) are built in ascending-axis order. Sort ascending
+    # so that `weights_input` and the cell volumes are flattened in the same
+    # layout the stored indices address; otherwise a spatially-varying
+    # `weights_input` (or non-uniform grid) is applied to the wrong cells.
+    axis_input = tuple(sorted(axis_input))
+    axis_output = tuple(sorted(axis_output))
+
     axis_numba_input = ~np.arange(len(axis_input))[::-1]
     axis_numba_output = ~np.arange(len(axis_output))[::-1]
 

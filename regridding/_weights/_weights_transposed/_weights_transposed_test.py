@@ -250,3 +250,74 @@ def test_transpose_weights_conservative_inverts_weights_input():
     )
 
     assert np.allclose(result, result_expected)
+
+
+def test_transpose_weights_conservative_inverts_weights_input_2d():
+    """
+    Regression test that a spatially-varying ``weights_input`` is inverted on a
+    2D grid.
+
+    The forward multiplies each weight by ``weights_input`` at its input cell,
+    so the transpose must divide by that *same* cell's value. The resampled axes
+    are flattened to build the cell indices, so a 2D ``weights_input`` that
+    varies differently along each axis exposes any axis-order mismatch in that
+    flattening (a symmetric or constant weight would not). ``perturb=False``
+    keeps the two grids identical so the comparison isolates the
+    ``weights_input`` handling.
+    """
+    rng = np.random.default_rng(0)
+
+    grid_x = np.linspace(-1, 1, num=8)
+    grid_y = np.linspace(-1, 1, num=12)
+    x_input, y_input = np.meshgrid(grid_x, grid_y, indexing="ij")
+    x_output, y_output = x_input + 0.03, y_input + 0.02
+
+    # a weight that varies differently along each axis, so a transposed layout
+    # would divide by the wrong cell's value.
+    index_x = np.arange(grid_x.size - 1)
+    index_y = np.arange(grid_y.size - 1)
+    weights_input = 1.0 + 0.2 * index_x[:, np.newaxis] + 0.05 * index_y[np.newaxis, :]
+
+    values = rng.uniform(1, 2, size=(grid_x.size - 1, grid_y.size - 1))
+
+    weights = regridding.weights(
+        coordinates_input=(x_input, y_input),
+        coordinates_output=(x_output, y_output),
+        weights_input=weights_input,
+        method="conservative",
+        perturb=False,
+    )
+    weights_transposed = regridding.transpose_weights_conservative(
+        weights=weights,
+        coordinates_input=(x_input, y_input),
+        coordinates_output=(x_output, y_output),
+        weights_input=weights_input,
+    )
+    result = regridding.regrid_from_weights(
+        *weights_transposed,
+        values_input=regridding.regrid_from_weights(*weights, values_input=values),
+    )
+
+    weights_geometry = regridding.weights(
+        coordinates_input=(x_input, y_input),
+        coordinates_output=(x_output, y_output),
+        method="conservative",
+        perturb=False,
+    )
+    weights_geometry_transposed = regridding.transpose_weights_conservative(
+        weights=weights_geometry,
+        coordinates_input=(x_input, y_input),
+        coordinates_output=(x_output, y_output),
+    )
+    result_expected = (
+        regridding.regrid_from_weights(
+            *weights_geometry_transposed,
+            values_input=regridding.regrid_from_weights(
+                *weights_geometry,
+                values_input=weights_input * values,
+            ),
+        )
+        / weights_input
+    )
+
+    assert np.allclose(result, result_expected)

@@ -3,7 +3,6 @@ import numpy as np
 import scipy.ndimage
 import regridding
 
-
 sz_t = 9
 sz_x = 10
 sz_y = 11

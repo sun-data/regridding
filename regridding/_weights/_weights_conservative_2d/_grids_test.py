@@ -1,0 +1,87 @@
+import pytest
+import sys
+import numpy as np
+from . import _grids
+
+
+@pytest.mark.parametrize(
+    argnames="grid,result_expected",
+    argvalues=[
+        (
+            np.meshgrid(
+                np.arange(2),
+                np.arange(2),
+                indexing="ij",
+            ),
+            np.ones((1, 1)),
+        ),
+        (
+            np.meshgrid(
+                np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            np.ones((2, 3)),
+        ),
+        (
+            np.meshgrid(
+                2 * np.arange(3),
+                2 * np.arange(4),
+                indexing="ij",
+            ),
+            4 * np.ones((2, 3)),
+        ),
+    ],
+)
+def test_volume_grid(
+    grid: tuple[np.ndarray, np.ndarray, np.ndarray],
+    result_expected: np.ndarray,
+):
+    result = _grids.grid_volume(grid)
+    assert np.allclose(result, result_expected)
+    assert result.shape == result_expected.shape
+
+
+@pytest.mark.parametrize(
+    argnames="point,grid,result_expected",
+    argvalues=[
+        (
+            (0.5, 0.5),
+            np.meshgrid(
+                np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            (0, 0),
+        ),
+        (
+            (-0.5, 2.5),
+            np.meshgrid(
+                -np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            (0, 2),
+        ),
+        (
+            (-1, -1),
+            np.meshgrid(
+                -np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            (sys.maxsize, sys.maxsize),
+        ),
+    ],
+)
+def test_index_of_point_brute(
+    point: tuple[float, float],
+    grid: tuple[np.ndarray, np.ndarray],
+    result_expected: tuple[int, int],
+):
+    result = _grids.index_of_point_brute(
+        point=point,
+        grid=grid,
+    )
+
+    assert result == result_expected

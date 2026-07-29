@@ -2,6 +2,7 @@ from typing import Sequence, Literal
 import numpy as np
 from ._weights_multilinear import _weights_multilinear
 from ._weights_conservative import _weights_conservative
+from ._weights_arrays import _weights_to_arrays
 
 __all__ = [
     "weights",
@@ -13,7 +14,9 @@ def weights(
     coordinates_output: tuple[np.ndarray, ...],
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
+    weights_input: None | np.ndarray = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
+    perturb: None | bool = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -22,8 +25,12 @@ def weights(
     The results of this function are designed to be used by
     :func:`regridding.regrid_from_weights`
 
-    This function returns a tuple containing a ragged array of weights,
-    the shape of the input coordinates, and the shape of the output coordinates.
+    This function returns a tuple containing an array of weights,
+    the shape of the input coordinates, and the shape of the output
+    coordinates.  Each element of the weights array is a tuple of three flat
+    arrays, ``(indices_input, indices_output, values)``, describing the
+    sparse mapping for one orthogonal element; this form pickles and
+    memory-maps cleanly.
 
     Parameters
     ----------
@@ -44,8 +51,18 @@ def weights(
         axes in the input grid.
         The number of axes should be equal to the number of
         coordinates in the output grid.
+    weights_input
+        Weights applied to the values of the input grid before resampling.
     method
         The type of regridding to use.
+    perturb
+        Whether to perturb `coordinates_output` by a small value to avoid degenerate
+        grids. This is helpful for some methods, like ``conservative``, which
+        sometimes cannot handle degenerate grids.
+        If :obj:`None` (the default), no perturbation is applied unless `method`
+        is ``conservative`` and the dimensions of the grid are 2D or higher.
+        If :obj:`True`, each point is perturbed using a normal distribution
+        with standard deviation equal to ``1e-9`` of the grid width.
 
     See Also
     --------
@@ -118,19 +135,41 @@ def weights(
         axs[1, 1].pcolormesh(x_output, y_output, values_output_2);
         axs[1, 1].set_title(r"values_output_2");
     """
+    # the numba builders cannot ingest united quantities, but the flat-array
+    # form can carry them: strip the unit here and reattach it to the values
+    unit_weights = getattr(weights_input, "unit", None)
+    if unit_weights is not None:
+        weights_input = weights_input.value
+
     if method == "multilinear":
-        return _weights_multilinear(
+        result = _weights_multilinear(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,
             axis_output=axis_output,
+            weights_input=weights_input,
+            perturb=perturb,
         )
     elif method == "conservative":
-        return _weights_conservative(
+        result = _weights_conservative(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,
             axis_output=axis_output,
+            weights_input=weights_input,
+            perturb=perturb,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
+
+    result = _weights_to_arrays(result)
+
+    if unit_weights is not None:
+        array, shape_input, shape_output = result
+        flat = array.reshape(-1)
+        for k in range(flat.size):
+            indices_input, indices_output, values = flat[k]
+            flat[k] = (indices_input, indices_output, values << unit_weights)
+        result = array, shape_input, shape_output
+
+    return result

@@ -24,7 +24,9 @@ def regrid_from_weights(
     Parameters
     ----------
     weights
-        Ragged array of weights computed by :func:`regridding.weights`.
+        Array of weights computed by :func:`regridding.weights`, whose
+        elements are ``(indices_input, indices_output, values)`` tuples of
+        flat arrays.
     shape_input
         Broadcasted shape of the input coordinates computed by :func:`regridding.weights`.
     shape_output
@@ -52,33 +54,63 @@ def regrid_from_weights(
     :func:`regridding.weights`
     """
 
-    shape_input = np.broadcast_shapes(values_input.shape, shape_input)
+    unit = getattr(values_input, "unit", None)
 
     ndim_input = len(shape_input)
-    axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
+    ndim_output = len(shape_output)
 
-    shape_orthogonal = (
-        1 if i in axis_input else shape_input[i] for i in range(-len(shape_input), 0)
+    axis_input = _util._normalize_axis(axis_input, ndim=ndim_input)
+    axis_output = _util._normalize_axis(axis_output, ndim=ndim_output)
+
+    shape_input_orthogonal = tuple(
+        shape_input[i]
+        for i in _util._normalize_axis(None, ndim=len(shape_input))
+        if i not in axis_input
     )
+    shape_output_orthogonal = tuple(
+        shape_output[i]
+        for i in _util._normalize_axis(None, ndim=len(shape_output))
+        if i not in axis_output
+    )
+    if np.ndim(values_input) > 0:
+        shape_values_orthogonal = tuple(
+            values_input.shape[i]
+            for i in _util._normalize_axis(None, ndim=values_input.ndim)
+            if i not in axis_input
+        )
+    else:
+        shape_values_orthogonal = ()
+
+    shape_orthogonal = np.broadcast_shapes(
+        shape_input_orthogonal,
+        shape_output_orthogonal,
+        shape_values_orthogonal,
+    )
+
+    axis_input = tuple(sorted(axis_input))
+    axis_output = tuple(sorted(axis_output))
+
+    shape_input_new = list(reversed(shape_orthogonal))
+    for ax in reversed(axis_input):
+        shape_input_new.insert(~ax, shape_input[ax])
+    shape_input = tuple(reversed(shape_input_new))
+
+    shape_output_new = list(reversed(shape_orthogonal))
+    for ax in reversed(axis_output):
+        shape_output_new.insert(~ax, shape_output[ax])
+    shape_output = tuple(reversed(shape_output_new))
+
     weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
     values_input = np.broadcast_to(values_input, shape_input, subok=True)
 
     if values_output is None:
-        shape_output = np.broadcast_shapes(
-            shape_output,
-            tuple(
-                shape_input[ax] if ax not in axis_input else 1
-                for ax in _util._normalize_axis(None, ndim_input)
-            ),
-        )
-        values_output = np.zeros_like(values_input, shape=shape_output)
+        values_output = np.zeros_like(values_input, shape=shape_output, dtype=float)
     else:
-        if values_output.shape != shape_output:
-            raise ValueError(f"")
+        if values_output.shape != shape_output:  # pragma: nocover
+            raise ValueError(
+                f"{values_output.shape=} should be equal to {shape_output}"
+            )
         values_output.fill(0)
-
-    ndim_output = len(shape_output)
-    axis_output = _util._normalize_axis(axis_output, ndim=ndim_output)
 
     axis_input_numba = ~np.arange(len(axis_input))[::-1]
     axis_output_numba = ~np.arange(len(axis_output))[::-1]
@@ -94,7 +126,12 @@ def regrid_from_weights(
     values_input = values_input.reshape(-1, *shape_input_numba)
     values_output = values_output.reshape(-1, *shape_output_numba)
 
-    weights = numba.typed.List(weights.reshape(-1))
+    flat = weights.reshape(-1)
+    unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None
+
+    weights = numba.typed.List()
+    for indices_input, indices_output, values in flat:
+        weights.append((indices_input, indices_output, np.asarray(values)))
 
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
@@ -109,6 +146,12 @@ def regrid_from_weights(
 
     values_output = np.moveaxis(values_output, axis_output_numba, axis_output)
 
+    if unit_weights is not None:
+        unit = unit_weights if unit is None else unit * unit_weights
+
+    if unit is not None:
+        values_output = values_output << unit
+
     return values_output
 
 
@@ -121,9 +164,10 @@ def _regrid_from_weights(
 
     for d in numba.prange(len(weights)):
         d = numba.types.int64(d)
-        weights_d = weights[d]
+        indices_input, indices_output, values = weights[d]
         values_input_d = values_input[d].reshape(-1)
         values_output_d = values_output[d].reshape(-1)
-        for w in range(len(weights_d)):
-            i_input, i_output, weight = weights_d[w]
-            values_output_d[int(i_output)] += weight * values_input_d[int(i_input)]
+        for w in range(values.shape[0]):
+            values_output_d[indices_output[w]] += (
+                values[w] * values_input_d[indices_input[w]]
+            )

@@ -34,12 +34,16 @@ def fill(
     kwargs
         Additional method-specific keyword arguments.
         For the Gauss-Seidel method, the valid keyword arguments are:
+
+        - ``guess=None``, the starting value of the missing elements,
+          a scalar or an array broadcastable against `a`.
+          If :obj:`None`, the median of the valid elements along `axis` is used.
         - ``num_iterations=100``, the number of red-black Gauss-Seidel iterations to perform.
 
     Examples
     --------
 
-    Set random elements of an array to NaN, and then fill in the missing elements
+    Set random blocks of an array to NaN, and then fill in the missing elements
     using the Gauss-Seidel relaxation method.
 
     .. jupyter-execute::
@@ -56,15 +60,21 @@ def fill(
         # Define the array to remove elements from
         a = np.cos(x) * np.cos(y)
 
-        # Define the elements of the array to remove
-        where = np.random.uniform(0, 1, size=a.shape) > 0.9
+        # Define the blocks of the array to remove
+        rng = np.random.default_rng(seed=42)
+        num_blocks = 8
+        width_block = 5
+        where = np.zeros(a.shape, dtype=bool)
+        for _ in range(num_blocks):
+            i, j = rng.integers(0, np.array(a.shape) - width_block)
+            where[i : i + width_block, j : j + width_block] = True
 
-        # Set random elements of the array to NaN
+        # Set the blocks of the array to NaN
         a_missing = a.copy()
         a_missing[where] = np.nan
 
         # Fill the missing elements using Gauss-Seidel relaxation
-        b = regridding.fill(a_missing, method="gauss_seidel", num_iterations=11)
+        b = regridding.fill(a_missing, method="gauss_seidel", num_iterations=100)
 
         # Plot the results
         fig, axs = plt.subplots(

@@ -1,3 +1,4 @@
+import warnings
 from typing import Sequence
 import numpy as np
 import numba
@@ -12,6 +13,7 @@ def fill_gauss_seidel(
     a: np.ndarray,
     where: np.ndarray,
     axis: None | int | Sequence[int],
+    guess: None | float | np.ndarray = None,
     num_iterations: int = 100,
 ) -> np.ndarray:
 
@@ -19,9 +21,13 @@ def fill_gauss_seidel(
 
     a, where = np.broadcast_arrays(a, where, subok=True)
 
-    a[where] = 0
-
     axis = regridding._util._normalize_axis(axis=axis, ndim=a.ndim)
+
+    if guess is None:
+        guess = _guess_median(a=a, where=where, axis=axis)
+
+    a[where] = np.broadcast_to(guess, a.shape)[where]
+
     axis_numba = ~np.arange(len(axis))[::-1]
 
     shape = a.shape
@@ -50,6 +56,28 @@ def fill_gauss_seidel(
     result = np.moveaxis(result, axis_numba, axis)
 
     return result
+
+
+def _guess_median(
+    a: np.ndarray,
+    where: np.ndarray,
+    axis: tuple[int, ...],
+) -> np.ndarray:
+    """
+    The median of the valid elements of `a` along `axis`.
+
+    Used as the default starting point of the relaxation.
+    Slices with no valid elements fall back to zero.
+    """
+
+    a = np.where(where, np.nan, a)
+
+    with warnings.catch_warnings():
+        # slices with no valid elements are expected, and handled below
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        result = np.nanmedian(a, axis=axis, keepdims=True)
+
+    return np.where(np.isnan(result), 0, result)
 
 
 @numba.njit(cache=True, parallel=True)

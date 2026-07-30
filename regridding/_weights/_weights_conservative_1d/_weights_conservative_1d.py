@@ -15,7 +15,7 @@ def weights_conservative_1d(
     weights_output: np.ndarray,
     index_start: int,
     index_stop: int,
-) -> numba.typed.List[tuple[int, int, float]]:
+) -> None:
     """
     For each cell of `grid_output`,
     compute the fraction of volume shared with each cell of `grid_input`
@@ -60,7 +60,7 @@ def _weights_conservative_1d(
     x_input: np.ndarray,
     x_output: np.ndarray,
     weights_input: None | np.ndarray,
-) -> numba.typed.List[tuple[int, int, float]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     For each cell of `grid_output`,
     compute the fraction of volume shared with each cell of `grid_input`
@@ -171,7 +171,19 @@ def _weights_conservative_1d(
 
         point_1 = line[1]
 
-    return weights_output
+    # flatten the ragged list of triples into the public flat-array form so
+    # every conservative builder returns the same structure.
+    n = len(weights_output)
+    indices_input = np.empty(n, dtype=np.int64)
+    indices_output = np.empty(n, dtype=np.int64)
+    values = np.empty(n, dtype=np.float64)
+    for w in range(n):
+        index_input, index_output, weight = weights_output[w]
+        indices_input[w] = index_input
+        indices_output[w] = index_output
+        values[w] = weight
+
+    return indices_input, indices_output, values
 
 
 @numba.njit(cache=True)

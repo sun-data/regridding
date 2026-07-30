@@ -111,7 +111,7 @@ def _weights_from_indices_multilinear_1d(
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
     weights_input: None | np.ndarray,
-) -> np.ndarray:
+) -> numba.typed.List:
     (i_output,) = indices_output
     (x_input,) = coordinates_input
     (x_output,) = coordinates_output
@@ -120,11 +120,22 @@ def _weights_from_indices_multilinear_1d(
     num_d, num_i_output = x_output.shape
 
     weights = numba.typed.List()
+    for _ in range(0):  # pragma: nocover
+        weights.append(
+            (
+                np.empty(0, dtype=np.int64),
+                np.empty(0, dtype=np.int64),
+                np.empty(0, dtype=np.float64),
+            )
+        )
 
     for d in range(num_d):
-        weights_d = numba.typed.List()
-        for _ in range(0):
-            weights_d.append((0.0, 0.0, 0.0))
+        # each output vertex contributes exactly two weights, so the flat
+        # arrays for this element have a known size and need no compaction.
+        n = 2 * num_i_output
+        indices_input = np.empty(n, dtype=np.int64)
+        indices_output_d = np.empty(n, dtype=np.int64)
+        values = np.empty(n, dtype=np.float64)
 
         for i in numba.prange(num_i_output):
             i0 = i_output[d, i]
@@ -141,9 +152,14 @@ def _weights_from_indices_multilinear_1d(
                 w0 = w0 * weights_input[d, i0]
                 w1 = w1 * weights_input[d, i1]
 
-            weights_d.append((i0, i, w0))
-            weights_d.append((i1, i, w1))
+            indices_input[2 * i] = i0
+            indices_output_d[2 * i] = i
+            values[2 * i] = w0
 
-        weights.append(weights_d)
+            indices_input[2 * i + 1] = i1
+            indices_output_d[2 * i + 1] = i
+            values[2 * i + 1] = w1
+
+        weights.append((indices_input, indices_output_d, values))
 
     return weights

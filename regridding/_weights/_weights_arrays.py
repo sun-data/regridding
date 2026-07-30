@@ -1,5 +1,4 @@
 import numpy as np
-import numba
 
 __all__ = [
     "_weights_to_arrays",
@@ -10,27 +9,22 @@ def _weights_to_arrays(
     weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     r"""
-    Convert ragged typed-list weights into the public flat-array form.
+    Coalesce each element's flat ``(input, output, weight)`` arrays into a
+    canonical form.
 
-    The internal weight builders accumulate ``(input, output, weight)``
-    triples in :class:`numba.typed.List` objects, which is the natural
-    container while overlaps are being discovered but cannot be pickled and
-    costs roughly twice the memory of the equivalent flat arrays.  This
-    converts each element into a ``(indices_input, indices_output, values)``
-    tuple of flat arrays, releasing each list as it is converted so the peak
-    memory is one copy plus the growing arrays.
-
-    Repeated ``(input, output)`` pairs — the conservative clipper emits
-    several fragment triples per distinct pair — are merged by summing their
-    weights, which is exact (applying the weights is linear) and shrinks the
-    result by the mean multiplicity.  The output of each element is sorted
-    by ``(indices_input, indices_output)`` with unique pairs, a canonical
-    form.
+    The internal weight builders each emit a ``(indices_input,
+    indices_output, values)`` tuple of flat arrays. The conservative clippers
+    emit several fragment triples per distinct ``(input, output)`` pair, so
+    this merges repeated pairs by summing their weights — which is exact
+    (applying the weights is linear) and shrinks the result by the mean
+    multiplicity. Each element is returned sorted by ``(indices_input,
+    indices_output)`` with unique pairs, releasing each input as it is
+    processed so the peak memory is one copy plus the growing arrays.
 
     Parameters
     ----------
     weights
-        Ragged array of weights accumulated by an internal builder.
+        Array of per-element flat weight arrays from an internal builder.
     """
 
     weights, shape_input, shape_output = weights
@@ -40,7 +34,8 @@ def _weights_to_arrays(
 
     result = np.empty(flat.size, dtype=object)
     for k in range(flat.size):
-        result[k] = _coalesce(*_triples_to_arrays(flat[k]))
+        indices_input, indices_output, values = flat[k]
+        result[k] = _coalesce(indices_input, indices_output, values)
         flat[k] = None
 
     return result.reshape(shape), shape_input, shape_output
@@ -76,19 +71,3 @@ def _coalesce(
         key % span_output + base_output,
         np.add.reduceat(values, starts),
     )
-
-
-@numba.njit(cache=True)
-def _triples_to_arrays(
-    triples: numba.typed.List,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    n = len(triples)
-    indices_input = np.empty(n, dtype=np.int64)
-    indices_output = np.empty(n, dtype=np.int64)
-    values = np.empty(n, dtype=np.float64)
-    for w in range(n):
-        i, j, weight = triples[w]
-        indices_input[w] = i
-        indices_output[w] = j
-        values[w] = weight
-    return indices_input, indices_output, values

@@ -22,12 +22,61 @@ __all__ = [
 @numba.njit(
     cache=True,
     fastmath=True,
+    parallel=True,
+)
+def _compact_rows(
+    rows: numba.typed.List,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Flatten the ragged per-row lists of ``(input, output, weight)`` triples
+    accumulated by the sweep into three parallel flat arrays.
+
+    Each row owns the disjoint output slice ``[offset : offset + count]``, so
+    the fill loop parallelizes over rows without contention. This replaces the
+    previously serial ``typed.List`` merge and the separate list-to-array
+    conversion.
+
+    Parameters
+    ----------
+    rows
+        The per-row lists of weight triples from every sweep pass.
+    """
+
+    n = len(rows)
+
+    counts = np.empty(n, dtype=np.int64)
+    for i in range(n):
+        counts[i] = np.int64(len(rows[i]))
+
+    offsets = np.zeros(n + 1, dtype=np.int64)
+    offsets[1:] = np.cumsum(counts)
+    total = offsets[n]
+
+    indices_input = np.empty(total, dtype=np.int64)
+    indices_output = np.empty(total, dtype=np.int64)
+    values = np.empty(total, dtype=np.float64)
+
+    for i in numba.prange(n):
+        base = offsets[i]
+        row = rows[i]
+        for k in range(len(row)):
+            index_input, index_output, weight = row[k]
+            indices_input[base + k] = index_input
+            indices_output[base + k] = index_output
+            values[base + k] = weight
+
+    return indices_input, indices_output, values
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
 )
 def weights_conservative_2d(
     grid_input: tuple[np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray],
     weights_input: None | np.ndarray,
-) -> numba.typed.List[tuple[int, int, float]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     For each cell of `grid_output`,
     compute the fraction of area shared with each cell of `grid_input`
@@ -45,11 +94,17 @@ def weights_conservative_2d(
         Optional weights applied to the values of the input grid before resampling.
     """
 
-    weights_output = numba.typed.List()
-    for x in range(0):  # pragma: nocover
-        weights_output.append((0, 0, 0.0))
-
     volume_input = _grids.grid_volume(grid_input)
+
+    # Collect the ragged per-row lists from every sweep pass, then flatten them
+    # in one parallel compaction. The empty-range loops seed the nested typed
+    # list element types without adding any elements.
+    rows = numba.typed.List()
+    row_seed = numba.typed.List()
+    for _ in range(0):  # pragma: nocover
+        row_seed.append((0, 0, 0.0))
+    for _ in range(0):  # pragma: nocover
+        rows.append(row_seed)
 
     for sweep_input in (False, True):
         _sweep_grid(
@@ -57,11 +112,11 @@ def weights_conservative_2d(
             grid_output=grid_output,
             volume_input=volume_input,
             weights_input=weights_input,
-            weights_output=weights_output,
+            rows=rows,
             sweep_input=sweep_input,
         )
 
-    return weights_output
+    return _compact_rows(rows)
 
 
 @numba.njit(
@@ -73,7 +128,7 @@ def _sweep_grid(
     grid_output: tuple[np.ndarray, np.ndarray],
     volume_input: np.ndarray,
     weights_input: None | np.ndarray,
-    weights_output: numba.typed.List[tuple[int, int, float]],
+    rows: numba.typed.List,
     sweep_input: bool,
 ) -> None:
     """
@@ -135,7 +190,7 @@ def _sweep_grid(
             shape_cells_input=shape_cells_input,
             shape_cells_output=shape_cells_output,
             weights_input=weights_input,
-            weights_output=weights_output,
+            rows=rows,
             sweep_input=sweep_input,
             axis_sweep=axis,
         )
@@ -157,7 +212,7 @@ def _sweep_along_axis(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    weights_output: numba.typed.List[tuple[int, int, float]],
+    rows: numba.typed.List,
     sweep_input: bool,
     axis_sweep: int,
 ) -> None:
@@ -318,9 +373,10 @@ def _sweep_along_axis(
             x1 = x2
             y1 = y2
 
-    for i in range(shape_sweep_x):
-        weight_output_i = weight_output[i]
-        weights_output.extend(weight_output_i)
+    # Hand the ragged per-row lists to the shared collection; a single global
+    # compaction (`_compact_rows`) flattens every sweep pass at once, avoiding
+    # both the old serial `extend` and any per-pass array + `concatenate`.
+    rows.extend(weight_output)
 
 
 @numba.njit(

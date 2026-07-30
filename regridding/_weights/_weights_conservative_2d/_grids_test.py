@@ -55,6 +55,24 @@ def test_volume_grid(
             (0, 0),
         ),
         (
+            (1.5, 0.5),
+            np.meshgrid(
+                np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            (1, 0),
+        ),
+        (
+            (1.5, 0.5),
+            np.meshgrid(
+                np.arange(3),
+                np.arange(4),
+                # indexing="ij",
+            ),
+            (0, 1),
+        ),
+        (
             (-0.5, 2.5),
             np.meshgrid(
                 -np.arange(3),
@@ -72,14 +90,31 @@ def test_volume_grid(
             ),
             (sys.maxsize, sys.maxsize),
         ),
+        (
+            (1, 4.5),
+            np.meshgrid(
+                np.arange(3),
+                np.arange(4),
+                indexing="ij",
+            ),
+            (sys.maxsize, sys.maxsize),
+        ),
     ],
 )
-def test_index_of_point_brute(
+@pytest.mark.parametrize(
+    argnames="func",
+    argvalues=[
+        _grids.index_of_point_brute,
+        _grids.index_of_point_secant,
+    ],
+)
+def test_index_of_point(
+    func,
     point: tuple[float, float],
     grid: tuple[np.ndarray, np.ndarray],
     result_expected: tuple[int, int],
 ):
-    result = _grids.index_of_point_brute(
+    result = func(
         point=point,
         grid=grid,
     )

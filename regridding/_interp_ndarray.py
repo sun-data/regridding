@@ -223,7 +223,10 @@ def _linear_interpolation(
     return a_0 * (1 - dx) + a_1 * dx
 
 
-@numba.njit(cache=True)
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
 def _bilinear_interpolation(
     a: np.ndarray,
     x: float,

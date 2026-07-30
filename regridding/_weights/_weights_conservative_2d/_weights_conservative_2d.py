@@ -247,7 +247,7 @@ def _sweep_along_axis(
                 vertices_x=boundary_static_x,
                 vertices_y=boundary_static_y,
             ):
-                index_static_x, index_static_y = _grids.index_of_point_brute(
+                index_static_x, index_static_y = _grids.index_of_point_secant(
                     point=point_1,
                     grid=grid_static,
                 )

@@ -22,19 +22,23 @@ __all__ = [
 @numba.njit(
     cache=True,
     fastmath=True,
-    parallel=True,
 )
 def _compact_rows(
     rows: numba.typed.List,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Flatten the ragged per-row lists of ``(input, output, weight)`` triples
-    accumulated by the sweep into three parallel flat arrays.
+    accumulated by the sweep into three flat arrays.
 
-    Each row owns the disjoint output slice ``[offset : offset + count]``, so
-    the fill loop parallelizes over rows without contention. This replaces the
-    previously serial ``typed.List`` merge and the separate list-to-array
-    conversion.
+    This replaces the previously serial ``typed.List`` merge (a per-element
+    append into one shared list) and the separate list-to-array conversion with
+    a single copy into preallocated arrays.
+
+    The loop is serial and indexes each row with ``range`` loop variables (which
+    numba makes int64, even for ``range(len(...))``). numba casts a typed list's
+    unsigned length to int64 -- emitting a warning that fails docs builds --
+    when the list is iterated, or indexed inside a ``prange``; a plain serial
+    ``range``/index loop avoids that.
 
     Parameters
     ----------
@@ -44,26 +48,26 @@ def _compact_rows(
 
     n = len(rows)
 
-    counts = np.empty(n, dtype=np.int64)
+    # total number of triples, counted (int64) rather than via the unsigned
+    # ``len`` sum, which would be cast to int64 with a warning.
+    total = 0
     for i in range(n):
-        counts[i] = np.int64(len(rows[i]))
-
-    offsets = np.zeros(n + 1, dtype=np.int64)
-    offsets[1:] = np.cumsum(counts)
-    total = offsets[n]
+        for _k in range(len(rows[i])):
+            total += 1
 
     indices_input = np.empty(total, dtype=np.int64)
     indices_output = np.empty(total, dtype=np.int64)
     values = np.empty(total, dtype=np.float64)
 
-    for i in numba.prange(n):
-        base = offsets[i]
+    w = 0
+    for i in range(n):
         row = rows[i]
         for k in range(len(row)):
             index_input, index_output, weight = row[k]
-            indices_input[base + k] = index_input
-            indices_output[base + k] = index_output
-            values[base + k] = weight
+            indices_input[w] = index_input
+            indices_output[w] = index_output
+            values[w] = weight
+            w += 1
 
     return indices_input, indices_output, values
 

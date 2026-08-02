@@ -1,2 +1,3 @@
 docs/_autosummary
 docs/_build
+__pycache__/

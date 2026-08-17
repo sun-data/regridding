@@ -10,6 +10,8 @@ authors = [
 description = "Numba-accelerated interpolation routines"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Python :: 3",
 ]

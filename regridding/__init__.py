@@ -1,5 +1,10 @@
 """
 Resample arrays defined on curvilinear grids.
+
+The two entry points are :func:`regridding.regrid`, which resamples an array in
+a single call, and :func:`regridding.weights`, which saves the sparse matrix
+relating the two grids so that it can be applied to many arrays using
+:func:`regridding.regrid_from_weights`.
 """
 
 from . import math

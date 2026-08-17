@@ -20,20 +20,60 @@ def find_indices(
     """
     Find the index of the input cell which contains the output vertex.
 
+    The index is returned as one array of indices per resampled dimension,
+    each with the same shape as the output grid.
+    Output vertices which fall outside of the input grid are assigned
+    `fill_value`.
+
     Parameters
     ----------
     coordinates_input
-        the source grid
+        Coordinates of the input grid.
     coordinates_output
-        the destination grid
+        Coordinates of the output grid.
+        Should have the same number of coordinates as the input grid.
     axis_input
-        the axes in the source grid to search
+        Logical axes of the input grid to search.
+        If :obj:`None`, search all the axes of the input grid.
     axis_output
-        the axes in the destination grid corresponding to the source grid
+        Logical axes of the output grid corresponding to the searched axes
+        of the input grid.
+        If :obj:`None`, all the axes of the output grid correspond to searched
+        axes in the input grid.
     fill_value
-        numeric value to use for invalid indices
+        Numeric value to use for the indices of output vertices which are
+        outside the input grid.
+        If :obj:`None` (the default), the largest representable integer is
+        used.
     method
-        flag to select which search algorithm to use
+        Flag to select which search algorithm to use.
+        The ``brute`` method checks every cell of the input grid, and works for
+        curvilinear grids.
+        The ``searchsorted`` method uses a binary search, and is much faster,
+        but requires a rectilinear input grid.
+
+    See Also
+    --------
+    :func:`regridding.regrid`
+
+    Examples
+    --------
+
+    Find the cell of a 1D grid containing each point of a second grid.
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import regridding
+
+        x_input = np.linspace(-1, 1, num=5)
+        x_output = np.array([-0.9, -0.1, 0.6])
+
+        regridding.find_indices(
+            coordinates_input=(x_input,),
+            coordinates_output=(x_output,),
+            method="searchsorted",
+        )
     """
 
     (

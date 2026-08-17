@@ -22,10 +22,19 @@ def transpose_weights(
     Transposed weights can be used with :func:`regridding.regrid_from_weights`
     to perform a transform in the opposite direction.
 
+    Note that this transpose is not conservative:
+    use :func:`regridding.transpose_weights_conservative` if the reverse
+    transform needs to conserve the total of the resampled array.
+
     Parameters
     ----------
     weights
         Array of weights computed by :func:`regridding.weights`.
+
+    See Also
+    --------
+    :func:`regridding.transpose_weights_conservative`
+    :func:`regridding.regrid_from_weights`
     """
 
     weights, shape_input, shape_output = weights

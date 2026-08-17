@@ -7,8 +7,25 @@
 [![Documentation Status](https://readthedocs.org/projects/regridding/badge/?version=latest)](https://regridding.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/regridding.svg)](https://badge.fury.io/py/regridding)
 
-
 Numba-accelerated multilinear and first-order conservative interpolation of Numpy arrays.
+
+Resampling a rectilinear grid onto another rectilinear grid is covered well by
+`numpy.interp` and `scipy.interpolate`.
+This package addresses two cases those tools do not:
+
+* the grids can be **curvilinear**, meaning that every vertex carries its own
+  coordinates and the cells are arbitrary quadrilaterals, not the outer product
+  of two 1D axes;
+* the resampling can be **conservative**, meaning that the sum of the resampled
+  array matches the sum of the original array (up to the portion of the input
+  grid not covered by the output grid).
+  This is essential when the array stores an extensive quantity, such as a
+  number of photons, rather than an intensity.
+
+Since these operations are expensive, the inner loops are compiled with
+[Numba](https://numba.pydata.org),
+and the sparse matrix relating the two grids can be saved using
+`regridding.weights()` and reused for every array defined on that grid.
 
 ## Installation
 
@@ -19,9 +36,69 @@ pip install regridding
 
 ## Features
 
- - 1D linear interpolation
- - 1D conservative resampling
- - 2D conservative resampling of logically-rectangular curvilinear grids
+* [`regrid()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.regrid.html),
+  which resamples an array onto a new grid using either of two methods:
+  * `"multilinear"`, linear interpolation along one axis;
+  * `"conservative"`, first-order conservative resampling of 1D grids and of 2D
+    logically-rectangular curvilinear grids, using the algorithm described in
+    [Ramshaw (1985)](https://doi.org/10.1016/0021-9991(85)90141-X).
+* [`weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.weights.html)
+  and [`regrid_from_weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.regrid_from_weights.html),
+  which split the operation into an expensive build and a cheap application, so
+  that many arrays defined on the same grid share one build.
+  A build is reproducible, so it can be saved to disk and reused across
+  sessions.
+* [`transpose_weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.transpose_weights.html)
+  and [`transpose_weights_conservative()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.transpose_weights_conservative.html),
+  which reverse a saved resampling, as needed by iterative inversions.
+* [`fill()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.fill.html),
+  which fills the missing values of an array by interpolating from the valid points.
+* [`find_indices()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.find_indices.html),
+  which locates the input cell containing each output vertex.
+
+## Key concepts
+
+**A grid is a tuple of coordinate arrays.**
+`coordinates_input` and `coordinates_output` each contain one array per resampled
+dimension, and these arrays are broadcast against each other, as returned by
+`numpy.meshgrid` with `indexing="ij"`.
+A 1D grid is therefore `(x,)` and a 2D grid is `(x, y)`.
+
+**The coordinates describe vertices, and the values describe cells.**
+The `conservative` method interprets `coordinates_input` as the edges of each
+cell, so `values_input` has one fewer element along each resampled axis.
+The `multilinear` method interprets the coordinates as the sample points
+themselves, so the shapes match.
+
+| `method` | meaning of `coordinates_input` | length of `values_input` |
+| --- | --- | --- |
+| `"multilinear"` | the sample points | `n` |
+| `"conservative"` | the edges of each cell | `n - 1` |
+
+**Only the selected axes are resampled.**
+The `axis_input` and `axis_output` arguments select which axes participate in
+the operation, and default to all of them.
+The remaining axes are orthogonal to the operation, and the resampling is
+repeated independently for every position along them.
+This is how a stack of images, or a spectrum for each pixel, is resampled in one
+call.
+
+**Degenerate grids are perturbed.**
+Where a vertex of the output grid lands exactly on an edge of the input grid,
+the overlap between the two cells is ambiguous.
+The `conservative` method therefore jitters the output grid by `1e-9` of its
+width before clipping, which can be controlled using the `perturb` argument.
+The jitter is drawn from a generator with a fixed seed, so repeated calls on the
+same grids return identical weights, which makes a saved build safe to compare
+or cache.
+Pass `seed=None` for an independent perturbation on every call, or a
+`numpy.random.Generator` to control the draw.
+
+## Documentation
+
+The full documentation, including the API reference and executable versions of
+the examples below, is hosted at
+[regridding.readthedocs.io](https://regridding.readthedocs.io/en/latest).
 
 ## Gallery
 
@@ -148,3 +225,114 @@ axs[1].pcolormesh(x_output, y_output, a_output);
 axs[1].set_title("regridded array");
 ```
 ![conservative-2d](https://regridding.readthedocs.io/en/latest/_images/index_2_0.png)
+
+Save the weights relating two grids, and reuse them to regrid several arrays.
+
+```python3
+import numpy as np
+import matplotlib.pyplot as plt
+import regridding
+
+# Define the input grid
+x_input = np.linspace(-4, 4, num=51)
+y_input = np.linspace(-4, 4, num=51)
+x_input, y_input = np.meshgrid(x_input, y_input, indexing="ij")
+
+# Define a rotated output grid
+angle = 0.2
+x_output = x_input * np.cos(angle) - y_input * np.sin(angle)
+y_output = x_input * np.sin(angle) + y_input * np.cos(angle)
+
+# Compute the centers of the input grid
+x = (x_input[1:, 1:] + x_input[:~0, :~0]) / 2
+y = (y_input[1:, 1:] + y_input[:~0, :~0]) / 2
+
+# Define two arrays of values defined on the same grid
+envelope = np.exp(-(np.square(x) + np.square(y)) / 8)
+values_1 = envelope * np.cos(2 * x)
+values_2 = envelope * np.sin(2 * y)
+
+# Save the weights relating the input and output grids
+weights = regridding.weights(
+    coordinates_input=(x_input, y_input),
+    coordinates_output=(x_output, y_output),
+    method="conservative",
+)
+
+# Regrid both arrays of values using the saved weights
+values_1_output = regridding.regrid_from_weights(*weights, values_input=values_1)
+values_2_output = regridding.regrid_from_weights(*weights, values_input=values_2)
+
+# Plot the results
+fig, axs = plt.subplots(
+    nrows=2,
+    ncols=2,
+    sharex=True,
+    sharey=True,
+    figsize=(8, 8),
+    constrained_layout=True,
+);
+axs[0, 0].pcolormesh(x_input, y_input, values_1);
+axs[0, 0].set_title("values_1");
+axs[0, 1].pcolormesh(x_input, y_input, values_2);
+axs[0, 1].set_title("values_2");
+axs[1, 0].pcolormesh(x_output, y_output, values_1_output);
+axs[1, 0].set_title("values_1 regridded");
+axs[1, 1].pcolormesh(x_output, y_output, values_2_output);
+axs[1, 1].set_title("values_2 regridded");
+```
+![weights](https://regridding.readthedocs.io/en/latest/_images/index_3_0.png)
+
+Fill the missing values of an array by interpolating from the valid points.
+
+```python3
+import numpy as np
+import matplotlib.pyplot as plt
+import regridding
+
+# Define an array with a few missing values
+a = np.sin(np.linspace(-2, 2, num=51)[:, np.newaxis])
+a = a * np.cos(np.linspace(-2, 2, num=51)[np.newaxis, :])
+a[10:20, 10:20] = np.nan
+a[35:45, 25:35] = np.nan
+
+# Fill the missing values
+a_filled = regridding.fill(a, method="gauss_seidel", num_iterations=50)
+
+# Plot the result
+fig, axs = plt.subplots(
+    ncols=2,
+    sharex=True,
+    sharey=True,
+    figsize=(8, 4),
+    constrained_layout=True,
+);
+axs[0].pcolormesh(a, vmin=-1, vmax=1);
+axs[0].set_title("original array");
+axs[1].pcolormesh(a_filled, vmin=-1, vmax=1);
+axs[1].set_title("filled array");
+```
+![fill](https://regridding.readthedocs.io/en/latest/_images/index_4_0.png)
+
+## Development
+
+Install the package in editable mode along with its test dependencies, and run
+the test suite using [pytest](https://docs.pytest.org):
+```
+pip install -e .[test]
+pytest
+```
+
+This project is formatted using [black](https://black.readthedocs.io) and
+linted using [ruff](https://docs.astral.sh/ruff), both of which are checked by
+continuous integration:
+```
+black .
+ruff check .
+```
+
+To build the documentation locally:
+```
+pip install -e .[doc]
+sphinx-build docs docs/_build/html
+```

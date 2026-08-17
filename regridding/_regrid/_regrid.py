@@ -49,6 +49,12 @@ def regrid(
         coordinates in the output grid.
     method
         The type of regridding to use.
+        The ``multilinear`` method interprets `coordinates_input` as the
+        points where `values_input` is sampled.
+        The ``conservative`` method interprets `coordinates_input` as the edges
+        of the cells containing `values_input`, so `values_input` has one fewer
+        element along each resampled axis, and the sum of the result matches the
+        sum of `values_input`.
         The ``conservative`` method uses the algorithm described in
         :footcite:t:`Ramshaw1985`.
     perturb
@@ -72,6 +78,42 @@ def regrid(
     --------
     :func:`regridding.weights`
     :func:`regridding.regrid_from_weights`
+
+    Examples
+    --------
+
+    Resample a 1D array onto a coarser grid without changing its total.
+
+    .. jupyter-execute::
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import regridding
+
+        # Define the edges of the input and output grids
+        x_input = np.linspace(-1, 1, num=31)
+        x_output = np.linspace(-1, 1, num=11)
+
+        # Define an array of values for each cell of the input grid
+        x_center = (x_input[1:] + x_input[:~0]) / 2
+        values_input = np.exp(-np.square(x_center / 0.5))
+
+        # Resample the values onto the output grid
+        values_output = regridding.regrid(
+            coordinates_input=(x_input,),
+            coordinates_output=(x_output,),
+            values_input=values_input,
+            method="conservative",
+        )
+
+        # The sum of the array is unchanged by the resampling
+        print(values_input.sum(), values_output.sum())
+
+        # Plot the result
+        fig, ax = plt.subplots(constrained_layout=True);
+        ax.stairs(values_input, x_input, label="input");
+        ax.stairs(values_output, x_output, label="output");
+        ax.legend();
 
     References
     ----------

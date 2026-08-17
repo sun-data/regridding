@@ -21,6 +21,10 @@ def regrid_from_weights(
     Regrid an array of values using weights computed by
     :func:`regridding.weights`.
 
+    Since building the weights is much more expensive than applying them,
+    this is the efficient way to resample many arrays defined on the same grid.
+    See :func:`regridding.weights` for a complete example.
+
     Parameters
     ----------
     weights

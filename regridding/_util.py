@@ -1,5 +1,12 @@
 import numpy as np
 
+_seed_default = 42
+"""
+The default seed used to perturb the output coordinates.
+
+Fixed so that repeated calls on the same grids return identical results.
+"""
+
 
 def _normalize_axis(
     axis: None | int | tuple[int, ...],
@@ -18,6 +25,7 @@ def _normalize_input_output_coordinates(
     axis_input: None | int | tuple[int, ...] = None,
     axis_output: None | int | tuple[int, ...] = None,
     perturb: bool = False,
+    seed: "None | int | np.random.Generator" = _seed_default,
 ) -> tuple[
     tuple[np.ndarray, ...],
     tuple[np.ndarray, ...],
@@ -109,10 +117,11 @@ def _normalize_input_output_coordinates(
 
     if perturb:
         epsilon = 1e-9
+        rng = np.random.default_rng(seed)
         _coordinates_output = []
         for coord in coordinates_output:
             ptp = np.ptp(coord, axis=axis_output, keepdims=True)
-            coord = np.random.normal(coord, ptp * epsilon)
+            coord = rng.normal(coord, ptp * epsilon)
             _coordinates_output.append(coord)
         coordinates_output = tuple(_coordinates_output)
 

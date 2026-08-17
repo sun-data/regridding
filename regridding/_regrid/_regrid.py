@@ -1,6 +1,7 @@
 from typing import Sequence, Literal
 import numpy as np
 import regridding
+from regridding import _util
 from . import regrid_from_weights
 
 __all__ = [
@@ -17,6 +18,7 @@ def regrid(
     axis_output: None | int | Sequence[int] = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
     perturb: None | bool = None,
+    seed: "None | int | np.random.Generator" = _util._seed_default,
 ) -> np.ndarray:
     """
     Regrid an array of values defined on a logically-rectangular curvilinear
@@ -57,7 +59,14 @@ def regrid(
         is ``conservative`` and the dimensions of the grid are 2D or higher.
         If :obj:`True`, each point is perturbed using a normal distribution
         with standard deviation equal to ``1e-9`` of the grid width.
-
+    seed
+        The seed used by the pseudo-random number generator which perturbs
+        `coordinates_output`.
+        May be an integer or an instance of :class:`numpy.random.Generator`.
+        The default is a fixed integer, so that repeated calls using the same
+        grids return identical results.
+        If :obj:`None`, the generator is seeded from fresh entropy,
+        and each call draws an independent perturbation.
 
     See Also
     --------
@@ -75,6 +84,7 @@ def regrid(
         axis_output=axis_output,
         method=method,
         perturb=perturb,
+        seed=seed,
     )
     result = regrid_from_weights(
         weights=weights,

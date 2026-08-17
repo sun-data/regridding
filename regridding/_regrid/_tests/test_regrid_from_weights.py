@@ -112,10 +112,9 @@ class TestWeightsArrayFormat:
             method="conservative",
         )
         assert result.shape == result_expected.shape
-        # regrid() builds its own weights with fresh grid perturbation, so
-        # the comparison is approximate rather than bitwise
-        assert np.isclose(result.sum(), result_expected.sum(), rtol=1e-3)
-        assert np.allclose(result, result_expected, rtol=1e-3, atol=1e-6)
+        # regrid() builds its own weights, but the grid perturbation is seeded,
+        # so an identical grid gives a bitwise-identical result
+        assert np.array_equal(result, result_expected)
 
     def test_transpose_weights(
         self,

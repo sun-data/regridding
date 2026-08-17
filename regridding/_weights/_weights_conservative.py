@@ -15,6 +15,7 @@ def _weights_conservative(
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
     perturb: None | bool = True,
+    seed: "None | int | np.random.Generator" = _util._seed_default,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
 
     if perturb is None:
@@ -37,6 +38,7 @@ def _weights_conservative(
         axis_input=axis_input,
         axis_output=axis_output,
         perturb=perturb,
+        seed=seed,
     )
 
     shape_values_input = list(shape_input)

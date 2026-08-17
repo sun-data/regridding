@@ -44,6 +44,8 @@ Features
 *   :func:`regridding.weights` and :func:`regridding.regrid_from_weights`,
     which split the operation into an expensive build and a cheap application,
     so that many arrays defined on the same grid share one build.
+    A build is reproducible, so it can be saved to disk and reused across
+    sessions.
 *   :func:`regridding.transpose_weights` and
     :func:`regridding.transpose_weights_conservative`,
     which reverse a saved resampling, as needed by iterative inversions.
@@ -95,6 +97,13 @@ the overlap between the two cells is ambiguous.
 The ``conservative`` method therefore jitters the output grid by ``1e-9`` of
 its width before clipping, which can be controlled using the ``perturb``
 argument of :func:`regridding.regrid` and :func:`regridding.weights`.
+
+**The result is reproducible.**
+That jitter is drawn from a :class:`numpy.random.Generator` with a fixed seed,
+so repeated calls on the same grids return identical weights, and a saved build
+can be compared or cached.
+The ``seed`` argument accepts an integer or a generator of your own, and
+``seed=None`` restores an independent perturbation on every call.
 
 Examples
 ========

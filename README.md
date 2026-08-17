@@ -46,6 +46,8 @@ pip install regridding
   and [`regrid_from_weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.regrid_from_weights.html),
   which split the operation into an expensive build and a cheap application, so
   that many arrays defined on the same grid share one build.
+  A build is reproducible, so it can be saved to disk and reused across
+  sessions.
 * [`transpose_weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.transpose_weights.html)
   and [`transpose_weights_conservative()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.transpose_weights_conservative.html),
   which reverse a saved resampling, as needed by iterative inversions.
@@ -86,6 +88,11 @@ Where a vertex of the output grid lands exactly on an edge of the input grid,
 the overlap between the two cells is ambiguous.
 The `conservative` method therefore jitters the output grid by `1e-9` of its
 width before clipping, which can be controlled using the `perturb` argument.
+The jitter is drawn from a generator with a fixed seed, so repeated calls on the
+same grids return identical weights, which makes a saved build safe to compare
+or cache.
+Pass `seed=None` for an independent perturbation on every call, or a
+`numpy.random.Generator` to control the draw.
 
 ## Documentation
 

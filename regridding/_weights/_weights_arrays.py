@@ -27,10 +27,10 @@ def _weights_to_arrays(
         Array of per-element flat weight arrays from an internal builder.
     """
 
-    weights, shape_input, shape_output = weights
+    weights_array, shape_input, shape_output = weights
 
-    shape = weights.shape
-    flat = weights.reshape(-1)
+    shape = weights_array.shape
+    flat = weights_array.reshape(-1)
 
     result = np.empty(flat.size, dtype=object)
     for k in range(flat.size):

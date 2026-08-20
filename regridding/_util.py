@@ -1,3 +1,4 @@
+from typing import Sequence
 import numpy as np
 
 _seed_default = 42
@@ -9,7 +10,7 @@ Fixed so that repeated calls on the same grids return identical results.
 
 
 def _normalize_axis(
-    axis: None | int | tuple[int, ...],
+    axis: None | int | Sequence[int],
     ndim: int,
 ) -> tuple[int, ...]:
     if axis is None:
@@ -22,8 +23,8 @@ def _normalize_axis(
 def _normalize_input_output_coordinates(
     coordinates_input: np.ndarray | tuple[np.ndarray, ...],
     coordinates_output: np.ndarray | tuple[np.ndarray, ...],
-    axis_input: None | int | tuple[int, ...] = None,
-    axis_output: None | int | tuple[int, ...] = None,
+    axis_input: None | int | Sequence[int] = None,
+    axis_output: None | int | Sequence[int] = None,
     perturb: bool = False,
     seed: "None | int | np.random.Generator" = _seed_default,
 ) -> tuple[
@@ -41,14 +42,16 @@ def _normalize_input_output_coordinates(
     if isinstance(coordinates_output, np.ndarray):
         coordinates_output = (coordinates_output,)
 
-    coordinates_input = list(coordinates_input)
-    for i in range(len(coordinates_input)):
-        coord_input = coordinates_input[i]
-        coord_output = coordinates_output[i]
-        if hasattr(coord_output, "unit"):
-            coord_input = coord_input << coord_output.unit
-        coordinates_input[i] = coord_input
-    coordinates_input = tuple(coordinates_input)
+    # If the output coordinates carry a unit, convert the input coordinates to
+    # match before the two are compared. `regridding` does not depend on
+    # `astropy`, so a united quantity is recognized by duck typing.
+    coords_input = []
+    for coord_input, coord_output in zip(coordinates_input, coordinates_output):
+        unit_output = getattr(coord_output, "unit", None)
+        if unit_output is not None:
+            coord_input = coord_input << unit_output
+        coords_input.append(coord_input)
+    coordinates_input = tuple(coords_input)
 
     shape_coordinates_input = np.broadcast(*coordinates_input).shape
     shape_coordinates_output = np.broadcast(*coordinates_output).shape

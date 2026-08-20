@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 import numba
+from numba.typed.typedlist import List as TypedList
 from numba import literal_unroll
 import regridding as rg
 from . import (
@@ -24,7 +25,7 @@ __all__ = [
     fastmath=True,
 )
 def _compact_rows(
-    rows: numba.typed.List,
+    rows: TypedList,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Flatten the ragged per-row lists of ``(input, output, weight)`` triples
@@ -103,8 +104,10 @@ def weights_conservative_2d(
     # Collect the ragged per-row lists from every sweep pass, then flatten them
     # in one parallel compaction. The empty-range loops seed the nested typed
     # list element types without adding any elements.
-    rows = numba.typed.List()
-    row_seed = numba.typed.List()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    rows: TypedList = TypedList()  # type: ignore[assignment]
+    row_seed: TypedList = TypedList()  # type: ignore[assignment]
     for _ in range(0):  # pragma: nocover
         row_seed.append((0, 0, 0.0))
     for _ in range(0):  # pragma: nocover
@@ -132,7 +135,7 @@ def _sweep_grid(
     grid_output: tuple[np.ndarray, np.ndarray],
     volume_input: np.ndarray,
     weights_input: None | np.ndarray,
-    rows: numba.typed.List,
+    rows: TypedList,
     sweep_input: bool,
 ) -> None:
     """
@@ -216,7 +219,7 @@ def _sweep_along_axis(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    rows: numba.typed.List,
+    rows: TypedList,
     sweep_input: bool,
     axis_sweep: int,
 ) -> None:
@@ -270,17 +273,23 @@ def _sweep_along_axis(
 
     shape_sweep_x, shape_sweep_y = shape_sweep
 
-    weight_output = numba.typed.List()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    weight_output: TypedList = TypedList()  # type: ignore[assignment]
 
     for i in range(shape_sweep_x):
-        w = numba.typed.List()
+        w: TypedList = TypedList()  # type: ignore[assignment]
         for _ in range(0):  # pragma: nocover
             w.append((0, 0, 0.0))
         weight_output.append(w)
 
-    for index_sweep_x in numba.prange(shape_sweep_x):
+    for index_sweep_x_prange in numba.prange(shape_sweep_x):
 
-        index_sweep_x = numba.types.int64(index_sweep_x)
+        # Calling a Numba type is a compile-time cast, but to a static checker
+        # `numba.types.int64(...)` looks like the construction of a signature.
+        index_sweep_x: int = numba.types.int64(  # type: ignore[assignment]
+            index_sweep_x_prange
+        )
         index_sweep_y = 0
 
         index_static_x = sys.maxsize
@@ -565,7 +574,7 @@ def _step_inside_static(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    weights_output: numba.typed.List[tuple[int, int, float]],
+    weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
 ) -> tuple[
@@ -755,7 +764,7 @@ def _calc_and_save_weights(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    weights_output: numba.typed.List[tuple[int, int, float]],
+    weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
 ):

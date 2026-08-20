@@ -149,7 +149,7 @@ def weights(
     # form can carry them: strip the unit here and reattach it to the values
     unit_weights = getattr(weights_input, "unit", None)
     if unit_weights is not None:
-        weights_input = weights_input.value
+        weights_input = getattr(weights_input, "value")
 
     if method == "multilinear":
         result = _weights_multilinear(

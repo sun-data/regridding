@@ -1,6 +1,8 @@
 from typing import Sequence
 import numpy as np
 import numba
+from numba.typed.typedlist import List as TypedList
+from regridding._util import TypedSequence
 import regridding
 from regridding import _util
 
@@ -101,7 +103,7 @@ def _weights_from_indices_multilinear(
         )
 
     num_d = len(weights_list)
-    weights = np.empty(shape=num_d, dtype=numba.typed.List)
+    weights = np.empty(shape=num_d, dtype=TypedList)
     for d in range(num_d):
         weights[d] = weights_list[d]
     weights = weights.reshape(shape_orthogonal)
@@ -111,11 +113,11 @@ def _weights_from_indices_multilinear(
 
 @numba.njit(parallel=False)
 def _weights_from_indices_multilinear_1d(
-    indices_output: tuple[np.ndarray],
-    coordinates_input: tuple[np.ndarray],
-    coordinates_output: tuple[np.ndarray],
+    indices_output: tuple[np.ndarray, ...],
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
     weights_input: None | np.ndarray,
-) -> numba.typed.List:
+) -> TypedSequence:
     (i_output,) = indices_output
     (x_input,) = coordinates_input
     (x_output,) = coordinates_output
@@ -123,7 +125,7 @@ def _weights_from_indices_multilinear_1d(
     num_d, num_i_input = x_input.shape
     num_d, num_i_output = x_output.shape
 
-    weights = numba.typed.List()
+    weights = TypedList()
     for _ in range(0):  # pragma: nocover
         weights.append(
             (

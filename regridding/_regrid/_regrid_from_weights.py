@@ -1,7 +1,9 @@
 from typing import Sequence
 import numpy as np
 import numba
+from numba.typed.typedlist import List as TypedList
 from regridding import _util
+from regridding._util import TypedSequence
 
 __all__ = [
     "regrid_from_weights",
@@ -133,15 +135,15 @@ def regrid_from_weights(
     flat = weights.reshape(-1)
     unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None
 
-    weights = numba.typed.List()
+    weights_numba = TypedList()
     for indices_input, indices_output, values in flat:
-        weights.append((indices_input, indices_output, np.asarray(values)))
+        weights_numba.append((indices_input, indices_output, np.asarray(values)))
 
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
 
     _regrid_from_weights(
-        weights=weights,
+        weights=weights_numba,
         values_input=values_input,
         values_output=values_output,
     )
@@ -153,21 +155,23 @@ def regrid_from_weights(
     if unit_weights is not None:
         unit = unit_weights if unit is None else unit * unit_weights
 
-    if unit is not None:
-        values_output = values_output << unit
+    if unit is None:
+        return values_output
 
-    return values_output
+    return values_output << unit
 
 
 @numba.njit(cache=True, parallel=True)
 def _regrid_from_weights(
-    weights: numba.typed.List,
+    weights: TypedSequence,
     values_input: np.ndarray,
     values_output: np.ndarray,
 ) -> None:
 
-    for d in numba.prange(len(weights)):
-        d = numba.types.int64(d)
+    for d_prange in numba.prange(len(weights)):
+        # Calling a Numba type is a compile-time cast, but to a static checker
+        # `numba.types.int64(...)` looks like the construction of a signature.
+        d: int = numba.types.int64(d_prange)  # type: ignore[assignment]
         indices_input, indices_output, values = weights[d]
         values_input_d = values_input[d].reshape(-1)
         values_output_d = values_output[d].reshape(-1)

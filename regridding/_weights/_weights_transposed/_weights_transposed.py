@@ -37,10 +37,10 @@ def transpose_weights(
     :func:`regridding.regrid_from_weights`
     """
 
-    weights, shape_input, shape_output = weights
+    weights_array, shape_input, shape_output = weights
 
-    shape = weights.shape
-    flat = weights.reshape(-1)
+    shape = weights_array.shape
+    flat = weights_array.reshape(-1)
 
     result = np.empty(flat.size, dtype=object)
     for d in range(flat.size):
@@ -168,7 +168,7 @@ def transpose_weights_conservative(
         axs[2].set_aspect("equal");
     """
 
-    weights, shape_input, shape_output = weights
+    weights_array, shape_input, shape_output = weights
 
     (
         coordinates_input,
@@ -212,8 +212,8 @@ def transpose_weights_conservative(
     volume_output = np.moveaxis(volume_output, axis_output, axis_numba_output)
     volume_output = volume_output.reshape(size_orthogonal, -1)
 
-    shape = weights.shape
-    flat = weights.reshape(-1)
+    shape = weights_array.shape
+    flat = weights_array.reshape(-1)
 
     result = np.empty(flat.size, dtype=object)
     for d in range(flat.size):

@@ -47,6 +47,18 @@ benchmark = [
 Homepage = "https://github.com/sun-data/regridding"
 Documentation = "https://regridding.readthedocs.io/en/latest"
 
+[tool.pyright]
+include = ["regridding"]
+# The tests are excluded because `astropy` does not ship a `py.typed` marker.
+# Expressions such as `numpy.linspace(...) * astropy.units.mm`, which the tests
+# use heavily, are therefore inferred as a union of unit types rather than as a
+# `Quantity`, and silencing that requires more noise than the tests are worth.
+exclude = ["**/_tests", "**/*_test.py"]
+typeCheckingMode = "standard"
+
+[tool.setuptools.package-data]
+regridding = ["py.typed"]
+
 [tool.setuptools_scm]
 
 [tool.coverage.run]

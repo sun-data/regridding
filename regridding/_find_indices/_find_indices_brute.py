@@ -5,7 +5,7 @@ import numba
 def _find_indices_brute(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
-    fill_value: None | int = None,
+    fill_value: int,
 ) -> tuple[np.ndarray, ...]:
     if len(coordinates_input) == 1:
         result = _find_indices_brute_1d(
@@ -23,8 +23,8 @@ def _find_indices_brute(
 
 @numba.njit(cache=True, parallel=True)
 def _find_indices_brute_1d(
-    coordinates_input: tuple[np.ndarray],
-    coordinates_output: tuple[np.ndarray],
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
     fill_value: int,
 ) -> tuple[np.ndarray]:
     (x_input,) = coordinates_input

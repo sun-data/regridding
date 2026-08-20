@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Sequence
 import numpy as np
 from regridding import _util
 from ._find_indices_brute import _find_indices_brute
@@ -12,8 +12,8 @@ __all__ = [
 def find_indices(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
-    axis_input: None | int | tuple[int, ...] = None,
-    axis_output: None | int | tuple[int, ...] = None,
+    axis_input: None | int | Sequence[int] = None,
+    axis_output: None | int | Sequence[int] = None,
     fill_value: None | int = None,
     method: Literal["brute", "searchsorted"] = "brute",
 ) -> tuple[np.ndarray, ...]:
@@ -79,8 +79,8 @@ def find_indices(
     (
         coordinates_input,
         coordinates_output,
-        axis_input,
-        axis_output,
+        axis_input_,
+        axis_output_,
         shape_input,
         shape_output,
         shape_orthogonal,
@@ -94,18 +94,18 @@ def find_indices(
     if fill_value is None:
         fill_value = np.iinfo(int).max
 
-    axis_input_numba = ~np.arange(len(axis_input))[::-1]
-    axis_output_numba = ~np.arange(len(axis_output))[::-1]
+    axis_input_numba = ~np.arange(len(axis_input_))[::-1]
+    axis_output_numba = ~np.arange(len(axis_output_))[::-1]
 
-    shape_input_numba = tuple(shape_input[ax] for ax in axis_input)
-    shape_output_numba = tuple(shape_output[ax] for ax in axis_output)
+    shape_input_numba = tuple(shape_input[ax] for ax in axis_input_)
+    shape_output_numba = tuple(shape_output[ax] for ax in axis_output_)
 
     coordinates_input = tuple(
-        np.moveaxis(v, axis_input, axis_input_numba).reshape(-1, *shape_input_numba)
+        np.moveaxis(v, axis_input_, axis_input_numba).reshape(-1, *shape_input_numba)
         for v in coordinates_input
     )
     coordinates_output = tuple(
-        np.moveaxis(v, axis_output, axis_output_numba).reshape(-1, *shape_output_numba)
+        np.moveaxis(v, axis_output_, axis_output_numba).reshape(-1, *shape_output_numba)
         for v in coordinates_output
     )
 
@@ -128,7 +128,7 @@ def find_indices(
         np.moveaxis(
             a=i.reshape(*shape_orthogonal, *shape_output_numba),
             source=axis_output_numba,
-            destination=axis_output,
+            destination=axis_output_,
         )
         for i in indices_output
     )

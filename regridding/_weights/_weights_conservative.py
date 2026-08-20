@@ -2,7 +2,7 @@ from typing import Sequence
 import multiprocessing
 import concurrent.futures
 import numpy as np
-import numba
+from numba.typed.typedlist import List as TypedList
 from regridding import _util
 from ._weights_conservative_1d import weights_conservative_1d
 from ._weights_conservative_2d import weights_conservative_2d
@@ -54,7 +54,7 @@ def _weights_conservative(
     if weights_input is not None:
         weights_input = np.broadcast_to(weights_input, shape_values_input)
 
-    weights = np.empty(shape_orthogonal, dtype=numba.typed.List)
+    weights = np.empty(shape_orthogonal, dtype=TypedList)
 
     if len(axis_input) == 1:
 

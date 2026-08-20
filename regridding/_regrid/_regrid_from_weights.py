@@ -3,7 +3,6 @@ import numpy as np
 import numba
 from numba.typed.typedlist import List as TypedList
 from regridding import _util
-from regridding._util import TypedSequence
 
 __all__ = [
     "regrid_from_weights",
@@ -135,7 +134,9 @@ def regrid_from_weights(
     flat = weights.reshape(-1)
     unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None
 
-    weights_numba = TypedList()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    weights_numba: TypedList = TypedList()  # type: ignore[assignment]
     for indices_input, indices_output, values in flat:
         weights_numba.append((indices_input, indices_output, np.asarray(values)))
 
@@ -163,7 +164,7 @@ def regrid_from_weights(
 
 @numba.njit(cache=True, parallel=True)
 def _regrid_from_weights(
-    weights: TypedSequence,
+    weights: TypedList,
     values_input: np.ndarray,
     values_output: np.ndarray,
 ) -> None:

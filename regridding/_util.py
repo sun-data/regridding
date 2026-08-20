@@ -1,15 +1,5 @@
-from typing import MutableSequence, Sequence
+from typing import Sequence
 import numpy as np
-
-TypedSequence = MutableSequence
-"""
-The interface shared by :class:`numba.typed.List` and :class:`list`.
-
-The compiled kernels accumulate weights in a :class:`numba.typed.List`, but
-its constructor returns a plain :class:`list` when Numba's JIT is disabled,
-which the test suite exercises. Both support the mutable sequence operations
-the kernels use, so that is what the annotations promise.
-"""
 
 _seed_default = 42
 """

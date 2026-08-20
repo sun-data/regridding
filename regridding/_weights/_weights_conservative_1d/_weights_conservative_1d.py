@@ -2,7 +2,6 @@ import sys
 import numpy as np
 import numba
 from numba.typed.typedlist import List as TypedList
-from regridding._util import TypedSequence
 from . import _grids
 
 __all__ = [
@@ -86,7 +85,9 @@ def _weights_conservative_1d(
     (num_sweep,) = x_sweep.shape
     (num_static,) = x_static.shape
 
-    weights_output = TypedList()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    weights_output: TypedList = TypedList()  # type: ignore[assignment]
     for x in range(0):  # pragma: nocover
         weights_output.append((0, 0, 0.0))
 
@@ -243,7 +244,7 @@ def _step_inside_static(
     grid_static: np.ndarray,
     length_input: np.ndarray,
     weights_input: None | np.ndarray,
-    weights_output: TypedSequence[tuple[int, int, float]],
+    weights_output: TypedList[tuple[int, int, float]],
     reversed_input: bool,
     reversed_output: bool,
 ) -> tuple[

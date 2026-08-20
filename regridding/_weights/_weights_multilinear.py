@@ -2,7 +2,6 @@ from typing import Sequence
 import numpy as np
 import numba
 from numba.typed.typedlist import List as TypedList
-from regridding._util import TypedSequence
 import regridding
 from regridding import _util
 
@@ -117,7 +116,7 @@ def _weights_from_indices_multilinear_1d(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
     weights_input: None | np.ndarray,
-) -> TypedSequence:
+) -> TypedList:
     (i_output,) = indices_output
     (x_input,) = coordinates_input
     (x_output,) = coordinates_output
@@ -125,7 +124,9 @@ def _weights_from_indices_multilinear_1d(
     num_d, num_i_input = x_input.shape
     num_d, num_i_output = x_output.shape
 
-    weights = TypedList()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    weights: TypedList = TypedList()  # type: ignore[assignment]
     for _ in range(0):  # pragma: nocover
         weights.append(
             (

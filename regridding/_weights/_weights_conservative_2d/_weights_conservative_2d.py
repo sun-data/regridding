@@ -2,7 +2,6 @@ import sys
 import numpy as np
 import numba
 from numba.typed.typedlist import List as TypedList
-from regridding._util import TypedSequence
 from numba import literal_unroll
 import regridding as rg
 from . import (
@@ -26,7 +25,7 @@ __all__ = [
     fastmath=True,
 )
 def _compact_rows(
-    rows: TypedSequence,
+    rows: TypedList,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Flatten the ragged per-row lists of ``(input, output, weight)`` triples
@@ -105,8 +104,10 @@ def weights_conservative_2d(
     # Collect the ragged per-row lists from every sweep pass, then flatten them
     # in one parallel compaction. The empty-range loops seed the nested typed
     # list element types without adding any elements.
-    rows = TypedList()
-    row_seed = TypedList()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    rows: TypedList = TypedList()  # type: ignore[assignment]
+    row_seed: TypedList = TypedList()  # type: ignore[assignment]
     for _ in range(0):  # pragma: nocover
         row_seed.append((0, 0, 0.0))
     for _ in range(0):  # pragma: nocover
@@ -134,7 +135,7 @@ def _sweep_grid(
     grid_output: tuple[np.ndarray, np.ndarray],
     volume_input: np.ndarray,
     weights_input: None | np.ndarray,
-    rows: TypedSequence,
+    rows: TypedList,
     sweep_input: bool,
 ) -> None:
     """
@@ -218,7 +219,7 @@ def _sweep_along_axis(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    rows: TypedSequence,
+    rows: TypedList,
     sweep_input: bool,
     axis_sweep: int,
 ) -> None:
@@ -272,10 +273,12 @@ def _sweep_along_axis(
 
     shape_sweep_x, shape_sweep_y = shape_sweep
 
-    weight_output = TypedList()
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    weight_output: TypedList = TypedList()  # type: ignore[assignment]
 
     for i in range(shape_sweep_x):
-        w = TypedList()
+        w: TypedList = TypedList()  # type: ignore[assignment]
         for _ in range(0):  # pragma: nocover
             w.append((0, 0, 0.0))
         weight_output.append(w)
@@ -571,7 +574,7 @@ def _step_inside_static(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    weights_output: TypedSequence[tuple[int, int, float]],
+    weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
 ) -> tuple[
@@ -761,7 +764,7 @@ def _calc_and_save_weights(
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
     weights_input: None | np.ndarray,
-    weights_output: TypedSequence[tuple[int, int, float]],
+    weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
 ):

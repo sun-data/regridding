@@ -63,9 +63,15 @@ def transpose_weights_conservative(
 
     Similar to :func:`transpose_weights`,
     this function transposes the matrix of weights calculated by :func:`regridding.weights`.
-    However, this function also applies the appropriate normalization to the
-    transposed weights such that they conserve flux when used with
+    However, this function also normalizes the transposed weights by the volume
+    of each cell, so that they conserve flux when used with
     :func:`regridding.regrid_from_weights` to perform an inverse transform.
+
+    If `weights_input` was given to :func:`regridding.weights`, the transposed
+    weights additionally *invert* that weighting, so that a round trip is free
+    of any residual factor of `weights_input`. See the Notes below: inverting a
+    spatially-varying `weights_input` and conserving flux are not the same
+    operation.
 
     Parameters
     ----------
@@ -94,8 +100,25 @@ def transpose_weights_conservative(
     weights_input
         An optional array of weights that were applied to the input values
         by :func:`regridding.weights`.
-        Each transposed weight will be `divided` by its corresponding
-        input weight.
+        Each transposed weight will be `divided` by the square of its
+        corresponding input weight: once to remove the factor that the forward
+        transform applied, and once more so that the transpose inverts that
+        weighting.
+
+    Notes
+    -----
+    Conserving flux and inverting `weights_input` coincide only where
+    `weights_input` is constant. Inverting a spatially-varying `weights_input`
+    divides each cell by its own weight, which does not preserve the total, so
+    the round trip conserves flux exactly only when `weights_input` is
+    :obj:`None` or constant.
+
+    Independently of `weights_input`, a round trip reproduces the input values
+    exactly only for a constant field, since resampling onto a grid whose cells
+    do not align with the input grid mixes neighboring cells. The total is
+    still conserved. Where `weights_input` varies, that mixing is amplified by
+    the subsequent division, by an amount that grows with how sharply
+    `weights_input` changes from cell to cell.
 
     Examples
     --------

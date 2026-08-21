@@ -18,12 +18,12 @@ jobs:
           windows-latest,
           macOS-latest,
         ]
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     name: ${{ matrix.os }}, Python ${{ matrix.python-version }} lint and test
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package
@@ -34,17 +34,17 @@ jobs:
       - name: Test with pytest
         run: |
           pip install pytest pytest-cov
-          pytest
+          pytest --cov=regridding --cov-report=xml
       - name: Test with Numba disabled
         env:
           NUMBA_DISABLE_JIT: 1
         run: |
-          pytest --cov=. --cov-report=xml
+          pytest --cov=regridding --cov-report=xml
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: coverage.xml
+          files: coverage.xml
           flags: unittests
           env_vars: OS,PYTHON
           name: codecov-umbrella

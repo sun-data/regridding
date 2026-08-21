@@ -298,11 +298,13 @@ def _clip_cells(
                     subject_y[2] = y3
                     subject_y[3] = y4
 
+                    # the candidate cells come from the bounding box, so the
+                    # cell always overlaps the slab being clipped against in
+                    # `x` and these two clips cannot empty the polygon; only
+                    # the `y` clips below need an early exit
                     num = _clip_halfplane(
                         subject_x, subject_y, 4, 0, +1.0, cell_x, clipped_x, clipped_y
                     )
-                    if num < 3:
-                        continue
                     num = _clip_halfplane(
                         clipped_x,
                         clipped_y,
@@ -313,8 +315,6 @@ def _clip_cells(
                         subject_x,
                         subject_y,
                     )
-                    if num < 3:
-                        continue
                     num = _clip_halfplane(
                         subject_x,
                         subject_y,

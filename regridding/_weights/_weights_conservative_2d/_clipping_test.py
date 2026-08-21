@@ -77,9 +77,23 @@ class TestGridIsUniformRectilinear:
     ):
         assert grid_is_uniform_rectilinear(grid) == result_expected
 
-    def test_nonuniform_spacing(self):
+    def test_nonuniform_spacing_x(self):
         x, y = _lattice(6, 6)
-        x = x * x
+        assert not grid_is_uniform_rectilinear((x * x, y))
+
+    def test_nonuniform_spacing_y(self):
+        x, y = _lattice(6, 6)
+        assert not grid_is_uniform_rectilinear((x, y * y))
+
+    def test_varies_along_wrong_axis(self):
+        """`y` must vary along the second axis, not the first."""
+        x, _ = _lattice(6, 6)
+        assert not grid_is_uniform_rectilinear((x, x))
+
+    def test_not_finite(self):
+        x, y = _lattice(6, 6)
+        x = x.copy()
+        x[0] = np.inf
         assert not grid_is_uniform_rectilinear((x, y))
 
 
@@ -254,3 +268,68 @@ class TestWeightsConservative2dClipping:
     def test_grid_output_not_rectilinear(self):
         with pytest.raises(ValueError):
             weights_conservative_2d_clipping(_lattice(6, 6), _distorted(6))
+
+    def test_degenerate_cell(self):
+        """A cell with zero area contributes nothing and does not divide by it."""
+        x, y = _lattice(4, 4, start=0, stop=3)
+        x = x.copy()
+
+        # collapse the first column of vertices onto the second, so every
+        # cell in the first column has zero area
+        x[0] = x[1]
+
+        indices_input, _, values = weights_conservative_2d_clipping(
+            (x, y),
+            _lattice(4, 4, start=0, stop=3),
+        )
+
+        total = np.zeros(9)
+        np.add.at(total, indices_input, values)
+
+        assert np.all(np.isfinite(values))
+        assert np.allclose(total[:3], 0)
+        assert np.allclose(total[3:], 1)
+
+    def test_hangs_off_lower_corner(self):
+        """Cells reaching past the lower corner keep only their overlap."""
+        grid_input = _lattice(3, 3, start=-1, stop=1)
+        grid_output = _lattice(3, 3, start=0, stop=2)
+
+        indices_input, _, values = weights_conservative_2d_clipping(
+            grid_input,
+            grid_output,
+        )
+
+        total = np.zeros(4)
+        np.add.at(total, indices_input, values)
+
+        # only the upper-right input cell lies inside the output grid
+        assert np.allclose(total[:3], 0)
+        assert np.isclose(total[3], 1)
+
+    def test_bounding_box_larger_than_overlap(self):
+        """
+        A thin diagonal cell touches far fewer output cells than its
+        bounding box spans, so most candidates clip away to nothing.
+        """
+        num = 9
+        t = np.linspace(0, 8, num)
+        u = t[:, np.newaxis] * np.ones(num)
+        v = np.ones(num)[:, np.newaxis] * t
+
+        # a narrow band running diagonally across the output grid
+        x = u + 0.02 * v
+        y = 0.9 * u + 0.05 * v + 0.5
+
+        grid_output = _lattice(9, 9, start=0, stop=8)
+
+        indices_input, _, values = weights_conservative_2d_clipping(
+            (x, y),
+            grid_output,
+        )
+
+        total = np.zeros((num - 1) * (num - 1))
+        np.add.at(total, indices_input, values)
+
+        assert np.all(np.isfinite(values))
+        assert np.all(total <= 1 + 1e-12)

@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import regridding
 
@@ -100,3 +101,58 @@ class TestSeed:
         result_expected = regridding.regrid(**kwargs)
 
         assert np.array_equal(result, result_expected, equal_nan=True)
+
+
+class TestBounds:
+    """
+    Behavior of `regrid` for output points that fall outside the input grid.
+
+    These points used to address the wrong cell of the input grid: the
+    out-of-grid sentinel from `find_indices` truncated to -1, so a point below
+    the grid was extrapolated from the *last* cell rather than the first.
+    """
+
+    x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    values = x**2
+    x_output = np.array([-0.5, 0.5, 3.5, 4.5])
+
+    def _regrid(self, **kwargs):
+        return regridding.regrid(
+            coordinates_input=(self.x,),
+            coordinates_output=(self.x_output,),
+            values_input=self.values,
+            method="multilinear",
+            **kwargs,
+        )
+
+    def test_extrapolate(self):
+        """The default extrapolates from the nearest cell of the input grid."""
+        result = self._regrid()
+        # Slope 1 in the first cell and 7 in the last.
+        expected = np.array([-0.5, 0.5, 12.5, 19.5])
+        assert np.allclose(result, expected)
+
+    def test_nan(self):
+        result = self._regrid(bounds="nan")
+        assert np.isnan(result[0])
+        assert np.isnan(result[~0])
+        assert np.allclose(result[1:~0], [0.5, 12.5])
+
+    def test_raise(self):
+        with pytest.raises(ValueError, match="fall outside the input grid"):
+            self._regrid(bounds="raise")
+
+    def test_raise_inside_grid(self):
+        """A grid entirely inside the input grid must not raise."""
+        result = regridding.regrid(
+            coordinates_input=(self.x,),
+            coordinates_output=(np.array([0.5, 3.5]),),
+            values_input=self.values,
+            method="multilinear",
+            bounds="raise",
+        )
+        assert np.allclose(result, [0.5, 12.5])
+
+    def test_invalid(self):
+        with pytest.raises(ValueError, match="Unrecognized bounds="):
+            self._regrid(bounds="foo")

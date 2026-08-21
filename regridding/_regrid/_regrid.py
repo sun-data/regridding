@@ -17,6 +17,7 @@ def regrid(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
+    bounds: Literal["extrapolate", "nan", "raise"] = "extrapolate",
     perturb: None | bool = None,
     seed: "None | int | np.random.Generator" = _util._seed_default,
 ) -> np.ndarray:
@@ -57,6 +58,13 @@ def regrid(
         sum of `values_input`.
         The ``conservative`` method uses the algorithm described in
         :footcite:t:`Ramshaw1985`.
+    bounds
+        How to treat output points that fall outside the input grid.
+        Only applies when `method` is ``multilinear``; the ``conservative``
+        method assigns no weight to regions outside the input grid.
+        ``extrapolate`` (the default) extrapolates linearly from the nearest
+        cell of the input grid, ``nan`` sets those points to
+        :obj:`numpy.nan`, and ``raise`` raises a :class:`ValueError`.
     perturb
         Whether to perturb `coordinates_output` by a small value to avoid degenerate
         grids. This is helpful for some methods, like ``conservative``, which
@@ -125,6 +133,7 @@ def regrid(
         axis_input=axis_input,
         axis_output=axis_output,
         method=method,
+        bounds=bounds,
         perturb=perturb,
         seed=seed,
     )

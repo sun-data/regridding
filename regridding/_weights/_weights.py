@@ -17,6 +17,7 @@ def weights(
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
     method: Literal["multilinear", "conservative"] = "multilinear",
+    bounds: Literal["extrapolate", "nan", "raise"] = "extrapolate",
     perturb: None | bool = None,
     seed: "None | int | np.random.Generator" = _util._seed_default,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
@@ -57,6 +58,13 @@ def weights(
         Weights applied to the values of the input grid before resampling.
     method
         The type of regridding to use.
+    bounds
+        How to treat output points that fall outside the input grid.
+        Only applies when `method` is ``multilinear``; the ``conservative``
+        method assigns no weight to regions outside the input grid.
+        ``extrapolate`` (the default) extrapolates linearly from the nearest
+        cell of the input grid, ``nan`` sets those points to
+        :obj:`numpy.nan`, and ``raise`` raises a :class:`ValueError`.
     perturb
         Whether to perturb `coordinates_output` by a small value to avoid degenerate
         grids. This is helpful for some methods, like ``conservative``, which
@@ -158,6 +166,7 @@ def weights(
             axis_input=axis_input,
             axis_output=axis_output,
             weights_input=weights_input,
+            bounds=bounds,
             perturb=perturb,
             seed=seed,
         )

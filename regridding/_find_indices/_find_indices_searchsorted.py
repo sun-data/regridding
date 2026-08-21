@@ -33,7 +33,7 @@ def _find_indices_searchsorted_1d(
     num_d, num_m = x_input.shape
     num_d, num_i = x_output.shape
 
-    result = np.empty(shape=x_output.shape, dtype=np.int32)
+    result = np.empty(shape=x_output.shape, dtype=np.int64)
 
     for d in numba.prange(num_d):
         x_input_d = x_input[d]
@@ -53,7 +53,7 @@ def _find_indices_searchsorted_1d(
                 result_di = 0
             elif result_di < 0:
                 result_di = fill_value
-            elif result_di > num_m:
+            elif result_di > num_m - 2:
                 result_di = fill_value
             result_d[i] = result_di
 

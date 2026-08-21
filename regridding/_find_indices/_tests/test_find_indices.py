@@ -49,3 +49,43 @@ def test_find_indices_1d(
     assert np.all(
         coordinates_input_x[result_x[where] + 1] >= coordinates_output_x[where]
     )
+
+
+@pytest.mark.parametrize("method", ["brute", "searchsorted"])
+def test_find_indices_outside_grid(method: str):
+    """
+    An output point outside the input grid must be marked with `fill_value`.
+
+    The `searchsorted` finder used to store its result in an `int32` array,
+    which cannot hold the default `numpy.iinfo(int).max` sentinel: it
+    truncated to -1, a valid negative index that silently addressed the last
+    vertex of the grid. A point above the grid was not caught at all, since
+    the bound was compared against the number of vertices rather than against
+    the largest usable cell index.
+    """
+    x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    x_output = np.array([-1.0, 0.0, 0.5, 3.5, 4.0, 5.0])
+
+    fill_value = np.iinfo(int).max
+
+    (result,) = regridding.find_indices(
+        coordinates_input=(x,),
+        coordinates_output=(x_output,),
+        method=method,
+    )
+
+    expected = np.array([fill_value, 0, 0, 3, 3, fill_value])
+
+    assert np.array_equal(result, expected)
+
+
+def test_find_indices_outside_grid_fill_value():
+    """A caller-supplied `fill_value` should be used verbatim."""
+    x = np.array([0.0, 1.0, 2.0])
+    (result,) = regridding.find_indices(
+        coordinates_input=(x,),
+        coordinates_output=(np.array([-1.0, 0.5, 7.0]),),
+        method="searchsorted",
+        fill_value=-99,
+    )
+    assert np.array_equal(result, np.array([-99, 0, -99]))

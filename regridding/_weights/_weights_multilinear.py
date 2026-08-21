@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Literal, Sequence
 import numpy as np
 import numba
 from numba.typed.typedlist import List as TypedList
@@ -12,6 +12,7 @@ def _weights_multilinear(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
+    bounds: Literal["extrapolate", "nan", "raise"] = "extrapolate",
     perturb: None | bool = False,
     seed: "None | int | np.random.Generator" = _util._seed_default,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
@@ -29,6 +30,7 @@ def _weights_multilinear(
         axis_input=axis_input,
         axis_output=axis_output,
         weights_input=weights_input,
+        bounds=bounds,
         perturb=perturb,
         seed=seed,
     )
@@ -42,9 +44,16 @@ def _weights_from_indices_multilinear(
     axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
     weights_input: None | np.ndarray = None,
+    bounds: Literal["extrapolate", "nan", "raise"] = "extrapolate",
     perturb: None | bool = False,
     seed: "None | int | np.random.Generator" = _util._seed_default,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+
+    if bounds not in ("extrapolate", "nan", "raise"):
+        raise ValueError(
+            f"Unrecognized {bounds=}, "
+            f"expected one of ('extrapolate', 'nan', 'raise')."
+        )
 
     if perturb is None:
         perturb = False
@@ -90,11 +99,31 @@ def _weights_from_indices_multilinear(
         weights_input = weights_input.reshape(-1, *shape_input_numba)
 
     if len(axis_input) == 1:
+        # `find_indices` marks an output point that falls outside the input
+        # grid with `fill_value`, which is not a usable index. Resolve those
+        # here so that the compiled kernel only ever sees a valid cell.
+        (index,) = indices_output
+        (x_input,) = coordinates_input
+        (x_output,) = coordinates_output
+        index_max = x_input.shape[~0] - 2
+        outside = (index < 0) | (index > index_max)
+        if bounds == "raise" and outside.any():
+            raise ValueError(
+                f"{outside.sum()} of the output points fall outside the input "
+                f"grid, and {bounds=}."
+            )
+        # `fill_value` is a large positive number whichever side of the grid
+        # the point fell out on, so clamping it alone would send every such
+        # point to the last cell. Recover the side from the coordinate.
+        below = x_output < x_input[..., :1]
+        indices_output = (np.where(below, 0, np.clip(index, 0, index_max)),)
+
         weights_list = _weights_from_indices_multilinear_1d(
             indices_output=indices_output,
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             weights_input=weights_input,
+            outside=outside if bounds == "nan" else np.zeros_like(outside),
         )
     else:
         raise ValueError(
@@ -116,6 +145,7 @@ def _weights_from_indices_multilinear_1d(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
     weights_input: None | np.ndarray,
+    outside: np.ndarray,
 ) -> TypedList:
     (i_output,) = indices_output
     (x_input,) = coordinates_input
@@ -158,6 +188,10 @@ def _weights_from_indices_multilinear_1d(
             if weights_input is not None:
                 w0 = w0 * weights_input[d, i0]
                 w1 = w1 * weights_input[d, i1]
+
+            if outside[d, i]:
+                w0 = np.nan
+                w1 = np.nan
 
             indices_input[2 * i] = i0
             indices_output_d[2 * i] = i

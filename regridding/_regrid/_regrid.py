@@ -20,6 +20,7 @@ def regrid(
     bounds: Literal["extrapolate", "nan", "raise"] = "extrapolate",
     perturb: None | bool = None,
     seed: "None | int | np.random.Generator" = _util._seed_default,
+    coalesce: bool = False,
 ) -> np.ndarray:
     """
     Regrid an array of values defined on a logically-rectangular curvilinear
@@ -81,6 +82,18 @@ def regrid(
         grids return identical results.
         If :obj:`None`, the generator is seeded from fresh entropy,
         and each call draws an independent perturbation.
+    coalesce
+        Whether to merge repeated ``(input, output)`` pairs before applying
+        the weights.
+        See :func:`regridding.weights`.
+
+        This defaults to :obj:`False`, unlike :func:`regridding.weights`,
+        because this function applies the weights exactly once.  Merging
+        costs a sort and only earns it back over repeated applications, so
+        skipping it is about twice as fast here even though it leaves more
+        pairs for the scatter-add to sum.
+        Use :func:`regridding.weights` with ``coalesce=True`` if the same
+        grids will be regridded more than once.
 
     See Also
     --------
@@ -136,6 +149,7 @@ def regrid(
         bounds=bounds,
         perturb=perturb,
         seed=seed,
+        coalesce=coalesce,
     )
     result = regrid_from_weights(
         weights=weights,

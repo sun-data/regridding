@@ -156,3 +156,62 @@ class TestBounds:
     def test_invalid(self):
         with pytest.raises(ValueError, match="Unrecognized bounds="):
             self._regrid(bounds="foo")
+
+
+class TestCoalesce:
+    """
+    The conservative builders emit several fragments per distinct
+    ``(input, output)`` pair.  Merging them is an optimization for weights
+    that get reused, not a change to what the weights mean.
+    """
+
+    def test_fewer_triples(self):
+        """Merging shrinks the result."""
+        raw = _flat(_weights_conservative(coalesce=False))
+        merged = _flat(_weights_conservative(coalesce=True))
+        assert merged[0].size < raw[0].size
+
+    def test_unique_pairs(self):
+        """Every pair appears exactly once after merging, and only then."""
+        raw = _flat(_weights_conservative(coalesce=False))
+        merged = _flat(_weights_conservative(coalesce=True))
+
+        def num_unique(triple):
+            indices_input, indices_output, _ = triple
+            pairs = np.stack([indices_input, indices_output], axis=~0)
+            return np.unique(pairs, axis=0).shape[0]
+
+        assert num_unique(merged) == merged[0].size
+        assert num_unique(raw) < raw[0].size
+
+    def test_same_total_weight(self):
+        """Merging preserves each input cell's total weight exactly."""
+        raw = _flat(_weights_conservative(coalesce=False))
+        merged = _flat(_weights_conservative(coalesce=True))
+
+        num = max(raw[0].max(), merged[0].max()) + 1
+
+        total_raw = np.zeros(num)
+        np.add.at(total_raw, raw[0], raw[2])
+        total_merged = np.zeros(num)
+        np.add.at(total_merged, merged[0], merged[2])
+
+        assert np.allclose(total_raw, total_merged)
+
+    def test_same_result_when_applied(self):
+        """Both forms regrid a scene to the same answer."""
+        results = []
+        for coalesce in (False, True):
+            weights, shape_input, shape_output = _weights_conservative(
+                coalesce=coalesce,
+            )
+            results.append(
+                regridding.regrid_from_weights(
+                    weights=weights,
+                    shape_input=shape_input,
+                    shape_output=shape_output,
+                    values_input=values_input,
+                )
+            )
+
+        assert np.allclose(results[0], results[1])

@@ -20,6 +20,7 @@ def weights(
     bounds: Literal["extrapolate", "nan", "raise"] = "extrapolate",
     perturb: None | bool = None,
     seed: "None | int | np.random.Generator" = _util._seed_default,
+    coalesce: bool = True,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -81,6 +82,22 @@ def weights(
         grids return identical results.
         If :obj:`None`, the generator is seeded from fresh entropy,
         and each call draws an independent perturbation.
+    coalesce
+        Whether to merge repeated ``(input, output)`` pairs by summing their
+        weights before returning.
+
+        The conservative builders can emit several fragments for the same
+        pair, and merging them shrinks the result by the mean multiplicity,
+        which makes every subsequent
+        :func:`regridding.regrid_from_weights` cheaper.  The merge itself
+        costs a sort, so it pays for itself only if the weights are applied
+        more than once or twice.
+
+        Setting this to :obj:`False` returns the fragments as they were
+        built.  The result is equivalent: applying the weights sums
+        duplicates during the scatter-add either way.  This is the better
+        choice when the grid changes on every call, so each set of weights
+        is applied once and there is nothing to amortize the sort against.
 
     See Also
     --------
@@ -183,7 +200,8 @@ def weights(
     else:
         raise ValueError(f"unrecognized method '{method}'")
 
-    result = _weights_to_arrays(result)
+    if coalesce:
+        result = _weights_to_arrays(result)
 
     if unit_weights is not None:
         array, shape_input, shape_output = result

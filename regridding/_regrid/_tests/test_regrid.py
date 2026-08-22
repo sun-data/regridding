@@ -82,3 +82,43 @@ def test_regrid(
     )
 
     assert np.allclose(result, result_expected)
+
+
+class TestCoalesce:
+    """
+    :func:`regridding.regrid` applies its weights once, so it defaults to
+    leaving repeated ``(input, output)`` pairs unmerged.  That must not
+    change the answer.
+    """
+
+    def test_same_result(self):
+        method = "conservative"
+        num_input = 21
+        num_output = 17
+
+        t = np.linspace(-0.9, 0.9, num_input)
+        u = t[:, np.newaxis] * np.ones(num_input)
+        v = np.ones(num_input)[:, np.newaxis] * t
+        x_input = u * np.cos(0.3) - v * np.sin(0.3) + 0.15 * u * v
+        y_input = u * np.sin(0.3) + v * np.cos(0.3) + 0.10 * u * u
+
+        x_output = np.linspace(-1, 1, num_output)[:, np.newaxis] * np.ones(num_output)
+        y_output = np.ones(num_output)[:, np.newaxis] * np.linspace(-1, 1, num_output)
+
+        if method == "conservative":
+            shape = (num_input - 1, num_input - 1)
+        else:
+            shape = (num_input, num_input)
+        values_input = np.random.default_rng(42).random(shape)
+
+        kwargs = dict(
+            coordinates_input=(x_input, y_input),
+            coordinates_output=(x_output, y_output),
+            values_input=values_input,
+            method=method,
+        )
+
+        result = regridding.regrid(**kwargs, coalesce=False)
+        expected = regridding.regrid(**kwargs, coalesce=True)
+
+        assert np.allclose(result, expected, equal_nan=True)

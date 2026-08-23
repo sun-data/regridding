@@ -16,6 +16,7 @@ is bounded and every cell is independent of every other.
 
 import numpy as np
 import numba
+import regridding as rg
 
 __all__ = [
     "grid_is_uniform_rectilinear",
@@ -166,7 +167,11 @@ def _area_signed(
     num: int,
 ) -> float:
     """
-    Compute the signed shoelace area of a polygon.
+    Compute the signed area of a polygon.
+
+    Each edge contributes the signed area of the triangle it forms with the
+    origin, via :func:`regridding.geometry.area_triangle`, which is the
+    shoelace sum.
 
     Parameters
     ----------
@@ -184,9 +189,12 @@ def _area_signed(
         k_next = k + 1
         if k_next == num:
             k_next = 0
-        result += x[k] * y[k_next] - x[k_next] * y[k]
+        result += rg.geometry.area_triangle(
+            (x[k], y[k]),
+            (x[k_next], y[k_next]),
+        )
 
-    return 0.5 * result
+    return result
 
 
 @numba.njit(cache=True, parallel=True, error_model="numpy")
@@ -258,11 +266,11 @@ def _clip_cells(
             y3 = y[index_x + 1, index_y + 1]
             y4 = y[index_x, index_y + 1]
 
-            area_cell = 0.5 * (
-                (x1 * y2 - x2 * y1)
-                + (x2 * y3 - x3 * y2)
-                + (x3 * y4 - x4 * y3)
-                + (x4 * y1 - x1 * y4)
+            area_cell = (
+                rg.geometry.area_triangle((x1, y1), (x2, y2))
+                + rg.geometry.area_triangle((x2, y2), (x3, y3))
+                + rg.geometry.area_triangle((x3, y3), (x4, y4))
+                + rg.geometry.area_triangle((x4, y4), (x1, y1))
             )
 
             if area_cell == 0:

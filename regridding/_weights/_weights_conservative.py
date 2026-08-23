@@ -1,4 +1,5 @@
 from typing import Sequence
+import itertools
 import multiprocessing
 import concurrent.futures
 import numpy as np
@@ -42,7 +43,18 @@ def _clipping_applicable(
 
     x, y = coordinates_output
 
-    for index in np.ndindex(*shape_orthogonal):
+    # The grids are usually broadcast across the orthogonal axes, so every
+    # element reads the same memory and one check answers for all of them.
+    # A zero stride guarantees that; anything else falls back to checking
+    # each element, which is correct but proportional to their number.
+    axis_orthogonal = tuple(a for a in range(x.ndim) if a not in axis_output)
+    shared = all(x.strides[a] == 0 and y.strides[a] == 0 for a in axis_orthogonal)
+
+    indices = np.ndindex(*shape_orthogonal)
+    if shared:
+        indices = itertools.islice(indices, 1)
+
+    for index in indices:
         index_vertices = list(reversed(index))
         for ax in axis_output:
             index_vertices.insert(~ax, slice(None))

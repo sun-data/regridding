@@ -23,12 +23,22 @@ __all__ = [
     "weights_conservative_2d_clipping",
 ]
 
-_num_slot = 12
+_num_slot = 16
 """
 The number of vertex slots reserved for a polygon being clipped.
 
-Clipping a quadrilateral against the four edges of a cell cannot produce
-more than eight vertices, so this is generous.
+Clipping a simple quadrilateral against the four edges of a cell cannot
+produce more than twelve vertices.  The boundary of the result is made of
+pieces of the cell's edges and pieces of the quadrilateral's edges: each
+edge of the quadrilateral meets the convex cell in at most one segment,
+giving at most four, and each edge of the cell meets the quadrilateral in
+at most two segments, giving at most eight.
+
+A convex quadrilateral is bounded by eight, since the intersection of two
+convex regions has only the edges of its two operands.  The extra four
+appear when the cell is not convex, which is legitimate under a strong
+enough distortion.  Cells whose edges cross each other are not supported,
+as noted in :func:`weights_conservative_2d_clipping`.
 """
 
 
@@ -396,9 +406,9 @@ def weights_conservative_2d_clipping(
     Notes
     -----
     Signed areas are used throughout, so an input cell wound in the opposite
-    sense to its grid is handled correctly.  An input cell whose edges cross
-    each other (a "bowtie") is not, since Sutherland-Hodgman assumes a simple
-    polygon.
+    sense to its grid is handled correctly, and so is a cell which is not
+    convex.  An input cell whose edges cross each other (a "bowtie") is not,
+    since Sutherland-Hodgman assumes a simple polygon.
 
     Unlike the sweep, this kernel does not need the coordinates to be
     perturbed to break degeneracies: coincident vertices and collinear edges

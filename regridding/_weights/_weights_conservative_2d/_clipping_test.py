@@ -333,3 +333,59 @@ class TestWeightsConservative2dClipping:
 
         assert np.all(np.isfinite(values))
         assert np.all(total <= 1 + 1e-12)
+
+
+class TestNonConvexCells:
+    """
+    A cell which is not convex, but whose edges do not cross, is a legitimate
+    shape with a well-defined area, and a strong enough distortion produces
+    one.  It needs more vertex slots than a convex cell does.
+    """
+
+    @staticmethod
+    def _grid_with_dart() -> tuple[np.ndarray, np.ndarray]:
+        """A lattice with one vertex pulled inside its neighbours."""
+        x, y = _lattice(4, 4, start=0, stop=3)
+        x, y = x.copy(), y.copy()
+        # drag the middle vertex far enough that the four cells sharing it
+        # become non-convex without any edges crossing
+        x[1, 1] = 1.72
+        y[1, 1] = 1.72
+        return x, y
+
+    def test_conserved(self):
+        """Every fully-covered cell still distributes exactly its own area."""
+        grid_input = self._grid_with_dart()
+        grid_output = _lattice(7, 7, start=0, stop=3)
+
+        indices_input, _, values = weights_conservative_2d_clipping(
+            grid_input,
+            grid_output,
+        )
+
+        total = np.zeros(_num_cells(grid_input))
+        np.add.at(total, indices_input, values)
+
+        assert np.all(np.isfinite(values))
+        assert np.allclose(total, 1, atol=1e-12)
+
+    def test_matches_sweep(self):
+        """The sweep agrees, which it can only do if the clip is complete."""
+        grid_input = self._grid_with_dart()
+        grid_output = _lattice(7, 7, start=-0.13, stop=3.11)
+
+        num_input = _num_cells(grid_input)
+        num_output = _num_cells(grid_output)
+
+        result = _dense(
+            weights_conservative_2d_clipping(grid_input, grid_output),
+            num_input,
+            num_output,
+        )
+        expected = _dense(
+            weights_conservative_2d(grid_input, grid_output, None),
+            num_input,
+            num_output,
+        )
+
+        assert np.allclose(result, expected, atol=1e-12)

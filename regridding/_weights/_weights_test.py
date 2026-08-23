@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import regridding
+from regridding._weights import _weights_conservative as _conservative
 
 x_input = np.linspace(-1, 1, num=13)
 y_input = np.linspace(-1, 1, num=12)
@@ -215,3 +216,69 @@ class TestCoalesce:
             )
 
         assert np.allclose(results[0], results[1])
+
+
+class TestClippingApplicable:
+    """
+    A 2D conservative build uses the clipping kernel when every output grid
+    is a uniform, axis-aligned lattice, and the sweep otherwise.
+    """
+
+    @staticmethod
+    def _grid(num_x, num_y, nonuniform=False, curvilinear=False):
+        x = np.linspace(-1, 1, num_x)
+        y = np.linspace(-1, 1, num_y)
+        if nonuniform:
+            x = np.sign(x) * np.square(x)
+        x, y = np.meshgrid(x, y, indexing="ij")
+        if curvilinear:
+            x = x + 0.1 * y
+        return x, y
+
+    def test_uniform_lattice(self):
+        assert _conservative._clipping_applicable(
+            coordinates_output=self._grid(6, 7),
+            axis_output=(0, 1),
+            shape_orthogonal=(),
+        )
+
+    @pytest.mark.parametrize(
+        argnames="kwargs",
+        argvalues=[
+            dict(nonuniform=True),
+            dict(curvilinear=True),
+        ],
+    )
+    def test_disqualified(self, kwargs: dict):
+        assert not _conservative._clipping_applicable(
+            coordinates_output=self._grid(6, 7, **kwargs),
+            axis_output=(0, 1),
+            shape_orthogonal=(),
+        )
+
+    def test_not_2d(self):
+        assert not _conservative._clipping_applicable(
+            coordinates_output=self._grid(6, 7),
+            axis_output=(0,),
+            shape_orthogonal=(),
+        )
+
+    def test_curvilinear_output_still_works(self):
+        """The sweep still handles an output grid the clipping kernel can't."""
+        grid_input = self._grid(9, 9)
+        grid_output = self._grid(6, 7, curvilinear=True)
+        weights, shape_input, shape_output = regridding.weights(
+            coordinates_input=grid_input,
+            coordinates_output=grid_output,
+            method="conservative",
+        )
+        values = np.random.default_rng(0).random(
+            (grid_input[0].shape[0] - 1, grid_input[0].shape[1] - 1)
+        )
+        result = regridding.regrid_from_weights(
+            weights=weights,
+            shape_input=shape_input,
+            shape_output=shape_output,
+            values_input=values,
+        )
+        assert np.all(np.isfinite(result))

@@ -35,7 +35,7 @@ jobs:
     # trusted with a runner that costs money to start
     if: >-
       vars.GPU_RUNNER != '' &&
-      (github.event_name == 'push' ||
+      (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ vars.GPU_RUNNER }}
     timeout-minutes: 20

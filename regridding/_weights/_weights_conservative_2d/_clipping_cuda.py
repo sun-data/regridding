@@ -1,40 +1,67 @@
 """
 The clipping kernel on a CUDA device, leaving the result in device memory.
 
-This is a port of
-:func:`~regridding._weights._weights_conservative_2d._clipping.weights_conservative_2d_clipping`.
-The algorithm is unchanged: each input cell is clipped against the output
-cells its bounding box touches, and writes into its own slice of the
-result.  That slice is what makes the port straightforward, since it means
-a cell needs nothing from any other cell and the output does not depend on
-the order the cells are visited.
+The algorithm is not repeated here.  It lives in
+:mod:`~regridding._weights._weights_conservative_2d._clipping_shared`, and
+this module compiles that same source for the device, exactly as
+:mod:`~regridding._weights._weights_conservative_2d._clipping` compiles it
+for the host.  What remains here is only what a device needs and a CPU does
+not: mapping threads onto cells, allocating the scratch space in local
+memory, the prefix sum, and the device allocations.
 
-The device functions below repeat arithmetic that
-:mod:`regridding.geometry` already provides on the host.  A kernel cannot
-call a :func:`numba.njit` function, so the two cannot share an
-implementation.
+Each input cell is independent and writes into its own slice of the result,
+which is what makes the algorithm suit a GPU in the first place.
 """
 
+from typing import Any, Callable
 import numpy as np
 import numba
 from numba import cuda
+import regridding as rg
+from ._clipping_shared import num_slot as _num_slot, build as _build_shared
 
 __all__ = [
     "weights_conservative_2d_clipping_cuda",
 ]
 
-_num_slot = 16
-"""
-The number of vertex slots reserved for a polygon being clipped.
 
-See :data:`regridding._weights._weights_conservative_2d._clipping._num_slot`
-for why this is not eight.
-"""
+def _jit(function: Callable) -> Any:
+    """
+    Compile one of the shared kernel bodies for a CUDA device.
+
+    Parameters
+    ----------
+    function
+        The plain Python function to compile.
+    """
+    return cuda.jit(device=True, inline=True)(function)
 
 
-def _build(ftype):
+def _source(function: Callable) -> Callable:
+    """
+    Recover the undecorated source of a host function.
+
+    A kernel cannot call a function compiled for the host, so the device has
+    to compile the same source itself.  :func:`numba.njit` keeps it on the
+    dispatcher as ``py_func``, except when ``NUMBA_DISABLE_JIT`` is set, in
+    which case it hands back the plain function and there is nothing to
+    unwrap.
+
+    Parameters
+    ----------
+    function
+        The host function to unwrap.
+    """
+    return getattr(function, "py_func", function)
+
+
+def _build(ftype: Any) -> tuple[Any, Any]:
     """
     Build the kernels for a given floating-point type.
+
+    The coordinates may be single or double precision, and the scratch space
+    each thread clips in has to be declared with a concrete type, so there is
+    one set of kernels per precision.
 
     Parameters
     ----------
@@ -42,54 +69,18 @@ def _build(ftype):
         The :mod:`numba` type of the coordinates and weights.
     """
 
-    @cuda.jit(device=True, inline=True)
-    def corners(x, y, index_x, index_y):
-        return (
-            x[index_x, index_y],
-            x[index_x + 1, index_y],
-            x[index_x + 1, index_y + 1],
-            x[index_x, index_y + 1],
-            y[index_x, index_y],
-            y[index_x + 1, index_y],
-            y[index_x + 1, index_y + 1],
-            y[index_x, index_y + 1],
-        )
-
-    @cuda.jit(device=True, inline=True)
-    def bounds(x1, x2, x3, x4, y1, y2, y3, y4, num_output_x, num_output_y):
-        """The block of output cells this cell's bounding box touches."""
-        lower_x = min(min(x1, x2), min(x3, x4))
-        upper_x = max(max(x1, x2), max(x3, x4))
-        lower_y = min(min(y1, y2), min(y3, y4))
-        upper_y = max(max(y1, y2), max(y3, y4))
-
-        index_lower_x = int(lower_x)
-        if lower_x < 0:
-            index_lower_x -= 1
-        index_lower_y = int(lower_y)
-        if lower_y < 0:
-            index_lower_y -= 1
-        index_upper_x = int(upper_x) + 1
-        index_upper_y = int(upper_y) + 1
-
-        if index_lower_x < 0:
-            index_lower_x = 0
-        if index_lower_y < 0:
-            index_lower_y = 0
-        if index_upper_x > num_output_x:
-            index_upper_x = num_output_x
-        if index_upper_y > num_output_y:
-            index_upper_y = num_output_y
-
-        return index_lower_x, index_upper_x, index_lower_y, index_upper_y
+    num_pair, clip_cell = _build_shared(
+        _jit,
+        _jit(_source(rg.geometry.cross_2d)),
+    )
 
     @cuda.jit
     def count_cells(x, y, num_output_x, num_output_y, counts):
         """
         Count the output cells each input cell can touch.
 
-        The prefix sum of this is where each cell writes its result, which
-        is what lets the cells run independently.
+        The prefix sum of this is where each cell writes its result, which is
+        what lets the cells run independently.
         """
         index = cuda.grid(1)
         num_y = x.shape[1] - 1
@@ -98,62 +89,7 @@ def _build(ftype):
         index_x = index // num_y
         index_y = index - index_x * num_y
 
-        x1, x2, x3, x4, y1, y2, y3, y4 = corners(x, y, index_x, index_y)
-        lower_x, upper_x, lower_y, upper_y = bounds(
-            x1, x2, x3, x4, y1, y2, y3, y4, num_output_x, num_output_y
-        )
-
-        span_x = upper_x - lower_x
-        span_y = upper_y - lower_y
-        if span_x < 0:
-            span_x = 0
-        if span_y < 0:
-            span_y = 0
-        counts[index] = span_x * span_y
-
-    @cuda.jit(device=True, inline=True)
-    def clip_halfplane(x_in, y_in, num_in, axis, sign, bound, x_out, y_out):
-        """Clip a polygon against a half-plane, Sutherland-Hodgman style."""
-        num_out = 0
-        for k in range(num_in):
-            x1 = x_in[k]
-            y1 = y_in[k]
-            k_next = k + 1
-            if k_next == num_in:
-                k_next = 0
-            x2 = x_in[k_next]
-            y2 = y_in[k_next]
-            if axis == 0:
-                distance_1 = sign * (x1 - bound)
-                distance_2 = sign * (x2 - bound)
-            else:
-                distance_1 = sign * (y1 - bound)
-                distance_2 = sign * (y2 - bound)
-            inside_1 = distance_1 >= 0
-            inside_2 = distance_2 >= 0
-            if inside_1:
-                x_out[num_out] = x1
-                y_out[num_out] = y1
-                num_out += 1
-            if inside_1 != inside_2:
-                denominator = distance_1 - distance_2
-                if denominator != 0:
-                    t = distance_1 / denominator
-                    x_out[num_out] = x1 + t * (x2 - x1)
-                    y_out[num_out] = y1 + t * (y2 - y1)
-                    num_out += 1
-        return num_out
-
-    @cuda.jit(device=True, inline=True)
-    def area_signed(x, y, num):
-        """The signed area of a polygon, by the shoelace sum."""
-        result = ftype(0)
-        for k in range(num):
-            k_next = k + 1
-            if k_next == num:
-                k_next = 0
-            result += x[k] * y[k_next] - x[k_next] * y[k]
-        return ftype(0.5) * result
+        counts[index] = num_pair(x, y, index_x, index_y, num_output_x, num_output_y)
 
     @cuda.jit
     def clip_cells(
@@ -170,8 +106,8 @@ def _build(ftype):
         """
         Clip every input cell against the output cells it touches.
 
-        Slots which receive no overlap keep the sentinel index of ``-1``
-        they were initialized with, and are dropped by the caller.
+        Slots which receive no overlap keep the sentinel index of ``-1`` they
+        were initialized with, and are dropped by the caller.
         """
         index = cuda.grid(1)
         num_y = x.shape[1] - 1
@@ -180,84 +116,31 @@ def _build(ftype):
         index_x = index // num_y
         index_y = index - index_x * num_y
 
-        subject_x = cuda.local.array(_num_slot, ftype)
-        subject_y = cuda.local.array(_num_slot, ftype)
-        clipped_x = cuda.local.array(_num_slot, ftype)
-        clipped_y = cuda.local.array(_num_slot, ftype)
+        # `numba` annotates the shape of a local array as a `local`, so each
+        # of these needs the annotation waived
+        subject_x = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
+        subject_y = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
+        clipped_x = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
+        clipped_y = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
 
-        x1, x2, x3, x4, y1, y2, y3, y4 = corners(x, y, index_x, index_y)
-        lower_x, upper_x, lower_y, upper_y = bounds(
-            x1, x2, x3, x4, y1, y2, y3, y4, num_output_x, num_output_y
+        clip_cell(
+            x,
+            y,
+            weights_input,
+            num_output_x,
+            num_output_y,
+            index_x,
+            index_y,
+            index,
+            offset[index],
+            subject_x,
+            subject_y,
+            clipped_x,
+            clipped_y,
+            indices_input,
+            indices_output,
+            values,
         )
-
-        # Shift the cell onto its own block of candidates.  The shoelace
-        # sums differences of coordinates, so working at the scale of the
-        # block rather than of the whole grid keeps the significant figures
-        # that single precision would otherwise lose to cancellation.
-        x1 -= lower_x
-        x2 -= lower_x
-        x3 -= lower_x
-        x4 -= lower_x
-        y1 -= lower_y
-        y2 -= lower_y
-        y3 -= lower_y
-        y4 -= lower_y
-
-        area_cell = ftype(0.5) * (
-            (x1 * y2 - x2 * y1)
-            + (x2 * y3 - x3 * y2)
-            + (x3 * y4 - x4 * y3)
-            + (x4 * y1 - x1 * y4)
-        )
-        if area_cell == 0:
-            return
-
-        weight_cell = weights_input[index_x, index_y] / area_cell
-
-        write = offset[index]
-        for cell_x in range(lower_x, upper_x):
-            for cell_y in range(lower_y, upper_y):
-
-                subject_x[0] = x1
-                subject_x[1] = x2
-                subject_x[2] = x3
-                subject_x[3] = x4
-                subject_y[0] = y1
-                subject_y[1] = y2
-                subject_y[2] = y3
-                subject_y[3] = y4
-
-                num = clip_halfplane(
-                    subject_x, subject_y, 4, 0,
-                    ftype(1.0), ftype(cell_x - lower_x), clipped_x, clipped_y,
-                )
-                num = clip_halfplane(
-                    clipped_x, clipped_y, num, 0,
-                    ftype(-1.0), ftype(cell_x - lower_x + 1), subject_x, subject_y,
-                )
-                if num < 3:
-                    continue
-                num = clip_halfplane(
-                    subject_x, subject_y, num, 1,
-                    ftype(1.0), ftype(cell_y - lower_y), clipped_x, clipped_y,
-                )
-                if num < 3:
-                    continue
-                num = clip_halfplane(
-                    clipped_x, clipped_y, num, 1,
-                    ftype(-1.0), ftype(cell_y - lower_y + 1), subject_x, subject_y,
-                )
-                if num < 3:
-                    continue
-
-                area = area_signed(subject_x, subject_y, num)
-                if area == 0:
-                    continue
-
-                indices_input[write] = index
-                indices_output[write] = cell_x * num_output_y + cell_y
-                values[write] = area * weight_cell
-                write += 1
 
     return count_cells, clip_cells
 
@@ -270,15 +153,58 @@ def _fill(a, value):
         a[i] = value
 
 
-_kernels = {}
-
-
-def _prefix_sum(counts, num_cell):
+def _allocate(shape: Any, dtype: np.typing.DTypeLike) -> Any:
     """
-    The exclusive prefix sum of the per-cell counts, on the device.
+    Allocate an array on the device.
+
+    This wraps :func:`numba.cuda.device_array` only to keep its annotation,
+    which types every `dtype` as :class:`numpy.float64`, from being repeated
+    at each call.
+
+    Parameters
+    ----------
+    shape
+        The shape of the array.
+    dtype
+        The type of the array's elements.
+    """
+    return cuda.device_array(shape, dtype)  # type: ignore[arg-type]
+
+
+def _filled(a: Any, value: int, threads: int) -> Any:
+    """
+    Fill a device array with a value, and return it.
+
+    Parameters
+    ----------
+    a
+        The array to fill.
+    value
+        The value to fill it with.
+    threads
+        The number of threads in each block.
+    """
+    _fill[(a.size + threads - 1) // threads, threads](a, value)  # type: ignore[index]
+    return a
+
+
+_kernels = {}
+"""The kernels built so far, keyed by the floating-point type."""
+
+
+def _prefix_sum(counts: Any, num_cell: int) -> tuple[Any, int]:
+    """
+    Compute the exclusive prefix sum of the per-cell counts, on the device.
 
     :mod:`numba` has no scan, so this borrows :func:`torch.cumsum`, which
     shares the memory rather than copying it.
+
+    Parameters
+    ----------
+    counts
+        The per-cell counts, on the device.
+    num_cell
+        The number of input cells.
     """
     try:
         import torch
@@ -361,24 +287,23 @@ def weights_conservative_2d_clipping_cuda(
     blocks = (num_cell + threads - 1) // threads
 
     if weights_input is None:
-        factor = cuda.device_array((num_x, num_y), dtype)
-        _fill[blocks, threads](factor.reshape(-1), 1)
+        factor = _allocate((num_x, num_y), dtype)
+        _filled(factor.reshape(-1), 1, threads)
     elif cuda.is_cuda_array(weights_input):
         factor = weights_input
     else:
         factor = cuda.to_device(np.ascontiguousarray(weights_input, dtype))
 
-    counts = cuda.device_array(num_cell, np.int64)
-    count_cells[blocks, threads](x, y, num_output_x, num_output_y, counts)
+    counts = _allocate(num_cell, np.int64)
+    count_cells[blocks, threads](x, y, num_output_x, num_output_y, counts)  # type: ignore[index]
 
     offset, num_total = _prefix_sum(counts, num_cell)
 
-    indices_input = cuda.device_array(num_total, np.int64)
-    _fill[(num_total + threads - 1) // threads, threads](indices_input, -1)
-    indices_output = cuda.device_array(num_total, np.int64)
-    values = cuda.device_array(num_total, dtype)
+    indices_input = _filled(_allocate(num_total, np.int64), -1, threads)
+    indices_output = _allocate(num_total, np.int64)
+    values = _allocate(num_total, dtype)
 
-    clip_cells[blocks, threads](
+    clip_cells[blocks, threads](  # type: ignore[index]
         x,
         y,
         factor,

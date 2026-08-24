@@ -12,34 +12,38 @@ an input cell with an output cell can instead be computed directly by
 clipping, and the output grid is never swept.  Each input cell is clipped
 against only the output cells its bounding box touches, so the work per cell
 is bounded and every cell is independent of every other.
+
+The clipping itself lives in
+:mod:`~regridding._weights._weights_conservative_2d._clipping_shared`, whose
+source is compiled here for the CPU and in
+:mod:`~regridding._weights._weights_conservative_2d._clipping_cuda` for a
+CUDA device.
 """
 
 import numpy as np
 import numba
 import regridding as rg
+from ._clipping_shared import num_slot as _num_slot, build as _build_shared
 
 __all__ = [
     "grid_is_uniform_rectilinear",
     "weights_conservative_2d_clipping",
 ]
 
-_num_slot = 16
-"""
-The number of vertex slots reserved for a polygon being clipped.
 
-Clipping a simple quadrilateral against the four edges of a cell cannot
-produce more than twelve vertices.  The boundary of the result is made of
-pieces of the cell's edges and pieces of the quadrilateral's edges: each
-edge of the quadrilateral meets the convex cell in at most one segment,
-giving at most four, and each edge of the cell meets the quadrilateral in
-at most two segments, giving at most eight.
+def _jit(function):
+    """
+    Compile one of the shared kernel bodies for the CPU.
 
-A convex quadrilateral is bounded by eight, since the intersection of two
-convex regions has only the edges of its two operands.  The extra four
-appear when the cell is not convex, which is legitimate under a strong
-enough distortion.  Cells whose edges cross each other are not supported,
-as noted in :func:`weights_conservative_2d_clipping`.
-"""
+    Parameters
+    ----------
+    function
+        The plain Python function to compile.
+    """
+    return numba.njit(cache=True, inline="always", error_model="numpy")(function)
+
+
+_num_pair, _clip_cell = _build_shared(_jit, rg.geometry.cross_2d)
 
 
 def grid_is_uniform_rectilinear(
@@ -91,120 +95,49 @@ def grid_is_uniform_rectilinear(
     return True
 
 
-@numba.njit(cache=True, inline="always", error_model="numpy")
-def _clip_halfplane(
-    x_in: np.ndarray,
-    y_in: np.ndarray,
-    num_in: int,
-    axis: int,
-    sign: float,
-    bound: float,
-    x_out: np.ndarray,
-    y_out: np.ndarray,
-) -> int:
-    """
-    Clip a polygon against a half-plane, Sutherland-Hodgman style.
-
-    Vertices are kept where ``sign * (vertex[axis] - bound) >= 0``, and a new
-    vertex is emitted wherever an edge crosses the boundary.  The winding
-    order of the input is preserved, so the signed area of the result carries
-    the orientation of the input.
-
-    Parameters
-    ----------
-    x_in
-        The :math:`x` coordinates of the polygon's vertices.
-    y_in
-        The :math:`y` coordinates of the polygon's vertices.
-    num_in
-        The number of valid vertices in the input polygon.
-    axis
-        The coordinate axis of the half-plane boundary, 0 or 1.
-    sign
-        The side of the boundary to keep.
-    bound
-        The boundary coordinate.
-    x_out
-        An output array for the :math:`x` coordinates of the result.
-    y_out
-        An output array for the :math:`y` coordinates of the result.
-    """
-
-    num_out = 0
-
-    for k in range(num_in):
-
-        x1 = x_in[k]
-        y1 = y_in[k]
-
-        k_next = k + 1
-        if k_next == num_in:
-            k_next = 0
-
-        x2 = x_in[k_next]
-        y2 = y_in[k_next]
-
-        if axis == 0:
-            distance_1 = sign * (x1 - bound)
-            distance_2 = sign * (x2 - bound)
-        else:
-            distance_1 = sign * (y1 - bound)
-            distance_2 = sign * (y2 - bound)
-
-        inside_1 = distance_1 >= 0
-        inside_2 = distance_2 >= 0
-
-        if inside_1:
-            x_out[num_out] = x1
-            y_out[num_out] = y1
-            num_out += 1
-
-        if inside_1 != inside_2:
-            denominator = distance_1 - distance_2
-            if denominator != 0:
-                t = distance_1 / denominator
-                x_out[num_out] = x1 + t * (x2 - x1)
-                y_out[num_out] = y1 + t * (y2 - y1)
-                num_out += 1
-
-    return num_out
-
-
-@numba.njit(cache=True, inline="always", error_model="numpy")
-def _area_signed(
+@numba.njit(cache=True, parallel=True, error_model="numpy")
+def _count_cells(
     x: np.ndarray,
     y: np.ndarray,
-    num: int,
-) -> float:
+    num_cell_output_x: int,
+    num_cell_output_y: int,
+    counts: np.ndarray,
+) -> None:
     """
-    Compute the signed area of a polygon.
+    Count the output cells each input cell can touch.
 
-    Each edge contributes the signed area of the triangle it forms with the
-    origin, via :func:`regridding.geometry.area_triangle`, which is the
-    shoelace sum.
+    The prefix sum of this reserves each cell a slice of the result, which is
+    what makes the clipping pass independent of the thread schedule.
 
     Parameters
     ----------
     x
-        The :math:`x` coordinates of the polygon's vertices.
+        The :math:`x` coordinates of the input grid's vertices, expressed in
+        output-cell units.
     y
-        The :math:`y` coordinates of the polygon's vertices.
-    num
-        The number of valid vertices.
+        The :math:`y` coordinates of the input grid's vertices, expressed in
+        output-cell units.
+    num_cell_output_x
+        The number of output cells along the first axis.
+    num_cell_output_y
+        The number of output cells along the second axis.
+    counts
+        An output array for the per-cell counts.
     """
 
-    result = 0.0
+    num_x = x.shape[0] - 1
+    num_y = x.shape[1] - 1
 
-    for k in range(num):
-        k_next = k + 1
-        if k_next == num:
-            k_next = 0
-        result += rg.geometry.area_triangle(
-            (x[k], y[k]),
-            (x[k_next], y[k_next]),
-        )
-
-    return result
+    for index_x in numba.prange(num_x):
+        for index_y in range(num_y):
+            counts[index_x * num_y + index_y] = _num_pair(
+                x,
+                y,
+                index_x,
+                index_y,
+                num_cell_output_x,
+                num_cell_output_y,
+            )
 
 
 @numba.njit(cache=True, parallel=True, error_model="numpy")
@@ -266,107 +199,24 @@ def _clip_cells(
 
             index_cell = index_x * num_y + index_y
 
-            x1 = x[index_x, index_y]
-            x2 = x[index_x + 1, index_y]
-            x3 = x[index_x + 1, index_y + 1]
-            x4 = x[index_x, index_y + 1]
-
-            y1 = y[index_x, index_y]
-            y2 = y[index_x + 1, index_y]
-            y3 = y[index_x + 1, index_y + 1]
-            y4 = y[index_x, index_y + 1]
-
-            area_cell = (
-                rg.geometry.area_triangle((x1, y1), (x2, y2))
-                + rg.geometry.area_triangle((x2, y2), (x3, y3))
-                + rg.geometry.area_triangle((x3, y3), (x4, y4))
-                + rg.geometry.area_triangle((x4, y4), (x1, y1))
+            _clip_cell(
+                x,
+                y,
+                weights_input,
+                num_cell_output_x,
+                num_cell_output_y,
+                index_x,
+                index_y,
+                index_cell,
+                offset[index_cell],
+                subject_x,
+                subject_y,
+                clipped_x,
+                clipped_y,
+                indices_input,
+                indices_output,
+                values,
             )
-
-            if area_cell == 0:
-                continue
-
-            weight_cell = weights_input[index_x, index_y] / area_cell
-
-            lower_x = int(np.floor(min(min(x1, x2), min(x3, x4))))
-            lower_y = int(np.floor(min(min(y1, y2), min(y3, y4))))
-            upper_x = int(np.ceil(max(max(x1, x2), max(x3, x4))))
-            upper_y = int(np.ceil(max(max(y1, y2), max(y3, y4))))
-
-            if lower_x < 0:
-                lower_x = 0
-            if lower_y < 0:
-                lower_y = 0
-            if upper_x > num_cell_output_x:
-                upper_x = num_cell_output_x
-            if upper_y > num_cell_output_y:
-                upper_y = num_cell_output_y
-
-            index_write = offset[index_cell]
-
-            for cell_x in range(lower_x, upper_x):
-                for cell_y in range(lower_y, upper_y):
-
-                    subject_x[0] = x1
-                    subject_x[1] = x2
-                    subject_x[2] = x3
-                    subject_x[3] = x4
-                    subject_y[0] = y1
-                    subject_y[1] = y2
-                    subject_y[2] = y3
-                    subject_y[3] = y4
-
-                    # the candidate cells come from the bounding box, so the
-                    # cell always overlaps the slab being clipped against in
-                    # `x` and these two clips cannot empty the polygon; only
-                    # the `y` clips below need an early exit
-                    num = _clip_halfplane(
-                        subject_x, subject_y, 4, 0, +1.0, cell_x, clipped_x, clipped_y
-                    )
-                    num = _clip_halfplane(
-                        clipped_x,
-                        clipped_y,
-                        num,
-                        0,
-                        -1.0,
-                        cell_x + 1,
-                        subject_x,
-                        subject_y,
-                    )
-                    num = _clip_halfplane(
-                        subject_x,
-                        subject_y,
-                        num,
-                        1,
-                        +1.0,
-                        cell_y,
-                        clipped_x,
-                        clipped_y,
-                    )
-                    if num < 3:
-                        continue
-                    num = _clip_halfplane(
-                        clipped_x,
-                        clipped_y,
-                        num,
-                        1,
-                        -1.0,
-                        cell_y + 1,
-                        subject_x,
-                        subject_y,
-                    )
-                    if num < 3:
-                        continue
-
-                    area = _area_signed(subject_x, subject_y, num)
-
-                    if area == 0:
-                        continue
-
-                    indices_input[index_write] = index_cell
-                    indices_output[index_write] = cell_x * num_cell_output_y + cell_y
-                    values[index_write] = area * weight_cell
-                    index_write += 1
 
 
 def weights_conservative_2d_clipping(
@@ -449,25 +299,11 @@ def weights_conservative_2d_clipping(
     # an upper bound on the number of output cells each input cell can
     # touch, which reserves each cell a slice of the result and makes the
     # kernel's output independent of the thread schedule
-    lower_x = np.floor(np.minimum(x[:-1, :-1], x[1:, 1:]))
-    lower_x = np.floor(np.minimum(lower_x, np.minimum(x[1:, :-1], x[:-1, 1:])))
-    upper_x = np.ceil(np.maximum(x[:-1, :-1], x[1:, 1:]))
-    upper_x = np.ceil(np.maximum(upper_x, np.maximum(x[1:, :-1], x[:-1, 1:])))
-    lower_y = np.floor(np.minimum(y[:-1, :-1], y[1:, 1:]))
-    lower_y = np.floor(np.minimum(lower_y, np.minimum(y[1:, :-1], y[:-1, 1:])))
-    upper_y = np.ceil(np.maximum(y[:-1, :-1], y[1:, 1:]))
-    upper_y = np.ceil(np.maximum(upper_y, np.maximum(y[1:, :-1], y[:-1, 1:])))
-
-    span_x = np.clip(upper_x, 0, num_cell_output_x) - np.clip(
-        lower_x, 0, num_cell_output_x
-    )
-    span_y = np.clip(upper_y, 0, num_cell_output_y) - np.clip(
-        lower_y, 0, num_cell_output_y
-    )
-    num_pair = np.clip(span_x, 0, None) * np.clip(span_y, 0, None)
+    counts = np.empty(num_x * num_y, dtype=np.int64)
+    _count_cells(x, y, num_cell_output_x, num_cell_output_y, counts)
 
     offset = np.zeros(num_x * num_y + 1, dtype=np.int64)
-    np.cumsum(num_pair.reshape(-1).astype(np.int64), out=offset[1:])
+    np.cumsum(counts, out=offset[1:])
 
     num_total = int(offset[~0])
 

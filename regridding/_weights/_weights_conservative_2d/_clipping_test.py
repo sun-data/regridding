@@ -229,6 +229,42 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(total, 1, atol=1e-12)
 
+    @pytest.mark.parametrize("num_output", [50, 500])
+    def test_conservation_on_a_large_output_grid(self, num_output: int):
+        """
+        Conservation does not decay as the output grid is refined.
+
+        The kernel works in output-cell units, so a cell of a finely divided
+        output grid sits at a large coordinate.  The shoelace formula sums
+        products of coordinates and then cancels almost all of the total
+        away, so evaluating it at that scale would lose precision as the
+        square of the number of output cells.  Each cell is therefore shifted
+        onto the block of output cells it touches before being clipped, which
+        keeps the arithmetic at the scale of a cell.
+
+        Without that shift a 500 by 500 output grid conserves area only to
+        about ``1e-10``, and a 5000 by 5000 one only to about ``1e-8``.
+        """
+        span = 2.0
+
+        # a small distorted patch, sitting near the far corner of the output
+        # grid where the coordinates are largest
+        x, y = _distorted(9)
+        scale = 3 * span / num_output
+        grid_input = (x * scale + 0.9 * span, y * scale + 0.9 * span)
+
+        grid_output = _lattice(num_output + 1, num_output + 1, start=0, stop=span)
+
+        indices_input, _, values = weights_conservative_2d_clipping(
+            grid_input,
+            grid_output,
+        )
+
+        total = np.zeros(_num_cells(grid_input))
+        np.add.at(total, indices_input, values)
+
+        assert np.allclose(total, 1, rtol=0, atol=1e-14)
+
     def test_weights_input(self):
         """`weights_input` scales each input cell's row."""
         grid_input = _distorted(9)

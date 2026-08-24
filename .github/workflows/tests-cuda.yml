@@ -71,19 +71,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends             "cuda-nvcc-${CUDA_VERSION//./-}"             "cuda-cudart-dev-${CUDA_VERSION//./-}"
           echo "CUDA_HOME=/usr/local/cuda-${CUDA_VERSION}" >> "$GITHUB_ENV"
-      - name: Diagnose the CUDA setup
-        run: |
-          echo "CUDA_HOME=$CUDA_HOME"
-          ls "$CUDA_HOME/nvvm/lib64" "$CUDA_HOME/nvvm/libdevice" 2>&1 | head
-          python -c "
-          from numba.cuda.cuda_paths import get_cuda_paths
-          for k, v in get_cuda_paths().items():
-              print(f'  {k:20s} by={v.by} info={v.info}')
-          from numba.cuda.cudadrv.runtime import runtime
-          print('  cudart:', runtime.get_version())
-          from numba.cuda.cudadrv import nvvm
-          print('  supported ccs:', nvvm.get_supported_ccs())
-          " || true
       - name: Confirm the device is visible to numba
         run: |
           python -c "from numba import cuda; assert cuda.is_available(); print(cuda.get_current_device().name)"

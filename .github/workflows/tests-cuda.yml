@@ -5,6 +5,11 @@ name: tests-cuda
 # CUDA device, which the standard runners do not have, so its tests skip
 # everywhere else.  This job runs them on a GPU runner.
 #
+# The runner is named by the `GPU_RUNNER` repository variable, and the job is
+# skipped while that is unset, so this file does nothing until somebody
+# provisions a runner and points the variable at it.  Without the guard the
+# job would queue forever waiting for a runner which does not exist.
+#
 # The runner is a GitHub-hosted larger runner and is billed by the minute
 # even though this repository is public, so the job is kept small: it is
 # cancelled when superseded, capped by a timeout, and never run for a pull
@@ -23,11 +28,13 @@ concurrency:
 jobs:
   cuda:
     name: GPU, Python 3.13 test
-    # a fork cannot be trusted with a runner which costs money to start
+    # skipped until a runner exists, and never run for a fork, which cannot be
+    # trusted with a runner that costs money to start
     if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: gpu-runner
+      vars.GPU_RUNNER != '' &&
+      (github.event_name == 'push' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ vars.GPU_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

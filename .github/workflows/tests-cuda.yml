@@ -53,6 +53,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
           pip install -e .[test,cuda]
+      - name: Diagnose the CUDA setup
+        run: |
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+          echo "--- libcuda on the image ---"
+          ldconfig -p | grep -iE "libcuda|libnvvm" || echo "none in ldconfig"
+          find / -name "libcuda.so*" -not -path "/proc/*" 2>/dev/null | head
+          echo "--- numba system report ---"
+          python -m numba -s 2>&1 | sed -n "/CUDA Information/,/Numba Environment/p" || true
+          echo "--- numba detect ---"
+          python -c "from numba import cuda; cuda.detect()" 2>&1 || true
       - name: Confirm the device is visible to numba
         run: |
           python -c "from numba import cuda; assert cuda.is_available(); print(cuda.get_current_device().name)"

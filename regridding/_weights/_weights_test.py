@@ -282,3 +282,89 @@ class TestClippingApplicable:
             values_input=values,
         )
         assert np.all(np.isfinite(result))
+
+
+class TestDtype:
+    """
+    The weights are computed in double precision regardless; only the stored
+    result is narrowed, which halves what a large operator costs to keep.
+    """
+
+    def _triple(self, **kwargs):
+        return _flat(_weights_conservative(**kwargs))
+
+    def test_default_is_wide(self):
+        indices_input, indices_output, values = self._triple()
+        assert indices_input.dtype == np.int64
+        assert indices_output.dtype == np.int64
+        assert values.dtype == np.float64
+
+    def test_narrowed(self):
+        indices_input, indices_output, values = self._triple(
+            dtype_indices=np.int32,
+            dtype_values=np.float32,
+        )
+        assert indices_input.dtype == np.int32
+        assert indices_output.dtype == np.int32
+        assert values.dtype == np.float32
+
+    def test_indices_only(self):
+        indices_input, _, values = self._triple(dtype_indices=np.int32)
+        assert indices_input.dtype == np.int32
+        assert values.dtype == np.float64
+
+    def test_values_only(self):
+        indices_input, _, values = self._triple(dtype_values=np.float32)
+        assert indices_input.dtype == np.int64
+        assert values.dtype == np.float32
+
+    def test_indices_unchanged(self):
+        """Narrowing the indices must not move them."""
+        wide = self._triple()
+        narrow = self._triple(dtype_indices=np.int32)
+        assert np.array_equal(wide[0], narrow[0])
+        assert np.array_equal(wide[1], narrow[1])
+
+    def test_conserved(self):
+        """
+        Narrowing costs each input cell only single-precision rounding.
+
+        The comparison is against the wide weights rather than against one,
+        since a cell at the edge of the output grid is only partly covered
+        and its total is legitimately less than one.
+        """
+
+        def totals(**kwargs):
+            indices_input, _, values = self._triple(**kwargs)
+            total = np.zeros(indices_input.max() + 1)
+            np.add.at(total, indices_input, values.astype(np.float64))
+            return total
+
+        wide = totals()
+        narrow = totals(dtype_values=np.float32)
+
+        assert np.allclose(narrow, wide, rtol=1e-6, atol=0)
+        # and the fully covered cells still sum to one
+        full = np.isclose(wide, 1, atol=1e-12)
+        assert full.any()
+        assert np.allclose(narrow[full], 1, atol=1e-6)
+
+    def test_same_result_when_applied(self):
+        """Narrowed weights regrid a scene to the same answer."""
+        results = []
+        for kwargs in (dict(), dict(dtype_indices=np.int32, dtype_values=np.float32)):
+            weights, shape_input, shape_output = _weights_conservative(**kwargs)
+            results.append(
+                regridding.regrid_from_weights(
+                    weights=weights,
+                    shape_input=shape_input,
+                    shape_output=shape_output,
+                    values_input=values_input,
+                )
+            )
+        assert np.allclose(results[0], results[1], rtol=1e-6)
+
+    def test_index_overflow(self):
+        """An index which does not fit raises instead of wrapping around."""
+        with pytest.raises(ValueError, match="does not fit in int8"):
+            _weights_conservative(dtype_indices=np.int8)

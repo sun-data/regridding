@@ -10,6 +10,70 @@ __all__ = [
 ]
 
 
+def _weights_astype(
+    weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+    dtype_indices: None | np.typing.DTypeLike,
+    dtype_values: None | np.typing.DTypeLike,
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+    """
+    Store each element's flat arrays as narrower types.
+
+    This is the last step of a build, so the geometry and any merging of
+    repeated pairs have already been done in double precision and only the
+    stored result is narrowed.
+
+    Parameters
+    ----------
+    weights
+        Array of per-element flat weight arrays.
+    dtype_indices
+        The type to store the indices as, or :obj:`None` to leave them.
+    dtype_values
+        The type to store the weights as, or :obj:`None` to leave them.
+
+    Raises
+    ------
+    ValueError
+        If an index does not fit in `dtype_indices`.  Letting it wrap around
+        would address the wrong cell instead of failing.
+    """
+
+    array, shape_input, shape_output = weights
+
+    info = None if dtype_indices is None else np.iinfo(dtype_indices)
+
+    flat = array.reshape(-1)
+
+    for k in range(flat.size):
+
+        indices_input, indices_output, values = flat[k]
+
+        if info is not None:
+            for indices, name in (
+                (indices_input, "input"),
+                (indices_output, "output"),
+            ):
+                if not indices.size:  # pragma: nocover
+                    continue
+                index_min = indices.min()
+                index_max = indices.max()
+                if index_min < info.min or index_max > info.max:
+                    raise ValueError(
+                        f"the {name} indices span [{index_min}, {index_max}], "
+                        f"which does not fit in {np.dtype(dtype_indices)} "
+                        f"([{info.min}, {info.max}])"
+                    )
+            indices_input = indices_input.astype(dtype_indices)
+            indices_output = indices_output.astype(dtype_indices)
+
+        if dtype_values is not None:
+            values = values.astype(dtype_values)
+
+        flat[k] = (indices_input, indices_output, values)
+
+    return array, shape_input, shape_output
+
+
 def weights(
     coordinates_input: tuple[np.ndarray, ...],
     coordinates_output: tuple[np.ndarray, ...],
@@ -21,6 +85,8 @@ def weights(
     perturb: None | bool = None,
     seed: "None | int | np.random.Generator" = _util._seed_default,
     coalesce: bool = True,
+    dtype_indices: None | np.typing.DTypeLike = None,
+    dtype_values: None | np.typing.DTypeLike = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -98,6 +164,24 @@ def weights(
         duplicates during the scatter-add either way.  This is the better
         choice when the grid changes on every call, so each set of weights
         is applied once and there is nothing to amortize the sort against.
+    dtype_indices
+        The type to store the indices as.
+        If :obj:`None` (the default), they are left as :class:`numpy.int64`.
+
+        The indices address flattened grids, so :class:`numpy.int32` is
+        enough for any grid with fewer than about two billion cells and
+        halves what they cost to store.  A range which does not fit raises
+        rather than wrapping around.
+    dtype_values
+        The type to store the weights as.
+        If :obj:`None` (the default), they are left as :class:`numpy.float64`.
+
+        The weights are computed and, if `coalesce` is set, summed in double
+        precision regardless; only the stored result is narrowed.  Storing
+        them as :class:`numpy.float32` halves their size and costs about
+        5e-8 in the total weight of each input cell, since
+        :func:`regridding.regrid_from_weights` accumulates into a double
+        precision array.
 
     See Also
     --------
@@ -202,6 +286,13 @@ def weights(
 
     if coalesce:
         result = _weights_to_arrays(result)
+
+    if dtype_indices is not None or dtype_values is not None:
+        result = _weights_astype(
+            weights=result,
+            dtype_indices=dtype_indices,
+            dtype_values=dtype_values,
+        )
 
     if unit_weights is not None:
         array, shape_input, shape_output = result

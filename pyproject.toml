@@ -33,6 +33,10 @@ test = [
     "scipy",
     "astropy",
 ]
+cuda = [
+    # `numba.cuda` supplies the kernels, but not a prefix sum
+    "torch",
+]
 doc = [
     "pytest",
     "scipy",
@@ -70,6 +74,9 @@ regridding = ["py.typed"]
 [tool.coverage.run]
 omit = [
     "benchmarks/*",
+    # the device kernel only runs where there is a CUDA device, which the
+    # test runners do not have
+    "regridding/_weights/_weights_conservative_2d/_clipping_cuda.py",
 ]
 
 [tool.ruff.lint]

@@ -9,6 +9,7 @@ from ._weights_conservative_1d import weights_conservative_1d
 from ._weights_conservative_2d import (
     weights_conservative_2d,
     weights_conservative_2d_clipping,
+    weights_conservative_2d_clipping_cuda,
     grid_is_uniform_rectilinear,
 )
 
@@ -73,6 +74,8 @@ def _weights_conservative(
     weights_input: None | np.ndarray = None,
     perturb: None | bool = True,
     seed: "None | int | np.random.Generator" = _util._seed_default,
+    device: None | str = None,
+    dtype: None | np.typing.DTypeLike = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
 
     if perturb is None:
@@ -99,6 +102,12 @@ def _weights_conservative(
         axis_output=normalized[3],
         shape_orthogonal=normalized[6],
     )
+
+    if device is not None and not clipping:
+        raise ValueError(
+            f"{device=} needs the clipping kernel, which needs the output "
+            f"grid to be a uniform, axis-aligned lattice"
+        )
 
     if perturb and not clipping:
         normalized = _util._normalize_input_output_coordinates(
@@ -214,7 +223,14 @@ def _weights_conservative(
                     coordinates_output_y[index_vertices_output],
                 )
 
-                if clipping:
+                if device is not None:
+                    weights[index] = weights_conservative_2d_clipping_cuda(
+                        grid_input=grid_input_index,
+                        grid_output=grid_output_index,
+                        weights_input=weights_input_index,
+                        dtype=np.float64 if dtype is None else dtype,
+                    )
+                elif clipping:
                     weights[index] = weights_conservative_2d_clipping(
                         grid_input=grid_input_index,
                         grid_output=grid_output_index,

@@ -108,6 +108,7 @@ def weights(
     coalesce: bool = True,
     dtype_indices: None | np.typing.DTypeLike = None,
     dtype_values: None | np.typing.DTypeLike = None,
+    device: None | str = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -203,6 +204,35 @@ def weights(
         5e-8 in the total weight of each input cell, since
         :func:`regridding.regrid_from_weights` accumulates into a double
         precision array.
+    device
+        The device to build the weights on.
+        If :obj:`None` (the default), they are built on the host as
+        :class:`numpy.ndarray`.
+
+        Passing ``"cuda"`` builds them with a CUDA kernel and leaves them
+        in device memory, as
+        :class:`numba.cuda.cudadrv.devicearray.DeviceNDArray`.  Those
+        expose ``__cuda_array_interface__``, so :func:`torch.as_tensor`
+        wraps them without copying::
+
+            indices_input, indices_output, values = weights[()]
+            keep = torch.as_tensor(indices_input, device="cuda") >= 0
+            image.index_add_(
+                0,
+                torch.as_tensor(indices_output, device="cuda")[keep],
+                torch.as_tensor(values, device="cuda")[keep] * scene[...],
+            )
+
+        :func:`regridding.regrid_from_weights` runs on the host and does
+        not accept them; applying them is left to the caller, which is
+        already where the scene lives in this case.
+
+        This needs the output grid to be a uniform, axis-aligned lattice,
+        since only the clipping kernel is ported, and it needs `coalesce`
+        to be :obj:`False`, since merging repeated pairs is not.
+
+        Slots which received no overlap carry an index of ``-1`` and
+        should be dropped, as in the snippet above.
 
     See Also
     --------
@@ -281,6 +311,16 @@ def weights(
     if unit_weights is not None:
         weights_input = getattr(weights_input, "value")
 
+    if device is not None:
+        if method != "conservative":
+            raise ValueError(f"{device=} is only supported by the conservative method")
+        if coalesce:
+            raise ValueError(
+                f"{device=} needs `coalesce=False`; merging repeated pairs is "
+                f"not ported to the device, and weights which are applied once "
+                f"have nothing to amortize the merge against"
+            )
+
     if method == "multilinear":
         result = _weights_multilinear(
             coordinates_input=coordinates_input,
@@ -301,6 +341,7 @@ def weights(
             weights_input=weights_input,
             perturb=perturb,
             seed=seed,
+            device=device,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")

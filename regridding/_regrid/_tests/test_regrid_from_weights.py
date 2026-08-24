@@ -110,6 +110,10 @@ class TestWeightsArrayFormat:
             coordinates_output=(x_output_broadcasted, y_output_broadcasted),
             values_input=values_input,
             method="conservative",
+            # `weights()` coalesces by default and `regrid()` does not, so ask
+            # for the same representation on both sides; summing the same
+            # fragments in a different order would agree only to rounding
+            coalesce=True,
         )
         assert result.shape == result_expected.shape
         # regrid() builds its own weights, but the grid perturbation is seeded,

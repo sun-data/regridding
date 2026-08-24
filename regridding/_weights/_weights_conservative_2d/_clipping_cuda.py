@@ -24,6 +24,10 @@ __all__ = [
     "weights_conservative_2d_clipping_cuda",
 ]
 
+# `numba` declares several of the names below as intrinsics or with
+# annotations which describe how the compiler calls them rather than how a
+# kernel does, so the calls to them carry `type: ignore` comments.
+
 
 def _jit(function: Callable) -> Any:
     """
@@ -82,7 +86,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
         The prefix sum of this is where each cell writes its result, which is
         what lets the cells run independently.
         """
-        index = cuda.grid(1)
+        index = cuda.grid(1)  # type: ignore[call-arg]
         num_y = x.shape[1] - 1
         if index >= (x.shape[0] - 1) * num_y:
             return
@@ -109,7 +113,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
         Slots which receive no overlap keep the sentinel index of ``-1`` they
         were initialized with, and are dropped by the caller.
         """
-        index = cuda.grid(1)
+        index = cuda.grid(1)  # type: ignore[call-arg]
         num_y = x.shape[1] - 1
         if index >= (x.shape[0] - 1) * num_y:
             return
@@ -148,7 +152,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
 @cuda.jit
 def _fill(a, value):
     """Fill a device array, which is cheaper than sending one from the host."""
-    i = cuda.grid(1)
+    i = cuda.grid(1)  # type: ignore[call-arg]
     if i < a.size:
         a[i] = value
 
@@ -207,7 +211,9 @@ def _prefix_sum(counts: Any, num_cell: int) -> tuple[Any, int]:
         The number of input cells.
     """
     try:
-        import torch
+        # an optional dependency, so it is absent from the environment the
+        # type checker runs in
+        import torch  # type: ignore[import-not-found]
     except ImportError as error:  # pragma: nocover
         raise ImportError(
             "building weights on a device needs `torch`, which provides the "

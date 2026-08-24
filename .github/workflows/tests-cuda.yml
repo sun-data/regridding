@@ -20,6 +20,9 @@ on:
     branches:
       - main
   pull_request:
+  # so the device tests can be run against a branch on demand, without
+  # having to push a commit to provoke them
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

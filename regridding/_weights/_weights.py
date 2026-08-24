@@ -36,11 +36,30 @@ def _weights_astype(
     ValueError
         If an index does not fit in `dtype_indices`.  Letting it wrap around
         would address the wrong cell instead of failing.
+
+    Notes
+    -----
+    The indices are only scanned when the number of cells does not already
+    fit in `dtype_indices`, since the grids bound them.  Scanning is more
+    expensive than the conversion itself: the arrays of indices are usually
+    several times larger than the grids they address.
     """
 
     array, shape_input, shape_output = weights
 
     info = None if dtype_indices is None else np.iinfo(dtype_indices)
+
+    # The indices address the flattened grids, so their magnitude cannot
+    # exceed the number of cells, which is known without looking at them.
+    # When that bound already fits there is nothing to check, which saves
+    # scanning arrays that are usually far larger than the grids are.
+    if info is not None:
+        bound = max(
+            int(np.prod(shape_input)),
+            int(np.prod(shape_output)),
+        )
+        if bound <= info.max and -bound >= info.min:
+            info = None
 
     flat = array.reshape(-1)
 
@@ -63,6 +82,8 @@ def _weights_astype(
                         f"which does not fit in {np.dtype(dtype_indices)} "
                         f"([{info.min}, {info.max}])"
                     )
+
+        if dtype_indices is not None:
             indices_input = indices_input.astype(dtype_indices)
             indices_output = indices_output.astype(dtype_indices)
 

@@ -119,10 +119,41 @@ def _bounds(
     num_output_y
         The number of output cells along the second axis.
     """
-    lower_x: float = min(min(x1, x2), min(x3, x4))
-    upper_x: float = max(max(x1, x2), max(x3, x4))
-    lower_y: float = min(min(y1, y2), min(y3, y4))
-    upper_y: float = max(max(y1, y2), max(y3, y4))
+    # `min` and `max` are written out rather than called.  A two-argument
+    # `min` does not compile for a CUDA device under `numba` 0.67, where it
+    # resolves to the single-iterable form and raises a signature mismatch,
+    # and this source has to compile for both targets.
+    lower_x = x1
+    if x2 < lower_x:
+        lower_x = x2
+    if x3 < lower_x:
+        lower_x = x3
+    if x4 < lower_x:
+        lower_x = x4
+
+    upper_x = x1
+    if x2 > upper_x:
+        upper_x = x2
+    if x3 > upper_x:
+        upper_x = x3
+    if x4 > upper_x:
+        upper_x = x4
+
+    lower_y = y1
+    if y2 < lower_y:
+        lower_y = y2
+    if y3 < lower_y:
+        lower_y = y3
+    if y4 < lower_y:
+        lower_y = y4
+
+    upper_y = y1
+    if y2 > upper_y:
+        upper_y = y2
+    if y3 > upper_y:
+        upper_y = y3
+    if y4 > upper_y:
+        upper_y = y4
 
     # floor and ceil, without leaving the integer domain the caller needs
     index_lower_x = int(lower_x)

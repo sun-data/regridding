@@ -55,14 +55,28 @@ jobs:
           pip install -e .[test,cuda]
       - name: Diagnose the CUDA setup
         run: |
-          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-          echo "--- libcuda on the image ---"
-          ldconfig -p | grep -iE "libcuda|libnvvm" || echo "none in ldconfig"
-          find / -name "libcuda.so*" -not -path "/proc/*" 2>/dev/null | head
-          echo "--- numba system report ---"
-          python -m numba -s 2>&1 | sed -n "/CUDA Information/,/Numba Environment/p" || true
-          echo "--- numba detect ---"
-          python -c "from numba import cuda; cuda.detect()" 2>&1 || true
+          echo "CUDA_HOME=$CUDA_HOME  CUDA_PATH=$CUDA_PATH"
+          echo "--- /usr/local ---"
+          ls /usr/local | grep -i cuda || echo "no cuda under /usr/local"
+          echo "--- nvcc ---"
+          which nvcc || echo "no nvcc on PATH"
+          echo "--- libnvvm ---"
+          find / -name "libnvvm*" -not -path "/proc/*" 2>/dev/null | head
+          echo "--- libdevice ---"
+          find / -name "libdevice*" -not -path "/proc/*" 2>/dev/null | head
+          echo "--- libcudart ---"
+          find / -name "libcudart.so*" -not -path "/proc/*" 2>/dev/null | head
+          echo "--- numba paths ---"
+          python -c "
+          from numba.cuda.cuda_paths import get_cuda_paths
+          for k, v in get_cuda_paths().items():
+              print(f'  {k:20s} by={v.by} info={v.info}')
+          " || true
+          echo "--- runtime version ---"
+          python -c "
+          from numba.cuda.cudadrv.runtime import runtime
+          print('  cudart:', runtime.get_version())
+          " 2>&1 | tail -3 || true
       - name: Confirm the device is visible to numba
         run: |
           python -c "from numba import cuda; assert cuda.is_available(); print(cuda.get_current_device().name)"

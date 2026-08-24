@@ -87,15 +87,17 @@ jobs:
       - name: Confirm the device is visible to numba
         run: |
           python -c "from numba import cuda; assert cuda.is_available(); print(cuda.get_current_device().name)"
-      - name: Test with pytest
+      # only the device tests: everything else is covered by the twelve jobs
+      # in `tests.yml`, and this runner is billed by the minute
+      - name: Test the device kernel
         run: |
           pip install pytest pytest-cov
-          pytest --cov=regridding --cov-report=xml
-      - name: Test with Numba disabled
+          pytest regridding/_weights/_weights_conservative_2d/_clipping_cuda_test.py             -v --cov=regridding --cov-report=xml
+      - name: Test the device kernel with Numba disabled
         env:
           NUMBA_DISABLE_JIT: 1
         run: |
-          pytest --cov=regridding --cov-report=xml
+          pytest regridding/_weights/_weights_conservative_2d/_clipping_cuda_test.py             --cov=regridding --cov-report=xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:

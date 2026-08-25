@@ -178,6 +178,57 @@ class TestWeightsConservative2dClippingCuda:
         np.add.at(expected_total, expected[0], expected[2])
         assert np.allclose(total, expected_total, rtol=0, atol=1e-6)
 
+    @requires_cuda
+    def test_grid_input_on_device(self):
+        """A grid already on the device is used where it is, in cell units."""
+        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+
+        grid_input = _distorted(21)
+        grid_output = _lattice(9, 11)
+
+        x_output, y_output = grid_output
+        origin_x = float(x_output[0, 0])
+        origin_y = float(y_output[0, 0])
+        step_x = float(x_output[1, 0] - x_output[0, 0])
+        step_y = float(y_output[0, 1] - y_output[0, 0])
+        resident = (
+            cuda.to_device(np.ascontiguousarray((grid_input[0] - origin_x) / step_x)),
+            cuda.to_device(np.ascontiguousarray((grid_input[1] - origin_y) / step_y)),
+        )
+
+        result = _host(weights_conservative_2d_clipping_cuda(resident, grid_output))
+        expected = _host(weights_conservative_2d_clipping_cuda(grid_input, grid_output))
+
+        for got, want in zip(result, expected):
+            assert np.array_equal(got, want)
+
+    @requires_cuda
+    def test_weights_input_on_device(self):
+        """`weights_input` already on the device is used where it is."""
+        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+
+        grid_input = _distorted(21)
+        grid_output = _lattice(9, 11)
+        weights_input = np.arange(1, 20 * 20 + 1, dtype=float).reshape(20, 20)
+
+        result = _host(
+            weights_conservative_2d_clipping_cuda(
+                grid_input,
+                grid_output,
+                weights_input=cuda.to_device(np.ascontiguousarray(weights_input)),
+            )
+        )
+        expected = _host(
+            weights_conservative_2d_clipping_cuda(
+                grid_input,
+                grid_output,
+                weights_input=weights_input,
+            )
+        )
+
+        for got, want in zip(result, expected):
+            assert np.array_equal(got, want)
+
 
 class TestDeviceRejected:
     """The cases the device path cannot serve are refused, not mishandled."""

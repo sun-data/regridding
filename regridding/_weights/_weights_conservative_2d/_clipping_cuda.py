@@ -79,7 +79,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
     )
 
     @cuda.jit
-    def count_cells(x, y, num_output_x, num_output_y, counts):
+    def count_cells(x, y, num_output_x, num_output_y, counts):  # pragma: nocover
         """
         Count the output cells each input cell can touch.
 
@@ -96,7 +96,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
         counts[index] = num_pair(x, y, index_x, index_y, num_output_x, num_output_y)
 
     @cuda.jit
-    def clip_cells(
+    def clip_cells(  # pragma: nocover
         x,
         y,
         weights_input,
@@ -149,8 +149,10 @@ def _build(ftype: Any) -> tuple[Any, Any]:
     return count_cells, clip_cells
 
 
+# the kernels in this module run on the device, where `coverage` cannot
+# follow them, so their bodies are left out of the report
 @cuda.jit
-def _fill(a, value):
+def _fill(a, value):  # pragma: nocover
     """Fill a device array, which is cheaper than sending one from the host."""
     i = cuda.grid(1)  # type: ignore[call-arg]
     if i < a.size:

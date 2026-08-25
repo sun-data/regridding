@@ -74,12 +74,6 @@ regridding = ["py.typed"]
 [tool.coverage.run]
 omit = [
     "benchmarks/*",
-    # The kernels in this module are compiled and run on the device, where
-    # `coverage` cannot follow them, so it reports their bodies as missed
-    # even on a runner which has a device and does execute them.  They are
-    # covered by the `tests-cuda` workflow instead.  The algorithm itself is
-    # not here: it is in `_clipping_shared`, which the host tests exercise.
-    "regridding/_weights/_weights_conservative_2d/_clipping_cuda.py",
 ]
 
 [tool.ruff.lint]

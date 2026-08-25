@@ -77,17 +77,18 @@ jobs:
       # Only the device tests.  Everything else is covered by the twelve jobs
       # in `tests.yml`, and this runner is billed by the minute, so running
       # the whole suite here would cost several times as much to learn
-      # nothing new.  `-k cuda` selects by module name, so a new device test
-      # module is picked up as long as it is named for what it tests.
+      # nothing new.  They are selected by the `cuda` mark, which is also
+      # what skips them where there is no device, so a test declares what
+      # it needs once and cannot be missed here by being named differently.
       - name: Test the device kernels
         run: |
           pip install pytest pytest-cov
-          pytest regridding -k cuda -v --cov=regridding --cov-report=xml
+          pytest regridding -m cuda -v --cov=regridding --cov-report=xml
       - name: Test the device kernels with Numba disabled
         env:
           NUMBA_DISABLE_JIT: 1
         run: |
-          pytest regridding -k cuda --cov=regridding --cov-report=xml
+          pytest regridding -m cuda --cov=regridding --cov-report=xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:

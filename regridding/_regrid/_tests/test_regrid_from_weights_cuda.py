@@ -3,17 +3,15 @@ import numpy as np
 import astropy.units as u
 import regridding
 
-try:
-    from numba import cuda
+from numba import cuda
 
-    _available = cuda.is_available()
-except ImportError:  # pragma: nocover
-    _available = False
+requires_cuda = pytest.mark.cuda
+"""
+Mark a test as needing a CUDA device.
 
-requires_cuda = pytest.mark.skipif(
-    not _available,
-    reason="a CUDA device is needed to apply weights on the device",
-)
+The mark is what the `tests-cuda` workflow selects on and what `conftest`
+skips on, so a test says once that it needs a device.
+"""
 
 
 def _grids(num_input: int = 20, num_output: int = 12):

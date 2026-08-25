@@ -3,17 +3,15 @@ import numpy as np
 import regridding
 from ._clipping import weights_conservative_2d_clipping
 
-try:
-    from numba import cuda
+from numba import cuda
 
-    _available = cuda.is_available()
-except ImportError:  # pragma: nocover
-    _available = False
+requires_cuda = pytest.mark.cuda
+"""
+Mark a test as needing a CUDA device.
 
-requires_cuda = pytest.mark.skipif(
-    not _available,
-    reason="a CUDA device is needed to run the device kernel",
-)
+The mark is what the `tests-cuda` workflow selects on and what `conftest`
+skips on, so a test says once that it needs a device.
+"""
 
 
 def _lattice(num_x, num_y, start=0, stop=1):

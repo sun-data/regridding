@@ -13,6 +13,7 @@ from numba import cuda
 from numba.cuda.cudadrv import driver
 
 __all__ = [
+    "available",
     "allocate",
     "fill",
     "zeros",
@@ -20,6 +21,19 @@ __all__ = [
 
 _threads = 256
 """The number of threads in each block, where nothing better is known."""
+
+
+def available() -> bool:
+    """
+    Test whether there is a CUDA device to build weights on.
+
+    This is what ``device="cuda"`` needs, so it is worth asking before
+    passing it rather than catching the failure.
+    """
+    try:
+        return cuda.is_available()
+    except Exception:  # pragma: nocover
+        return False
 
 
 # this runs on the device, where `coverage` cannot follow it, so it reports

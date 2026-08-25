@@ -236,10 +236,10 @@ def weights(
         :func:`regridding.regrid_from_weights` skips them; anything else
         reading the weights directly has to drop them.
 
-        `dtype_values` selects the precision the kernel clips in, rather
-        than being applied to the result afterwards.  `dtype_indices` is
-        not supported, since the kernel addresses its slots with
-        :class:`numpy.int64`.
+        `dtype_values` and `dtype_indices` select what the kernel builds
+        in, rather than being applied to the result afterwards.  Whether
+        the indices fit is decided from the size of the grids before any
+        are written, rather than by scanning them once they are.
 
     See Also
     --------
@@ -327,11 +327,6 @@ def weights(
                 f"not ported to the device, and weights which are applied once "
                 f"have nothing to amortize the merge against"
             )
-        if dtype_indices is not None:
-            raise ValueError(
-                f"{dtype_indices=} is not supported with {device=}; the device "
-                f"kernel addresses its slots with `numpy.int64`"
-            )
 
     if method == "multilinear":
         result = _weights_multilinear(
@@ -355,6 +350,7 @@ def weights(
             seed=seed,
             device=device,
             dtype=dtype_values,
+            dtype_indices=dtype_indices,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")

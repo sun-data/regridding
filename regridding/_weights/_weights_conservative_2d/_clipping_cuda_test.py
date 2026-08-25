@@ -265,6 +265,60 @@ class TestWeightsConservative2dClippingCuda:
         assert np.array_equal(values[empty], np.zeros(empty.sum()))
 
 
+class TestDtypeIndices:
+    """The indices are built in the type asked for, not narrowed afterwards."""
+
+    @pytest.mark.parametrize("dtype_indices", [np.int32, np.int64])
+    @requires_cuda
+    def test_matches_host(self, dtype_indices: np.typing.DTypeLike):
+        grid_input = _distorted(21)
+        grid_output = _lattice(9, 11)
+
+        weights = regridding.weights(
+            coordinates_input=grid_input,
+            coordinates_output=grid_output,
+            method="conservative",
+            coalesce=False,
+            device="cuda",
+            dtype_indices=dtype_indices,
+        )
+        indices_input, indices_output, values = weights[0].reshape(-1)[0]
+
+        assert indices_input.dtype == dtype_indices
+        assert indices_output.dtype == dtype_indices
+
+        # the sentinel survives being written in a narrower type
+        got = _host((indices_input, indices_output, values))
+        expected = weights_conservative_2d_clipping(grid_input, grid_output)
+
+        total = np.zeros(20 * 20)
+        np.add.at(total, got[0].astype(np.int64), got[2])
+        expected_total = np.zeros(20 * 20)
+        np.add.at(expected_total, expected[0], expected[2])
+
+        assert np.allclose(total, expected_total, rtol=0, atol=1e-12)
+
+    @requires_cuda
+    def test_narrower_indices_are_smaller(self):
+        """Which is the point: half the memory for the same weights."""
+        grid_input = _distorted(21)
+        grid_output = _lattice(9, 11)
+
+        def built(dtype_indices):
+            weights = regridding.weights(
+                coordinates_input=grid_input,
+                coordinates_output=grid_output,
+                method="conservative",
+                coalesce=False,
+                device="cuda",
+                dtype_indices=dtype_indices,
+            )
+            indices_input, indices_output, _ = weights[0].reshape(-1)[0]
+            return indices_input.nbytes + indices_output.nbytes
+
+        assert built(np.int32) * 2 == built(np.int64)
+
+
 class TestDeviceRejected:
     """The cases the device path cannot serve are refused, not mishandled."""
 
@@ -289,15 +343,18 @@ class TestDeviceRejected:
                 device="cuda",
             )
 
-    def test_dtype_indices(self):
-        with pytest.raises(ValueError, match="addresses its slots"):
+    @requires_cuda
+    def test_dtype_indices_too_narrow(self):
+        """A grid too large for the index type is refused before it is built."""
+        # 20 by 20 cells, so an index runs to 399 where `int8` stops at 127
+        with pytest.raises(ValueError, match="does not fit in int8"):
             regridding.weights(
-                coordinates_input=self.grid_input,
-                coordinates_output=self.grid_output,
+                coordinates_input=_distorted(21),
+                coordinates_output=_lattice(9, 11),
                 method="conservative",
                 coalesce=False,
                 device="cuda",
-                dtype_indices=np.int32,
+                dtype_indices=np.int8,
             )
 
     def test_output_not_a_lattice(self):

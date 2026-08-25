@@ -76,6 +76,7 @@ def _weights_conservative(
     seed: "None | int | np.random.Generator" = _util._seed_default,
     device: None | str = None,
     dtype: None | np.typing.DTypeLike = None,
+    dtype_indices: None | np.typing.DTypeLike = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
 
     if perturb is None:
@@ -229,6 +230,9 @@ def _weights_conservative(
                         grid_output=grid_output_index,
                         weights_input=weights_input_index,
                         dtype=np.float64 if dtype is None else dtype,
+                        dtype_indices=(
+                            np.int64 if dtype_indices is None else dtype_indices
+                        ),
                     )
                 elif clipping:
                     weights[index] = weights_conservative_2d_clipping(

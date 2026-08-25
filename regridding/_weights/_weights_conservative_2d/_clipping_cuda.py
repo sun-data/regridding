@@ -158,6 +158,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
 def _allocate_result(
     num: int,
     dtype: np.typing.DTypeLike,
+    dtype_indices: np.typing.DTypeLike,
 ) -> tuple[Any, Any, Any]:
     """
     Allocate the three result arrays, initialized as the host leaves them.
@@ -174,10 +175,13 @@ def _allocate_result(
         The number of slots to reserve.
     dtype
         The type of the weights.
+    dtype_indices
+        The type of the indices.  The sentinel is every bit set whatever
+        the width, so it costs the same to leave.
     """
     return (
-        _cuda.fill(_cuda.allocate(num, np.int64), -1),
-        _cuda.zeros(num, np.int64),
+        _cuda.fill(_cuda.allocate(num, dtype_indices), -1),
+        _cuda.zeros(num, dtype_indices),
         _cuda.zeros(num, dtype),
     )
 
@@ -216,6 +220,7 @@ def weights_conservative_2d_clipping_cuda(
     grid_output: tuple[np.ndarray, np.ndarray],
     weights_input: None | np.ndarray = None,
     dtype: np.typing.DTypeLike = np.float64,
+    dtype_indices: np.typing.DTypeLike = np.int64,
     threads: int = 128,
 ) -> tuple:
     """
@@ -241,6 +246,9 @@ def weights_conservative_2d_clipping_cuda(
         resampling.
     dtype
         The floating-point type of the clipping and of the result.
+    dtype_indices
+        The integer type the indices are stored as.  The grids bound them,
+        so whether they fit is known before any are written.
     threads
         The number of threads in each block.
     """
@@ -283,12 +291,28 @@ def weights_conservative_2d_clipping_cuda(
     else:
         factor = cuda.to_device(np.ascontiguousarray(weights_input, dtype))
 
+    # The kernel writes the indices rather than narrowing them afterwards,
+    # so an index too large for its type would wrap round silently.  The
+    # flattened grids bound them, so whether they fit is known here, before
+    # any are written.
+    info = np.iinfo(dtype_indices)
+    bound = max(num_cell, num_output_x * num_output_y)
+    if bound > info.max:
+        raise ValueError(
+            f"the grids need an index of up to {bound}, which does not fit "
+            f"in {np.dtype(dtype_indices)}"
+        )
+
     counts = _cuda.allocate(num_cell, np.int64)
     count_cells[blocks, threads](x, y, num_output_x, num_output_y, counts)  # type: ignore[index]
 
     offset, num_total = _prefix_sum(counts, num_cell)
 
-    indices_input, indices_output, values = _allocate_result(num_total, dtype)
+    indices_input, indices_output, values = _allocate_result(
+        num_total,
+        dtype,
+        dtype_indices,
+    )
 
     if not num_total:
         return indices_input, indices_output, values

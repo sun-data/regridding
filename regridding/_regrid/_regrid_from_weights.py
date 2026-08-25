@@ -1,8 +1,10 @@
 from typing import Sequence
 import numpy as np
 import numba
+from numba import cuda
 from numba.typed.typedlist import List as TypedList
 from regridding import _util
+from ._regrid_from_weights_cuda import regrid_from_weights_cuda
 
 __all__ = [
     "regrid_from_weights",
@@ -53,11 +55,31 @@ def regrid_from_weights(
         The number of axes should be equal to the original number of
         coordinates in the output grid passed to :func:`regridding.weights`.
 
+    Notes
+    -----
+    Weights built with ``device="cuda"`` are applied on the device and the
+    result is left there, as a
+    :class:`numba.cuda.cudadrv.devicearray.DeviceNDArray`.  Nothing has to
+    be passed to ask for that: the weights are what say where the work
+    happens.  The device path resamples the trailing axes only, since a
+    device array cannot have its axes moved or be broadcast.
+
     See Also
     --------
     :func:`regridding.regrid`
     :func:`regridding.weights`
     """
+
+    if _on_device(weights):
+        return regrid_from_weights_cuda(
+            weights=weights,
+            shape_input=shape_input,
+            shape_output=shape_output,
+            values_input=values_input,
+            values_output=values_output,
+            axis_input=axis_input,
+            axis_output=axis_output,
+        )
 
     unit = getattr(values_input, "unit", None)
 
@@ -160,6 +182,21 @@ def regrid_from_weights(
         return values_output
 
     return values_output << unit
+
+
+def _on_device(weights: np.ndarray) -> bool:
+    """
+    Test whether a set of weights lives in device memory.
+
+    Parameters
+    ----------
+    weights
+        Weights built by :func:`regridding.weights`.
+    """
+    flat = np.asarray(weights).reshape(-1)
+    if not flat.size:  # pragma: nocover
+        return False
+    return cuda.is_cuda_array(flat[0][2])
 
 
 @numba.njit(cache=True, parallel=True)

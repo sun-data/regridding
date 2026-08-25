@@ -244,6 +244,58 @@ class TestAxesArbitrary:
         assert np.allclose(result.copy_to_host(), expected, rtol=0, atol=1e-12)
 
 
+class TestCube:
+    """Resampling a stack of arrays into somewhere already allocated."""
+
+    @requires_cuda
+    def test_stack_into_a_preallocated_cube(self):
+        """
+        The whole stack is one call, and it fills the cube in place.
+
+        This is the arrangement worth using: the axes the weights do not
+        touch are broadcast over, so a stack costs one call rather than
+        one each, and passing the cube in means the result is not
+        allocated and cleared again every time.
+        """
+        num = 4
+        scenes = np.random.default_rng(23).random((num,) + _scene().shape)
+
+        expected = regridding.regrid_from_weights(*_weights(), values_input=scenes)
+
+        weights = _weights(device="cuda")
+        # deliberately not zeroed, to check the call clears it
+        cube = cuda.device_array((num,) + tuple(weights[2]), float)
+
+        result = regridding.regrid_from_weights(
+            *weights,
+            values_input=cuda.to_device(np.array(scenes, order="C")),
+            values_output=cube,
+        )
+
+        assert result is cube
+        assert result.shape == expected.shape
+        assert np.allclose(cube.copy_to_host(), expected, rtol=0, atol=1e-12)
+
+    @requires_cuda
+    def test_a_cube_may_be_filled_a_slice_at_a_time(self):
+        """A slice of a contiguous cube is contiguous, so it may be written."""
+        num = 4
+        scenes = np.random.default_rng(24).random((num,) + _scene().shape)
+
+        weights = _weights(device="cuda")
+        cube = cuda.device_array((num,) + tuple(weights[2]), float)
+
+        for index in range(num):
+            regridding.regrid_from_weights(
+                *weights,
+                values_input=scenes[index],
+                values_output=cube[index],
+            )
+
+        expected = regridding.regrid_from_weights(*_weights(), values_input=scenes)
+        assert np.allclose(cube.copy_to_host(), expected, rtol=0, atol=1e-12)
+
+
 class TestNoOverlap:
     """An input grid which misses the output grid entirely."""
 

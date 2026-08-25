@@ -223,6 +223,10 @@ def weights(
         The result exposes ``__cuda_array_interface__``, so
         :func:`torch.as_tensor` wraps it without copying.
 
+        Many arrays on the same grid are one call rather than one each,
+        and are best given somewhere already allocated to go; see the
+        notes on :func:`regridding.regrid_from_weights`.
+
         This needs the output grid to be a uniform, axis-aligned lattice,
         since only the clipping kernel is ported, and it needs `coalesce`
         to be :obj:`False`, since merging repeated pairs is not.

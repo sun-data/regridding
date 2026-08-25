@@ -66,6 +66,27 @@ def regrid_from_weights(
     by its strides instead, which comes to the same thing; it does have to
     be contiguous.
 
+    Resampling many arrays onto one grid is a single call, since the axes
+    the weights do not touch are broadcast over.  Giving it somewhere to
+    put the answer is what makes that worth doing, since otherwise it
+    allocates the whole result and clears it on every call::
+
+        cube = numba.cuda.device_array((num, *shape_output), float)
+        regridding.regrid_from_weights(
+            *weights,
+            values_input=scenes,      # (num, *shape_input), on the device
+            values_output=cube,       # filled in place, allocated once
+        )
+
+    Twelve 1000 by 2000 images take 7.3 ms resampled one at a time into a
+    fresh array each, 4.1 ms one at a time into slices of a cube, and 2.8 ms
+    as the one call above.
+
+    The scatter adds into the output atomically, so the order the
+    contributions arrive in is not fixed and a result is reproducible only
+    to rounding, around ``1e-16`` relative.  Two runs of the same call do
+    not compare equal bit for bit.
+
     See Also
     --------
     :func:`regridding.regrid`

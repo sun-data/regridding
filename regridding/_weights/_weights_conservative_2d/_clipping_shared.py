@@ -261,6 +261,7 @@ def _clip_halfplane(
 def build(
     jit: Callable[[Callable], Any],
     cross_2d: Callable,
+    one: Any,
 ) -> tuple[Callable, Callable]:
     """
     Compile the shared kernel bodies for one target.
@@ -275,6 +276,11 @@ def build(
         The target's compiled :func:`regridding.geometry.cross_2d`.  A
         kernel can only call a function compiled for its own target, so
         this cannot be imported here and has to be supplied by the caller.
+    one
+        The number one, as a :mod:`numpy` scalar of the type the
+        coordinates are in.  Writing ``1`` instead would be a literal of
+        double precision, which promotes single-precision arithmetic
+        wherever it reaches; a captured scalar of the right type does not.
 
     Returns
     -------
@@ -425,14 +431,19 @@ def build(
         # differences of coordinates, so working at the scale of the block
         # rather than of the whole grid keeps the significant figures that
         # single precision would otherwise lose to cancellation.
-        x1 = x1 - lower_x
-        x2 = x2 - lower_x
-        x3 = x3 - lower_x
-        x4 = x4 - lower_x
-        y1 = y1 - lower_y
-        y2 = y2 - lower_y
-        y3 = y3 - lower_y
-        y4 = y4 - lower_y
+        # scaled by `one` so that the integer offset does not promote the
+        # coordinates to double precision
+        offset_x = one * lower_x
+        offset_y = one * lower_y
+
+        x1 = x1 - offset_x
+        x2 = x2 - offset_x
+        x3 = x3 - offset_x
+        x4 = x4 - offset_x
+        y1 = y1 - offset_y
+        y2 = y2 - offset_y
+        y3 = y3 - offset_y
+        y4 = y4 - offset_y
 
         subject_x[0] = x1
         subject_x[1] = x2
@@ -450,8 +461,6 @@ def build(
 
         weight_cell = weights_input[index_x, index_y] / area_cell
 
-        # a one, and a minus one, of the coordinates' own type
-        one = (x1 - x1) + 1
         minus_one = -one
 
         for cell_x in range(lower_x, upper_x):

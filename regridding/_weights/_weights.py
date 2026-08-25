@@ -211,28 +211,26 @@ def weights(
 
         Passing ``"cuda"`` builds them with a CUDA kernel and leaves them
         in device memory, as
-        :class:`numba.cuda.cudadrv.devicearray.DeviceNDArray`.  Those
-        expose ``__cuda_array_interface__``, so :func:`torch.as_tensor`
-        wraps them without copying::
+        :class:`numba.cuda.cudadrv.devicearray.DeviceNDArray`.
 
-            indices_input, indices_output, values = weights[()]
-            keep = torch.as_tensor(indices_input, device="cuda") >= 0
-            image.index_add_(
-                0,
-                torch.as_tensor(indices_output, device="cuda")[keep],
-                torch.as_tensor(values, device="cuda")[keep] * scene[...],
-            )
+        :func:`regridding.regrid_from_weights` applies them where they
+        are and leaves its result on the device as well, so a scene which
+        is already there is never brought back::
 
-        :func:`regridding.regrid_from_weights` runs on the host and does
-        not accept them; applying them is left to the caller, which is
-        already where the scene lives in this case.
+            weights = regridding.weights(..., coalesce=False, device="cuda")
+            image = regridding.regrid_from_weights(*weights, values_input=scene)
+
+        The result exposes ``__cuda_array_interface__``, so
+        :func:`torch.as_tensor` wraps it without copying.
 
         This needs the output grid to be a uniform, axis-aligned lattice,
         since only the clipping kernel is ported, and it needs `coalesce`
         to be :obj:`False`, since merging repeated pairs is not.
 
-        Slots which received no overlap carry an index of ``-1`` and
-        should be dropped, as in the snippet above.
+        Slots which received no overlap carry an index of ``-1``, and the
+        weights beside them are left uninitialized.
+        :func:`regridding.regrid_from_weights` skips them; anything else
+        reading the weights directly has to drop them.
 
         `dtype_values` selects the precision the kernel clips in, rather
         than being applied to the result afterwards.  `dtype_indices` is

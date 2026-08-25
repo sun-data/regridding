@@ -76,6 +76,7 @@ def _build(ftype: Any) -> tuple[Any, Any]:
     num_pair, clip_cell = _build_shared(
         _jit,
         _jit(_source(rg.geometry.cross_2d)),
+        np.float32(1) if ftype == numba.float32 else np.float64(1),
     )
 
     @cuda.jit
@@ -184,13 +185,15 @@ def _filled(a: Any, value: int, threads: int) -> Any:
     Parameters
     ----------
     a
-        The array to fill.
+        The array to fill.  An empty one is left alone, since a kernel
+        cannot be launched with zero blocks.
     value
         The value to fill it with.
     threads
         The number of threads in each block.
     """
-    _fill[(a.size + threads - 1) // threads, threads](a, value)  # type: ignore[index]
+    if a.size:
+        _fill[(a.size + threads - 1) // threads, threads](a, value)  # type: ignore[index]
     return a
 
 
@@ -310,6 +313,9 @@ def weights_conservative_2d_clipping_cuda(
     indices_input = _filled(_allocate(num_total, np.int64), -1, threads)
     indices_output = _allocate(num_total, np.int64)
     values = _allocate(num_total, dtype)
+
+    if not num_total:
+        return indices_input, indices_output, values
 
     clip_cells[blocks, threads](  # type: ignore[index]
         x,

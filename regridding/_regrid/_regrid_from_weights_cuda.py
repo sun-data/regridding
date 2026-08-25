@@ -87,14 +87,33 @@ def _zero(a):  # pragma: nocover
         a[i] = 0
 
 
+def _filled(a: Any, threads: int) -> Any:
+    """
+    Zero a device array in place, and return it.
+
+    An empty array is left alone: the number of blocks would be zero, which
+    a kernel cannot be launched with.  The annotations :mod:`numba` gives
+    its kernels describe how the compiler calls them rather than how a
+    caller does, so they are waived here rather than at each use.
+
+    Parameters
+    ----------
+    a
+        The array to zero.
+    threads
+        The number of threads in each block.
+    """
+    flat = a.reshape(-1)
+    if flat.size:
+        _zero[(flat.size + threads - 1) // threads, threads](flat)  # type: ignore[index]
+    return a
+
+
 def _zeros(shape: tuple[int, ...], dtype: np.typing.DTypeLike, threads: int) -> Any:
     """
     Allocate a device array of zeros.
 
-    Filling it with a kernel is cheaper than sending one from the host.  The
-    annotations :mod:`numba` gives its allocation and its kernels describe
-    how the compiler calls them rather than how a caller does, so they are
-    waived here rather than at each use.
+    Filling it with a kernel is cheaper than sending one from the host.
 
     Parameters
     ----------
@@ -105,10 +124,7 @@ def _zeros(shape: tuple[int, ...], dtype: np.typing.DTypeLike, threads: int) -> 
     threads
         The number of threads in each block.
     """
-    result = cuda.device_array(shape, dtype)  # type: ignore[arg-type]
-    flat = result.reshape(-1)
-    _zero[(flat.size + threads - 1) // threads, threads](flat)  # type: ignore[index]
-    return result
+    return _filled(cuda.device_array(shape, dtype), threads)  # type: ignore[arg-type]
 
 
 def _strides(
@@ -249,11 +265,21 @@ def regrid_from_weights_cuda(
         values_input = cuda.to_device(
             np.array(np.broadcast_to(values_input, shape_input), order="C")
         )
-    elif not values_input.is_c_contiguous():
-        raise ValueError(
-            "`values_input` has to be contiguous to be resampled on a device, "
-            "since the kernel addresses it by its strides"
-        )
+    else:
+        if not values_input.is_c_contiguous():
+            raise ValueError(
+                "`values_input` has to be contiguous to be resampled on a "
+                "device, since the kernel addresses it by its strides"
+            )
+        # a host array is broadcast by `numpy`, which checks the shapes as it
+        # goes; a device array is broadcast by giving an axis a stride of
+        # zero, which would take any shape at all, so it is checked here
+        try:
+            np.broadcast_shapes(tuple(values_input.shape), shape_input)
+        except ValueError as error:
+            raise ValueError(
+                f"{tuple(values_input.shape)} cannot be broadcast to " f"{shape_input}"
+            ) from error
 
     weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
     flat_weights = weights.reshape(-1)
@@ -275,7 +301,9 @@ def regrid_from_weights_cuda(
                 "`values_output` has to be contiguous to be resampled into on "
                 "a device, since the kernel addresses it by its strides"
             )
-        result = values_output
+        # the weights are scattered into this with an atomic add, so it starts
+        # at zero, as it does on the host
+        result = _filled(values_output, threads)
 
     shape_resampled_input, strides_input, strides_orthogonal_input = _split(
         _strides(tuple(values_input.shape), shape_input),
@@ -300,6 +328,9 @@ def regrid_from_weights_cuda(
         base_output = sum(p * s for p, s in zip(position, strides_orthogonal_output))
 
         indices_input, indices_output, values = flat_weights[index]
+
+        if not values.size:
+            continue
 
         blocks = (values.size + threads - 1) // threads
         _scatter[blocks, threads](  # type: ignore[index]

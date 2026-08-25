@@ -43,7 +43,7 @@ def _jit(function):
     return numba.njit(cache=True, inline="always", error_model="numpy")(function)
 
 
-_num_pair, _clip_cell = _build_shared(_jit, rg.geometry.cross_2d)
+_num_pair, _clip_cell = _build_shared(_jit, rg.geometry.cross_2d, np.float64(1))
 
 
 def grid_is_uniform_rectilinear(

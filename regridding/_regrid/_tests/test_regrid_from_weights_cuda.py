@@ -111,7 +111,9 @@ class TestRegridFromWeightsCuda:
 
         expected = regridding.regrid_from_weights(*_weights(), values_input=scene)
 
-        given = cuda.to_device(np.zeros(weights[2]))
+        # seeded with something other than zero, since the weights are
+        # scattered into it with an atomic add and the host path clears it
+        given = cuda.to_device(np.full(weights[2], 7.0))
         result = regridding.regrid_from_weights(
             *weights,
             values_input=scene,
@@ -242,6 +244,52 @@ class TestAxesArbitrary:
         assert np.allclose(result.copy_to_host(), expected, rtol=0, atol=1e-12)
 
 
+class TestNoOverlap:
+    """An input grid which misses the output grid entirely."""
+
+    @staticmethod
+    def _weights(device):
+        t = np.linspace(0, 1, 9)
+        u = t[:, np.newaxis] * np.ones(9)
+        v = np.ones(9)[:, np.newaxis] * t
+        lattice = (
+            np.arange(5, dtype=float)[:, np.newaxis] * np.ones(5),
+            np.ones(5)[:, np.newaxis] * np.arange(5, dtype=float),
+        )
+        return regridding.weights(
+            coordinates_input=(u + 50.0, v + 50.0),
+            coordinates_output=lattice,
+            method="conservative",
+            coalesce=False,
+            device=device,
+        )
+
+    @requires_cuda
+    def test_weights_are_empty(self):
+        """No overlap means no weights, rather than a kernel launched on none."""
+        indices_input, indices_output, values = self._weights("cuda")[0].reshape(-1)[0]
+        assert indices_input.size == 0
+        assert indices_output.size == 0
+        assert values.size == 0
+
+    @requires_cuda
+    def test_applies_to_zeros(self):
+        """Applying them gives zeros, as it does on the host."""
+        scene = np.ones((8, 8))
+
+        expected = regridding.regrid_from_weights(
+            *self._weights(None),
+            values_input=scene,
+        )
+        result = regridding.regrid_from_weights(
+            *self._weights("cuda"),
+            values_input=scene,
+        )
+
+        assert np.array_equal(result.copy_to_host(), expected)
+        assert not result.copy_to_host().any()
+
+
 class TestRegridFromWeightsCudaRejected:
     """The cases the device path cannot serve are refused, not mishandled."""
 
@@ -259,6 +307,16 @@ class TestRegridFromWeightsCudaRejected:
             regridding.regrid_from_weights(
                 *_weights(device="cuda"),
                 values_input=_scene()[:5],
+            )
+
+    @requires_cuda
+    def test_values_input_on_device_wrong_shape(self):
+        """A device array is checked, since stride-zero would take any shape."""
+        bad = cuda.to_device(np.ascontiguousarray(np.zeros((5, 20))))
+        with pytest.raises(ValueError, match="cannot be broadcast to"):
+            regridding.regrid_from_weights(
+                *_weights(device="cuda"),
+                values_input=bad,
             )
 
     @requires_cuda

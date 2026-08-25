@@ -229,6 +229,43 @@ class TestWeightsConservative2dClippingCuda:
         for got, want in zip(result, expected):
             assert np.array_equal(got, want)
 
+    @requires_cuda
+    def test_slots_without_overlap(self):
+        """
+        A slot which sees no overlap holds the sentinel and zeros.
+
+        The host kernel builds its result with :func:`numpy.zeros`, so a
+        reader which forgets to drop the sentinel slots sees zeros there
+        rather than whatever the allocation happened to contain.
+        """
+        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+
+        # rotated hard enough that many bounding boxes cover cells the
+        # quadrilateral itself misses
+        num = 21
+        t = np.linspace(-0.7, 0.7, num)
+        u = t[:, np.newaxis] * np.ones(num)
+        v = np.ones(num)[:, np.newaxis] * t
+        angle = 0.785
+        grid_input = (
+            (u * np.cos(angle) - v * np.sin(angle)) * 4 + 6.3,
+            (u * np.sin(angle) + v * np.cos(angle)) * 4 + 6.1,
+        )
+        grid_output = (
+            np.arange(13, dtype=float)[:, np.newaxis] * np.ones(13),
+            np.ones(13)[:, np.newaxis] * np.arange(13, dtype=float),
+        )
+
+        indices_input, indices_output, values = (
+            a.copy_to_host()
+            for a in weights_conservative_2d_clipping_cuda(grid_input, grid_output)
+        )
+
+        empty = indices_input < 0
+        assert empty.any()
+        assert np.array_equal(indices_output[empty], np.zeros(empty.sum(), np.int64))
+        assert np.array_equal(values[empty], np.zeros(empty.sum()))
+
 
 class TestDeviceRejected:
     """The cases the device path cannot serve are refused, not mishandled."""

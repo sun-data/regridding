@@ -104,10 +104,12 @@ def _count_cells(
     counts: np.ndarray,
 ) -> None:
     """
-    Count the output cells each input cell can touch.
+    Run the counting pass over the grid, one thread per row of cells.
 
-    The prefix sum of this reserves each cell a slice of the result, which is
-    what makes the clipping pass independent of the thread schedule.
+    What is counted, and why the count is what lets the clipping pass be
+    scheduled in any order, is described by
+    :func:`~regridding._weights._weights_conservative_2d._clipping_shared.build`'s
+    ``num_pair``, which this calls for each cell.
 
     Parameters
     ----------
@@ -153,12 +155,13 @@ def _clip_cells(
     values: np.ndarray,
 ) -> None:
     """
-    Clip every input cell against the output cells its bounding box touches.
+    Run the clipping pass over the grid, one thread per row of cells.
 
-    Each input cell writes into its own slice of the output arrays, given by
-    `offset`, so the result does not depend on how the work is scheduled
-    across threads.  Slots that receive no overlap keep the sentinel index
-    of ``-1`` they were initialized with.
+    The scratch space each row clips in is allocated here, since the host
+    and the device allocate it differently.  What a cell does with it, and
+    why the cells do not interfere, is described by
+    :func:`~regridding._weights._weights_conservative_2d._clipping_shared.build`'s
+    ``clip_cell``, which this calls for each cell.
 
     Parameters
     ----------

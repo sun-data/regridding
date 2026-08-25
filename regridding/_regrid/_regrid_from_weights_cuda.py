@@ -100,12 +100,7 @@ def _strides(
         right as :func:`numpy.broadcast_to` aligns it.
     """
 
-    strides_shape = []
-    stride = 1
-    for num in reversed(shape):
-        strides_shape.append(stride)
-        stride = stride * num
-    strides_shape = list(reversed(strides_shape))
+    strides_shape = _contiguous(shape)
 
     offset = len(shape_broadcast) - len(shape)
 
@@ -122,13 +117,37 @@ def _strides(
     return tuple(result)
 
 
-def _split(
+def _contiguous(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """
+    Compute the strides a contiguous array of a shape would have.
+
+    In elements rather than in bytes, since that is how the kernel indexes.
+
+    Parameters
+    ----------
+    shape
+        The shape of the array.
+    """
+    result = []
+    stride = 1
+    for num in reversed(shape):
+        result.append(stride)
+        stride = stride * num
+    return tuple(reversed(result))
+
+
+def _addressing(
     strides: tuple[int, ...],
     shape: tuple[int, ...],
     axis: tuple[int, ...],
-) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+) -> tuple[int, tuple[int, ...], tuple[int, ...]]:
     """
-    Separate the resampled axes from the orthogonal ones.
+    Work out how the kernel is to address one side of the resampling.
+
+    The weights index a flattened grid of the resampled axes, so the kernel
+    needs the length of the last of them to split an index back into a pair,
+    the strides of those axes to apply it, and the strides of the remaining
+    axes to find where each orthogonal element begins.
 
     Parameters
     ----------
@@ -142,14 +161,14 @@ def _split(
 
     Returns
     -------
-    The shape and the strides of the resampled axes, and the strides of the
-    orthogonal ones.
+    The length of the last resampled axis, the strides of the resampled
+    axes, and the strides of the orthogonal ones.
     """
     ndim = len(shape)
     resampled = tuple(a % ndim for a in axis)
     orthogonal = tuple(i for i in range(ndim) if i not in resampled)
     return (
-        tuple(shape[i] for i in resampled),
+        shape[resampled[~0]],
         tuple(strides[i] for i in resampled),
         tuple(strides[i] for i in orthogonal),
     )
@@ -258,13 +277,13 @@ def regrid_from_weights_cuda(
         # at zero, as it does on the host
         result = _cuda.fill(values_output, 0)
 
-    shape_resampled_input, strides_input, strides_orthogonal_input = _split(
+    num_input, strides_input, bases_input = _addressing(
         _strides(tuple(values_input.shape), shape_input),
         shape_input,
         axis_input,
     )
-    shape_resampled_output, strides_output, strides_orthogonal_output = _split(
-        _strides(shape_output, shape_output),
+    num_output, strides_output, bases_output = _addressing(
+        _contiguous(shape_output),
         shape_output,
         axis_output,
     )
@@ -272,13 +291,10 @@ def regrid_from_weights_cuda(
     values_input_flat = values_input.reshape(-1)
     values_output_flat = result.reshape(-1)
 
-    num_input = shape_resampled_input[~0]
-    num_output = shape_resampled_output[~0]
-
     for index, position in enumerate(np.ndindex(*shape_orthogonal)):
 
-        base_input = sum(p * s for p, s in zip(position, strides_orthogonal_input))
-        base_output = sum(p * s for p, s in zip(position, strides_orthogonal_output))
+        base_input = sum(p * s for p, s in zip(position, bases_input))
+        base_output = sum(p * s for p, s in zip(position, bases_output))
 
         indices_input, indices_output, values = flat_weights[index]
 

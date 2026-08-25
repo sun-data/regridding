@@ -13,6 +13,7 @@ Each input cell is independent and writes into its own slice of the result,
 which is what makes the algorithm suit a GPU in the first place.
 """
 
+import functools
 from typing import Any, Callable
 import numpy as np
 import numba
@@ -60,13 +61,15 @@ def _source(function: Callable) -> Callable:
     return getattr(function, "py_func", function)
 
 
+@functools.cache
 def _build(ftype: Any) -> tuple[Any, Any]:
     """
     Build the kernels for a given floating-point type.
 
     The coordinates may be single or double precision, and the scratch space
     each thread clips in has to be declared with a concrete type, so there is
-    one set of kernels per precision.
+    one set of kernels per precision.  Compiling them takes a moment, so the
+    result is kept.
 
     Parameters
     ----------
@@ -179,10 +182,6 @@ def _allocate_result(
     )
 
 
-_kernels = {}
-"""The kernels built so far, keyed by the floating-point type."""
-
-
 def _prefix_sum(counts: Any, num_cell: int) -> tuple[Any, int]:
     """
     Compute the exclusive prefix sum of the per-cell counts, on the device.
@@ -247,9 +246,7 @@ def weights_conservative_2d_clipping_cuda(
     """
 
     ftype = numba.float32 if np.dtype(dtype) == np.float32 else numba.float64
-    if ftype not in _kernels:
-        _kernels[ftype] = _build(ftype)
-    count_cells, clip_cells = _kernels[ftype]
+    count_cells, clip_cells = _build(ftype)
 
     x_output, y_output = grid_output
     num_output_x = x_output.shape[0] - 1

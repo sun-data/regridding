@@ -17,8 +17,8 @@ from typing import Any, Callable
 import numpy as np
 import numba
 from numba import cuda
-from numba.cuda.cudadrv import driver
 import regridding as rg
+from regridding import _cuda
 from ._clipping_shared import num_slot as _num_slot, build as _build_shared
 
 __all__ = [
@@ -152,53 +152,6 @@ def _build(ftype: Any) -> tuple[Any, Any]:
     return count_cells, clip_cells
 
 
-# the kernels in this module run on the device, where `coverage` cannot
-# follow them, so their bodies are left out of the report
-@cuda.jit
-def _fill(a, value):  # pragma: nocover
-    """Fill a device array, which is cheaper than sending one from the host."""
-    i = cuda.grid(1)  # type: ignore[call-arg]
-    if i < a.size:
-        a[i] = value
-
-
-def _allocate(shape: Any, dtype: np.typing.DTypeLike) -> Any:
-    """
-    Allocate an array on the device.
-
-    This wraps :func:`numba.cuda.device_array` only to keep its annotation,
-    which types every `dtype` as :class:`numpy.float64`, from being repeated
-    at each call.
-
-    Parameters
-    ----------
-    shape
-        The shape of the array.
-    dtype
-        The type of the array's elements.
-    """
-    return cuda.device_array(shape, dtype)  # type: ignore[arg-type]
-
-
-def _filled(a: Any, value: int, threads: int) -> Any:
-    """
-    Fill a device array with a value, and return it.
-
-    Parameters
-    ----------
-    a
-        The array to fill.  An empty one is left alone, since a kernel
-        cannot be launched with zero blocks.
-    value
-        The value to fill it with.
-    threads
-        The number of threads in each block.
-    """
-    if a.size:
-        _fill[(a.size + threads - 1) // threads, threads](a, value)  # type: ignore[index]
-    return a
-
-
 def _allocate_result(
     num: int,
     dtype: np.typing.DTypeLike,
@@ -212,11 +165,6 @@ def _allocate_result(
     rather than leaving a reader which forgets to drop those slots looking
     at arbitrary memory.
 
-    Both values wanted are uniform byte patterns, ``-1`` being every bit
-    set and zero being none, so the driver fills them directly.  That is
-    most of an order of magnitude cheaper than a kernel: about 0.1 ms
-    against 2 ms for the four million slots an ESIS-sized grid reserves.
-
     Parameters
     ----------
     num
@@ -224,16 +172,11 @@ def _allocate_result(
     dtype
         The type of the weights.
     """
-    indices_input = _allocate(num, np.int64)
-    indices_output = _allocate(num, np.int64)
-    values = _allocate(num, dtype)
-
-    if num:
-        driver.device_memset(indices_input, 0xFF, indices_input.nbytes)
-        driver.device_memset(indices_output, 0, indices_output.nbytes)
-        driver.device_memset(values, 0, values.nbytes)
-
-    return indices_input, indices_output, values
+    return (
+        _cuda.fill(_cuda.allocate(num, np.int64), -1),
+        _cuda.zeros(num, np.int64),
+        _cuda.zeros(num, dtype),
+    )
 
 
 _kernels = {}
@@ -337,14 +280,13 @@ def weights_conservative_2d_clipping_cuda(
     blocks = (num_cell + threads - 1) // threads
 
     if weights_input is None:
-        factor = _allocate((num_x, num_y), dtype)
-        _filled(factor.reshape(-1), 1, threads)
+        factor = _cuda.fill(_cuda.allocate((num_x, num_y), dtype), 1, threads)
     elif cuda.is_cuda_array(weights_input):
         factor = weights_input
     else:
         factor = cuda.to_device(np.ascontiguousarray(weights_input, dtype))
 
-    counts = _allocate(num_cell, np.int64)
+    counts = _cuda.allocate(num_cell, np.int64)
     count_cells[blocks, threads](x, y, num_output_x, num_output_y, counts)  # type: ignore[index]
 
     offset, num_total = _prefix_sum(counts, num_cell)

@@ -24,6 +24,7 @@ no separate function to call.
 from typing import Any
 import numpy as np
 from numba import cuda
+from regridding import _cuda
 
 __all__ = [
     "regrid_from_weights_cuda",
@@ -77,54 +78,6 @@ def _scatter(  # pragma: nocover
         values[w]
         * values_input[base_input + i0 * stride_input_0 + i1 * stride_input_1],
     )
-
-
-@cuda.jit
-def _zero(a):  # pragma: nocover
-    """Zero a device array, which is cheaper than sending one from the host."""
-    i = cuda.grid(1)  # type: ignore[call-arg]
-    if i < a.size:
-        a[i] = 0
-
-
-def _filled(a: Any, threads: int) -> Any:
-    """
-    Zero a device array in place, and return it.
-
-    An empty array is left alone: the number of blocks would be zero, which
-    a kernel cannot be launched with.  The annotations :mod:`numba` gives
-    its kernels describe how the compiler calls them rather than how a
-    caller does, so they are waived here rather than at each use.
-
-    Parameters
-    ----------
-    a
-        The array to zero.
-    threads
-        The number of threads in each block.
-    """
-    flat = a.reshape(-1)
-    if flat.size:
-        _zero[(flat.size + threads - 1) // threads, threads](flat)  # type: ignore[index]
-    return a
-
-
-def _zeros(shape: tuple[int, ...], dtype: np.typing.DTypeLike, threads: int) -> Any:
-    """
-    Allocate a device array of zeros.
-
-    Filling it with a kernel is cheaper than sending one from the host.
-
-    Parameters
-    ----------
-    shape
-        The shape of the array.
-    dtype
-        The type of the array's elements.
-    threads
-        The number of threads in each block.
-    """
-    return _filled(cuda.device_array(shape, dtype), threads)  # type: ignore[arg-type]
 
 
 def _strides(
@@ -290,7 +243,7 @@ def regrid_from_weights_cuda(
     )
 
     if values_output is None:
-        result = _zeros(shape_output, dtype, threads)
+        result = _cuda.zeros(shape_output, dtype)
     else:
         if tuple(values_output.shape) != shape_output:
             raise ValueError(
@@ -303,7 +256,7 @@ def regrid_from_weights_cuda(
             )
         # the weights are scattered into this with an atomic add, so it starts
         # at zero, as it does on the host
-        result = _filled(values_output, threads)
+        result = _cuda.fill(values_output, 0)
 
     shape_resampled_input, strides_input, strides_orthogonal_input = _split(
         _strides(tuple(values_input.shape), shape_input),

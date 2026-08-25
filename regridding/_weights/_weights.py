@@ -234,6 +234,11 @@ def weights(
         Slots which received no overlap carry an index of ``-1`` and
         should be dropped, as in the snippet above.
 
+        `dtype_values` selects the precision the kernel clips in, rather
+        than being applied to the result afterwards.  `dtype_indices` is
+        not supported, since the kernel addresses its slots with
+        :class:`numpy.int64`.
+
     See Also
     --------
     :func:`regridding.regrid`
@@ -320,6 +325,11 @@ def weights(
                 f"not ported to the device, and weights which are applied once "
                 f"have nothing to amortize the merge against"
             )
+        if dtype_indices is not None:
+            raise ValueError(
+                f"{dtype_indices=} is not supported with {device=}; the device "
+                f"kernel addresses its slots with `numpy.int64`"
+            )
 
     if method == "multilinear":
         result = _weights_multilinear(
@@ -342,6 +352,7 @@ def weights(
             perturb=perturb,
             seed=seed,
             device=device,
+            dtype=dtype_values,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
@@ -349,7 +360,9 @@ def weights(
     if coalesce:
         result = _weights_to_arrays(result)
 
-    if dtype_indices is not None or dtype_values is not None:
+    # a device result is built in `dtype_values` to begin with, and cannot be
+    # narrowed afterwards in any case, since it does not live on the host
+    if device is None and (dtype_indices is not None or dtype_values is not None):
         result = _weights_astype(
             weights=result,
             dtype_indices=dtype_indices,

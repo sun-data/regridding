@@ -150,6 +150,34 @@ class TestWeightsConservative2dClippingCuda:
         assert np.allclose(total, expected, atol=1e-12)
         assert expected.max() > 1
 
+    @requires_cuda
+    def test_dtype_values(self):
+        """`dtype_values` is what the device builds in, not a later cast."""
+        import regridding
+
+        weights = regridding.weights(
+            coordinates_input=_distorted(9),
+            coordinates_output=_lattice(5, 5),
+            method="conservative",
+            coalesce=False,
+            device="cuda",
+            dtype_values=np.float32,
+        )
+
+        indices_input, indices_output, values = weights[0].reshape(-1)[0]
+
+        assert values.dtype == np.float32
+        assert cuda.is_cuda_array(values)
+
+        # and the weights are still the ones the host would have built
+        expected = weights_conservative_2d_clipping(_distorted(9), _lattice(5, 5))
+        total = np.zeros(8 * 8)
+        got = _host((indices_input, indices_output, values))
+        np.add.at(total, got[0], got[2].astype(float))
+        expected_total = np.zeros(8 * 8)
+        np.add.at(expected_total, expected[0], expected[2])
+        assert np.allclose(total, expected_total, rtol=0, atol=1e-6)
+
 
 class TestDeviceRejected:
     """The cases the device path cannot serve are refused, not mishandled."""
@@ -173,6 +201,17 @@ class TestDeviceRejected:
                 coordinates_output=self.grid_output,
                 method="conservative",
                 device="cuda",
+            )
+
+    def test_dtype_indices(self):
+        with pytest.raises(ValueError, match="addresses its slots"):
+            regridding.weights(
+                coordinates_input=self.grid_input,
+                coordinates_output=self.grid_output,
+                method="conservative",
+                coalesce=False,
+                device="cuda",
+                dtype_indices=np.int32,
             )
 
     def test_output_not_a_lattice(self):

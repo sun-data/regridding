@@ -20,7 +20,11 @@ import numba
 from numba import cuda
 import regridding as rg
 from regridding import _cuda
-from ._clipping_shared import num_slot as _num_slot, build as _build_shared
+from ._clipping_shared import (
+    num_slot as _num_slot,
+    build as _build_shared,
+    check_indices_fit,
+)
 
 __all__ = [
     "weights_conservative_2d_clipping_cuda",
@@ -291,17 +295,7 @@ def weights_conservative_2d_clipping_cuda(
     else:
         factor = cuda.to_device(np.ascontiguousarray(weights_input, dtype))
 
-    # The kernel writes the indices rather than narrowing them afterwards,
-    # so an index too large for its type would wrap round silently.  The
-    # flattened grids bound them, so whether they fit is known here, before
-    # any are written.
-    info = np.iinfo(dtype_indices)
-    bound = max(num_cell, num_output_x * num_output_y)
-    if bound > info.max:
-        raise ValueError(
-            f"the grids need an index of up to {bound}, which does not fit "
-            f"in {np.dtype(dtype_indices)}"
-        )
+    check_indices_fit(num_cell, num_output_x * num_output_y, dtype_indices)
 
     counts = _cuda.allocate(num_cell, np.int64)
     count_cells[blocks, threads](x, y, num_output_x, num_output_y, counts)  # type: ignore[index]

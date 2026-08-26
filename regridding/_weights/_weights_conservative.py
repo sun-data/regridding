@@ -77,7 +77,7 @@ def _weights_conservative(
     device: None | str = None,
     dtype: None | np.typing.DTypeLike = None,
     dtype_indices: None | np.typing.DTypeLike = None,
-) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+) -> tuple[tuple[np.ndarray, tuple[int, ...], tuple[int, ...]], bool]:
 
     if perturb is None:
         perturb = False
@@ -239,6 +239,10 @@ def _weights_conservative(
                         grid_input=grid_input_index,
                         grid_output=grid_output_index,
                         weights_input=weights_input_index,
+                        dtype=np.float64 if dtype is None else dtype,
+                        dtype_indices=(
+                            np.int64 if dtype_indices is None else dtype_indices
+                        ),
                     )
                 else:
                     weights[index] = weights_conservative_2d(
@@ -252,4 +256,8 @@ def _weights_conservative(
                     "Regridding operations greater than 2D are not supported"
                 )
 
-    return weights, shape_values_input, shape_values_output
+    # whether the clipping kernel built these, which the caller needs since
+    # its result is already merged, ordered and in the types asked for
+    clipped = clipping or device is not None
+
+    return (weights, shape_values_input, shape_values_output), clipped

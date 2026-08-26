@@ -328,6 +328,8 @@ def weights(
                 f"have nothing to amortize the merge against"
             )
 
+    clipped = False
+
     if method == "multilinear":
         result = _weights_multilinear(
             coordinates_input=coordinates_input,
@@ -340,7 +342,7 @@ def weights(
             seed=seed,
         )
     elif method == "conservative":
-        result = _weights_conservative(
+        result, clipped = _weights_conservative(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,
@@ -355,17 +357,21 @@ def weights(
     else:
         raise ValueError(f"unrecognized method '{method}'")
 
-    if coalesce:
-        result = _weights_to_arrays(result)
+    # The clipping kernel clips each cell against each of its candidates
+    # once, so it emits no pair twice and emits them in order: there is
+    # nothing for a merge to merge.  It is also handed the types to build
+    # in, rather than being narrowed once it has built.  Both are true of
+    # the host and the device alike, so neither step runs for it.
+    if not clipped:
+        if coalesce:
+            result = _weights_to_arrays(result)
 
-    # a device result is built in `dtype_values` to begin with, and cannot be
-    # narrowed afterwards in any case, since it does not live on the host
-    if device is None and (dtype_indices is not None or dtype_values is not None):
-        result = _weights_astype(
-            weights=result,
-            dtype_indices=dtype_indices,
-            dtype_values=dtype_values,
-        )
+        if dtype_indices is not None or dtype_values is not None:
+            result = _weights_astype(
+                weights=result,
+                dtype_indices=dtype_indices,
+                dtype_values=dtype_values,
+            )
 
     if unit_weights is not None:
         array, shape_input, shape_output = result

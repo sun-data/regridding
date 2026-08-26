@@ -23,7 +23,11 @@ CUDA device.
 import numpy as np
 import numba
 import regridding as rg
-from ._clipping_shared import num_slot as _num_slot, build as _build_shared
+from ._clipping_shared import (
+    num_slot as _num_slot,
+    build as _build_shared,
+    check_indices_fit,
+)
 
 __all__ = [
     "grid_is_uniform_rectilinear",
@@ -226,6 +230,8 @@ def weights_conservative_2d_clipping(
     grid_input: tuple[np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray],
     weights_input: None | np.ndarray = None,
+    dtype: np.typing.DTypeLike = np.float64,
+    dtype_indices: np.typing.DTypeLike = np.int64,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute 2D first-order conservative weights by clipping each input cell
@@ -250,11 +256,18 @@ def weights_conservative_2d_clipping(
     weights_input
         Optional weights applied to the values of the input grid before
         resampling.
+    dtype
+        The floating-point type the weights are stored as.
+    dtype_indices
+        The integer type the indices are stored as.  The grids bound them,
+        so whether they fit is known before any are written, which is how
+        the device kernel decides it too.
 
     Raises
     ------
     ValueError
-        If `grid_output` is not a uniform, axis-aligned lattice.
+        If `grid_output` is not a uniform, axis-aligned lattice, or if the
+        grids are too large for `dtype_indices` to address.
 
     Notes
     -----
@@ -266,6 +279,12 @@ def weights_conservative_2d_clipping(
     Unlike the sweep, this kernel does not need the coordinates to be
     perturbed to break degeneracies: coincident vertices and collinear edges
     are handled exactly.
+
+    Each input cell is clipped against each of its candidate output cells
+    once, so no pair is produced twice and the result comes out ordered by
+    ``(indices_input, indices_output)`` already.  There is nothing for
+    :func:`regridding._weights._weights_arrays._coalesce` to do to it, which
+    is why the sweep is the only thing that runs through it.
     """
 
     if not grid_is_uniform_rectilinear(grid_output):
@@ -291,6 +310,12 @@ def weights_conservative_2d_clipping(
     num_x = x.shape[0] - 1
     num_y = x.shape[1] - 1
 
+    check_indices_fit(
+        num_x * num_y,
+        num_cell_output_x * num_cell_output_y,
+        dtype_indices,
+    )
+
     if weights_input is None:
         weights_input = np.ones((num_x, num_y))
     else:
@@ -310,9 +335,9 @@ def weights_conservative_2d_clipping(
 
     num_total = int(offset[~0])
 
-    indices_input = np.full(num_total, -1, dtype=np.int64)
-    indices_output = np.zeros(num_total, dtype=np.int64)
-    values = np.zeros(num_total, dtype=float)
+    indices_input = np.full(num_total, -1, dtype=dtype_indices)
+    indices_output = np.zeros(num_total, dtype=dtype_indices)
+    values = np.zeros(num_total, dtype=dtype)
 
     if num_total:
         _clip_cells(

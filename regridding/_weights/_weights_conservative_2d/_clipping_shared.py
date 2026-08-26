@@ -32,6 +32,7 @@ import numpy as np
 
 __all__ = [
     "num_slot",
+    "check_indices_fit",
     "build",
 ]
 
@@ -53,6 +54,42 @@ enough distortion.  Cells whose edges cross each other are not supported,
 as noted in
 :func:`~regridding._weights._weights_conservative_2d._clipping.weights_conservative_2d_clipping`.
 """
+
+
+def check_indices_fit(
+    num_input: int,
+    num_output: int,
+    dtype_indices: "np.typing.DTypeLike",
+) -> None:
+    """
+    Check that the indices this grid needs fit in the type they go in.
+
+    The kernels write the indices rather than narrowing them afterwards, so
+    one too large for its type would wrap round with nothing left to notice
+    it.  The flattened grids bound the indices, so whether they fit is known
+    before any are written, which is when it has to be known.
+
+    Parameters
+    ----------
+    num_input
+        The number of cells in the input grid.
+    num_output
+        The number of cells in the output grid.
+    dtype_indices
+        The type the indices are stored as.
+
+    Raises
+    ------
+    ValueError
+        If either grid needs an index the type cannot hold.
+    """
+    bound = max(num_input, num_output)
+    info = np.iinfo(dtype_indices)
+    if bound > info.max:
+        raise ValueError(
+            f"the grids need an index of up to {bound}, which does not fit "
+            f"in {np.dtype(dtype_indices)}"
+        )
 
 
 def _corners(

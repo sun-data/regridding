@@ -38,8 +38,8 @@ Features
 
     *   ``"multilinear"``, linear interpolation along one axis;
     *   ``"conservative"``, first-order conservative resampling of 1D grids and
-        of 2D logically-rectangular curvilinear grids,
-        using the algorithm described in :footcite:t:`Ramshaw1985`.
+        of 2D logically-rectangular curvilinear grids, by one of two
+        algorithms described below.
 
 *   :func:`regridding.weights` and :func:`regridding.regrid_from_weights`,
     which split the operation into an expensive build and a cheap application,
@@ -94,6 +94,27 @@ The remaining axes are orthogonal to the operation, and the resampling is
 repeated independently for every position along them.
 This is how a stack of images, or a spectrum for each pixel, is resampled in
 one call.
+
+**The conservative method has two algorithms, and picks between them.**
+Both compute the same weights: the fraction of each input cell shared with
+each output cell.
+
+For a general output grid it sweeps the grid lines of both grids and
+accumulates the boundary integrals, following :footcite:t:`Ramshaw1985`.
+This works for any output grid, but it walks each line in order and its cost
+follows the size of the output grid whether or not the input reaches it.
+
+Where every output grid is a uniform, axis-aligned lattice, it instead clips
+each input cell against the output cells its bounding box touches, taking the
+signed area of what is left, after :footcite:t:`Sutherland1974`.
+Each cell is then independent of every other, so the work follows the input
+grid rather than the output one, and nothing has to be walked in order.
+For a 1000 by 1000 grid onto a 1000 by 2000 lattice this is about fifteen
+times faster, and it is the algorithm which the ``device`` argument of
+:func:`regridding.weights` runs on a GPU.
+
+Which one runs is decided from the output grid, and nothing has to be passed
+to choose.
 
 **Degenerate grids are perturbed, where that is what it takes.**
 Where a vertex of the output grid lands exactly on an edge of the input grid,

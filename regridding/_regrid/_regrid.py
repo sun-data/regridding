@@ -57,8 +57,11 @@ def regrid(
         of the cells containing `values_input`, so `values_input` has one fewer
         element along each resampled axis, and the sum of the result matches the
         sum of `values_input`.
-        The ``conservative`` method uses the algorithm described in
-        :footcite:t:`Ramshaw1985`.
+        The ``conservative`` method sweeps the grid lines of both grids
+        following :footcite:t:`Ramshaw1985`, except where the output grid is
+        a uniform, axis-aligned lattice, when it clips each input cell
+        against the output cells it reaches instead, after
+        :footcite:t:`Sutherland1974`.
     bounds
         How to treat output points that fall outside the input grid.
         Only applies when `method` is ``multilinear``; the ``conservative``

@@ -1,7 +1,7 @@
 """
 An alternative 2D conservative weights kernel based on polygon clipping.
 
-:func:`~regridding._weights._weights_conservative_2d.weights_conservative_2d`
+:func:`~regridding._weights._weights_conservative_2d._sweep.weights_conservative_2d`
 sweeps the grid lines of *both* grids and accumulates boundary integrals,
 which is fully general but forces a sequential walk along each line and a
 pass over the output grid whose cost is independent of how small the input
@@ -14,16 +14,16 @@ against only the output cells its bounding box touches, so the work per cell
 is bounded and every cell is independent of every other.
 
 The clipping itself lives in
-:mod:`~regridding._weights._weights_conservative_2d._clipping_shared`, whose
+:mod:`._shared`, whose
 source is compiled here for the CPU and in
-:mod:`~regridding._weights._weights_conservative_2d._clipping_cuda` for a
+:mod:`._cuda` for a
 CUDA device.
 """
 
 import numpy as np
 import numba
 import regridding as rg
-from ._clipping_shared import (
+from ._shared import (
     num_slot as _num_slot,
     build as _build_shared,
     check_indices_fit,
@@ -52,7 +52,7 @@ def grid_is_uniform_rectilinear(
 
     This is the condition under which
     :func:`weights_conservative_2d_clipping` may be used in place of
-    :func:`~regridding._weights._weights_conservative_2d.weights_conservative_2d`.
+    :func:`~regridding._weights._weights_conservative_2d._sweep.weights_conservative_2d`.
 
     Parameters
     ----------
@@ -105,7 +105,7 @@ def _count_cells(
 
     What is counted, and why the count is what lets the clipping pass be
     scheduled in any order, is described by
-    :func:`~regridding._weights._weights_conservative_2d._clipping_shared.build`'s
+    :func:`._shared.build`'s
     ``num_pair``, which this calls for each cell.
 
     Parameters
@@ -157,7 +157,7 @@ def _clip_cells(
     The scratch space each row clips in is allocated here, since the host
     and the device allocate it differently.  What a cell does with it, and
     why the cells do not interfere, is described by
-    :func:`~regridding._weights._weights_conservative_2d._clipping_shared.build`'s
+    :func:`._shared.build`'s
     ``clip_cell``, which this calls for each cell.
 
     Parameters
@@ -231,7 +231,7 @@ def weights_conservative_2d_clipping(
     against the output cells its bounding box touches.
 
     The result uses the same convention as
-    :func:`~regridding._weights._weights_conservative_2d.weights_conservative_2d`:
+    :func:`~regridding._weights._weights_conservative_2d._sweep.weights_conservative_2d`:
     a flat ``(indices_input, indices_output, values)`` triple in which each
     value is the fraction of the input cell shared with the output cell,
     optionally scaled by `weights_input`.  Duplicate pairs are summed by

@@ -4,11 +4,11 @@ import numba
 from numba.typed.typedlist import List as TypedList
 from numba import literal_unroll
 import regridding as rg
-from . import (
+from .. import (
     _arrays,
     _grids,
 )
-from ._arrays import axis_x, axis_y
+from .._arrays import axis_x, axis_y
 
 axes = (
     axis_x,

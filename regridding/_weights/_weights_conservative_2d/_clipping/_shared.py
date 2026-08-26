@@ -2,9 +2,9 @@
 The clipping algorithm itself, in a form both the host and a CUDA device can
 compile.
 
-:mod:`~regridding._weights._weights_conservative_2d._clipping` runs this on
+:mod:`._host` runs this on
 the CPU through :func:`numba.njit`, and
-:mod:`~regridding._weights._weights_conservative_2d._clipping_cuda` runs the
+:mod:`._cuda` runs the
 same source on a GPU through :func:`numba.cuda.jit`.  A CUDA kernel cannot
 call a :func:`numba.njit` function, so the two targets cannot share a
 *compiled* function, but they can share the Python source it is compiled
@@ -50,7 +50,7 @@ convex regions has only the edges of its two operands.  The extra four
 appear when the cell is not convex, which is legitimate under a strong
 enough distortion.  Cells whose edges cross each other are not supported,
 as noted in
-:func:`~regridding._weights._weights_conservative_2d._clipping.weights_conservative_2d_clipping`.
+:func:`._host.weights_conservative_2d_clipping`.
 """
 
 
@@ -88,6 +88,16 @@ def check_indices_fit(
             f"the grids need an index of up to {bound}, which does not fit "
             f"in {np.dtype(dtype_indices)}"
         )
+
+
+# The algorithm is written across two levels of this file, and the line
+# between them is what each part calls.
+#
+# These first three call nothing but themselves, so `build` compiles them
+# for its target and is done.  The ones inside `build` call these, and a
+# kernel can only call a function compiled for its own target, so they have
+# to be written where the compiled ones are in scope.  That is the only
+# reason they are nested; they are as much a part of the algorithm as these.
 
 
 def _corners(
@@ -291,6 +301,10 @@ def _clip_halfplane(
                 num_out += 1
 
     return num_out
+
+
+# The rest of the algorithm, which calls the three above and so is compiled
+# where they are in scope.
 
 
 def build(

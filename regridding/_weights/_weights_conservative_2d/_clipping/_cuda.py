@@ -2,9 +2,9 @@
 The clipping kernel on a CUDA device, leaving the result in device memory.
 
 The algorithm is not repeated here.  It lives in
-:mod:`~regridding._weights._weights_conservative_2d._clipping_shared`, and
+:mod:`._shared`, and
 this module compiles that same source for the device, exactly as
-:mod:`~regridding._weights._weights_conservative_2d._clipping` compiles it
+:mod:`._host` compiles it
 for the host.  What remains here is only what a device needs and a CPU does
 not: mapping threads onto cells, allocating the scratch space in local
 memory, the prefix sum, and the device allocations.
@@ -20,7 +20,7 @@ import numba
 from numba import cuda
 import regridding as rg
 from regridding import _cuda
-from ._clipping_shared import (
+from ._shared import (
     num_slot as _num_slot,
     build as _build_shared,
     check_indices_fit,

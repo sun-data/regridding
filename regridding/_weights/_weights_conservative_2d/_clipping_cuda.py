@@ -66,25 +66,22 @@ def _source(function: Callable) -> Callable:
 
 
 @functools.cache
-def _build(ftype: Any) -> tuple[Any, Any]:
+def _build() -> tuple[Any, Any]:
     """
-    Build the kernels for a given floating-point type.
+    Build the kernels.
 
-    The coordinates may be single or double precision, and the scratch space
-    each thread clips in has to be declared with a concrete type, so there is
-    one set of kernels per precision.  Compiling them takes a moment, so the
-    result is kept.
-
-    Parameters
-    ----------
-    ftype
-        The :mod:`numba` type of the coordinates and weights.
+    The clipping is done in double precision whatever the weights are
+    stored as, which is what the host does and what keeps the two agreeing.
+    Narrowing the arithmetic as well would save nothing: the kernel is
+    bound by what it writes rather than by what it computes, so single
+    precision is only worth having in the result.  Compiling takes a
+    moment, so the kernels are kept.
     """
 
     num_pair, clip_cell = _build_shared(
         _jit,
         _jit(_source(rg.geometry.cross_2d)),
-        np.float32(1) if ftype == numba.float32 else np.float64(1),
+        np.float64(1),
     )
 
     @cuda.jit
@@ -132,10 +129,10 @@ def _build(ftype: Any) -> tuple[Any, Any]:
 
         # `numba` annotates the shape of a local array as a `local`, so each
         # of these needs the annotation waived
-        subject_x = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
-        subject_y = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
-        clipped_x = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
-        clipped_y = cuda.local.array(_num_slot, ftype)  # type: ignore[arg-type]
+        subject_x = cuda.local.array(_num_slot, numba.float64)  # type: ignore[arg-type]
+        subject_y = cuda.local.array(_num_slot, numba.float64)  # type: ignore[arg-type]
+        clipped_x = cuda.local.array(_num_slot, numba.float64)  # type: ignore[arg-type]
+        clipped_y = cuda.local.array(_num_slot, numba.float64)  # type: ignore[arg-type]
 
         clip_cell(
             x,
@@ -249,7 +246,9 @@ def weights_conservative_2d_clipping_cuda(
         Optional weights applied to the values of the input grid before
         resampling.
     dtype
-        The floating-point type of the clipping and of the result.
+        The floating-point type the weights are stored as.  The clipping
+        itself is done in double precision either way, as it is on the
+        host.
     dtype_indices
         The integer type the indices are stored as.  The grids bound them,
         so whether they fit is known before any are written.
@@ -257,8 +256,7 @@ def weights_conservative_2d_clipping_cuda(
         The number of threads in each block.
     """
 
-    ftype = numba.float32 if np.dtype(dtype) == np.float32 else numba.float64
-    count_cells, clip_cells = _build(ftype)
+    count_cells, clip_cells = _build()
 
     x_output, y_output = grid_output
     num_output_x = x_output.shape[0] - 1
@@ -273,14 +271,10 @@ def weights_conservative_2d_clipping_cuda(
         step_x = float(x_output[1, 0] - x_output[0, 0])
         step_y = float(y_output[0, 1] - y_output[0, 0])
         x = cuda.to_device(
-            np.ascontiguousarray(
-                (np.asarray(x_input, float) - origin_x) / step_x, dtype
-            )
+            np.ascontiguousarray((np.asarray(x_input, float) - origin_x) / step_x)
         )
         y = cuda.to_device(
-            np.ascontiguousarray(
-                (np.asarray(y_input, float) - origin_y) / step_y, dtype
-            )
+            np.ascontiguousarray((np.asarray(y_input, float) - origin_y) / step_y)
         )
 
     num_x = x.shape[0] - 1
@@ -289,11 +283,11 @@ def weights_conservative_2d_clipping_cuda(
     blocks = (num_cell + threads - 1) // threads
 
     if weights_input is None:
-        factor = _cuda.fill(_cuda.allocate((num_x, num_y), dtype), 1, threads)
+        factor = _cuda.fill(_cuda.allocate((num_x, num_y), np.float64), 1, threads)
     elif cuda.is_cuda_array(weights_input):
         factor = weights_input
     else:
-        factor = cuda.to_device(np.ascontiguousarray(weights_input, dtype))
+        factor = cuda.to_device(np.ascontiguousarray(weights_input, np.float64))
 
     check_indices_fit(num_cell, num_output_x * num_output_y, dtype_indices)
 

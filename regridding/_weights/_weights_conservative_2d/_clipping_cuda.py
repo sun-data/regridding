@@ -36,33 +36,8 @@ __all__ = [
 
 
 def _jit(function: Callable) -> Any:
-    """
-    Compile one of the shared kernel bodies for a CUDA device.
-
-    Parameters
-    ----------
-    function
-        The plain Python function to compile.
-    """
+    """Compile one of the shared kernel bodies for a CUDA device."""
     return cuda.jit(device=True, inline=True)(function)
-
-
-def _source(function: Callable) -> Callable:
-    """
-    Recover the undecorated source of a host function.
-
-    A kernel cannot call a function compiled for the host, so the device has
-    to compile the same source itself.  :func:`numba.njit` keeps it on the
-    dispatcher as ``py_func``, except when ``NUMBA_DISABLE_JIT`` is set, in
-    which case it hands back the plain function and there is nothing to
-    unwrap.
-
-    Parameters
-    ----------
-    function
-        The host function to unwrap.
-    """
-    return getattr(function, "py_func", function)
 
 
 @functools.cache
@@ -78,11 +53,13 @@ def _build() -> tuple[Any, Any]:
     moment, so the kernels are kept.
     """
 
-    num_pair, clip_cell = _build_shared(
-        _jit,
-        _jit(_source(rg.geometry.cross_2d)),
-        np.float64(1),
-    )
+    # `numba.njit` keeps the undecorated source on the dispatcher as
+    # `py_func`, and hands back the plain function instead when
+    # `NUMBA_DISABLE_JIT` is set; a kernel cannot call the compiled one
+    # either way, so it compiles the source for itself
+    cross_2d = getattr(rg.geometry.cross_2d, "py_func", rg.geometry.cross_2d)
+
+    num_pair, clip_cell = _build_shared(_jit, _jit(cross_2d))
 
     @cuda.jit
     def count_cells(x, y, num_output_x, num_output_y, counts):  # pragma: nocover

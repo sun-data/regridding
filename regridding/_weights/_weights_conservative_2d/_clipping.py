@@ -36,18 +36,11 @@ __all__ = [
 
 
 def _jit(function):
-    """
-    Compile one of the shared kernel bodies for the CPU.
-
-    Parameters
-    ----------
-    function
-        The plain Python function to compile.
-    """
+    """Compile one of the shared kernel bodies for the CPU."""
     return numba.njit(cache=True, inline="always", error_model="numpy")(function)
 
 
-_num_pair, _clip_cell = _build_shared(_jit, rg.geometry.cross_2d, np.float64(1))
+_num_pair, _clip_cell = _build_shared(_jit, rg.geometry.cross_2d)
 
 
 def grid_is_uniform_rectilinear(

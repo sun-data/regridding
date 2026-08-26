@@ -19,12 +19,10 @@ are on the host.  On a device they are
 :class:`numba.cuda.cudadrv.devicearray.DeviceNDArray`, which is not a
 subclass but is indexed the same way.
 
-The functions here are deliberately written without floating-point literals.
-The coordinates may be single or double precision, and a Python literal is
-typed as double, so mixing one in would silently promote the arithmetic on
-the device, where double precision is many times slower.  Values of the
-right type are derived from the arguments instead, and the halving the
-shoelace needs is applied once at the end rather than to each term.
+Both targets clip in double precision whatever the weights are stored as,
+so the arithmetic here is ordinary double-precision arithmetic.  The one
+thing it avoids is halving each term of the shoelace, which is a division
+per edge where halving the total is one division per polygon.
 """
 
 from typing import Any, Callable
@@ -298,7 +296,6 @@ def _clip_halfplane(
 def build(
     jit: Callable[[Callable], Any],
     cross_2d: Callable,
-    one: Any,
 ) -> tuple[Callable, Callable]:
     """
     Compile the shared kernel bodies for one target.
@@ -313,11 +310,6 @@ def build(
         The target's compiled :func:`regridding.geometry.cross_2d`.  A
         kernel can only call a function compiled for its own target, so
         this cannot be imported here and has to be supplied by the caller.
-    one
-        The number one, as a :mod:`numpy` scalar of the type the
-        coordinates are in.  Writing ``1`` instead would be a literal of
-        double precision, which promotes single-precision arithmetic
-        wherever it reaches; a captured scalar of the right type does not.
 
     Returns
     -------
@@ -342,9 +334,7 @@ def build(
         num
             The number of valid vertices.
         """
-        # a zero of the coordinates' own type, so that single precision is
-        # not promoted by a literal
-        result = x[0] - x[0]
+        result = 0.0
 
         for k in range(num):
             k_next = k + 1
@@ -468,19 +458,14 @@ def build(
         # differences of coordinates, so working at the scale of the block
         # rather than of the whole grid keeps the significant figures that
         # single precision would otherwise lose to cancellation.
-        # scaled by `one` so that the integer offset does not promote the
-        # coordinates to double precision
-        offset_x = one * lower_x
-        offset_y = one * lower_y
-
-        x1 = x1 - offset_x
-        x2 = x2 - offset_x
-        x3 = x3 - offset_x
-        x4 = x4 - offset_x
-        y1 = y1 - offset_y
-        y2 = y2 - offset_y
-        y3 = y3 - offset_y
-        y4 = y4 - offset_y
+        x1 = x1 - lower_x
+        x2 = x2 - lower_x
+        x3 = x3 - lower_x
+        x4 = x4 - lower_x
+        y1 = y1 - lower_y
+        y2 = y2 - lower_y
+        y3 = y3 - lower_y
+        y4 = y4 - lower_y
 
         subject_x[0] = x1
         subject_x[1] = x2
@@ -498,8 +483,6 @@ def build(
 
         weight_cell = weights_input[index_x, index_y] / area_cell
 
-        minus_one = -one
-
         for cell_x in range(lower_x, upper_x):
             for cell_y in range(lower_y, upper_y):
 
@@ -512,8 +495,8 @@ def build(
                 subject_y[2] = y3
                 subject_y[3] = y4
 
-                bound_x = one * (cell_x - lower_x)
-                bound_y = one * (cell_y - lower_y)
+                bound_x = cell_x - lower_x
+                bound_y = cell_y - lower_y
 
                 # the candidate cells come from the bounding box, so the cell
                 # always overlaps the slab being clipped against in `x` and
@@ -524,7 +507,7 @@ def build(
                     subject_y,
                     4,
                     0,
-                    one,
+                    1.0,
                     bound_x,
                     clipped_x,
                     clipped_y,
@@ -534,8 +517,8 @@ def build(
                     clipped_y,
                     num,
                     0,
-                    minus_one,
-                    bound_x + one,
+                    -1.0,
+                    bound_x + 1,
                     subject_x,
                     subject_y,
                 )
@@ -544,7 +527,7 @@ def build(
                     subject_y,
                     num,
                     1,
-                    one,
+                    1.0,
                     bound_y,
                     clipped_x,
                     clipped_y,
@@ -556,8 +539,8 @@ def build(
                     clipped_y,
                     num,
                     1,
-                    minus_one,
-                    bound_y + one,
+                    -1.0,
+                    bound_y + 1,
                     subject_x,
                     subject_y,
                 )

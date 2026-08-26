@@ -2,9 +2,9 @@
 The clipping algorithm itself, in a form both the host and a CUDA device can
 compile.
 
-:mod:`~regridding._weights._weights_conservative_2d._clipping` runs this on
+:mod:`._host` runs this on
 the CPU through :func:`numba.njit`, and
-:mod:`~regridding._weights._weights_conservative_2d._clipping_cuda` runs the
+:mod:`._cuda` runs the
 same source on a GPU through :func:`numba.cuda.jit`.  A CUDA kernel cannot
 call a :func:`numba.njit` function, so the two targets cannot share a
 *compiled* function, but they can share the Python source it is compiled
@@ -50,7 +50,7 @@ convex regions has only the edges of its two operands.  The extra four
 appear when the cell is not convex, which is legitimate under a strong
 enough distortion.  Cells whose edges cross each other are not supported,
 as noted in
-:func:`~regridding._weights._weights_conservative_2d._clipping.weights_conservative_2d_clipping`.
+:func:`._host.weights_conservative_2d_clipping`.
 """
 
 

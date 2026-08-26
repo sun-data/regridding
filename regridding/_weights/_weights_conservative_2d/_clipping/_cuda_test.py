@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import regridding
-from ._clipping import weights_conservative_2d_clipping
+from ._host import weights_conservative_2d_clipping
 
 from numba import cuda
 
@@ -42,7 +42,7 @@ class TestWeightsConservative2dClippingCuda:
     @pytest.mark.parametrize("dtype", [np.float64, np.float32])
     def test_matches_host(self, dtype):
         """The device kernel agrees with the host kernel it was ported from."""
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
@@ -80,7 +80,7 @@ class TestWeightsConservative2dClippingCuda:
         since a cell reaching past the edge of the output grid is only
         partly covered and its total is legitimately less.
         """
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
@@ -115,7 +115,7 @@ class TestWeightsConservative2dClippingCuda:
     def test_on_device(self):
         """The result is left in device memory."""
         from numba import cuda
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         triple = weights_conservative_2d_clipping_cuda(_distorted(9), _lattice(5, 5))
         for array in triple:
@@ -124,7 +124,7 @@ class TestWeightsConservative2dClippingCuda:
     @requires_cuda
     def test_weights_input(self):
         """`weights_input` scales each cell's row."""
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         weights_input = np.arange(1, 20 * 20 + 1, dtype=float).reshape(20, 20)
         indices_input, _, values = _host(
@@ -179,7 +179,7 @@ class TestWeightsConservative2dClippingCuda:
     @requires_cuda
     def test_grid_input_on_device(self):
         """A grid already on the device is used where it is, in cell units."""
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
@@ -203,7 +203,7 @@ class TestWeightsConservative2dClippingCuda:
     @requires_cuda
     def test_weights_input_on_device(self):
         """`weights_input` already on the device is used where it is."""
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
@@ -236,7 +236,7 @@ class TestWeightsConservative2dClippingCuda:
         reader which forgets to drop the sentinel slots sees zeros there
         rather than whatever the allocation happened to contain.
         """
-        from ._clipping_cuda import weights_conservative_2d_clipping_cuda
+        from ._cuda import weights_conservative_2d_clipping_cuda
 
         # rotated hard enough that many bounding boxes cover cells the
         # quadrilateral itself misses

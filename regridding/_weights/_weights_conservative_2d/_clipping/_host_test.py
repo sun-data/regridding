@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
-from ._weights_conservative_2d import weights_conservative_2d
-from ._clipping import (
+from .._sweep import weights_conservative_2d
+from ._host import (
     grid_is_uniform_rectilinear,
     weights_conservative_2d_clipping,
 )

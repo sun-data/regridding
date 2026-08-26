@@ -970,6 +970,38 @@ def point_is_inside_polyhedron(
     fastmath=True,
     inline="always",
 )
+def cross_2d(
+    vertex_1: tuple[float, float],
+    vertex_2: tuple[float, float],
+) -> float:
+    """
+    Compute the cross product of two vertices, which is twice the signed area
+    of the triangle they form with the origin.
+
+    This is the term summed by the shoelace formula.  It is kept separate from
+    :func:`area_triangle` so that a caller summing many triangles can halve the
+    total once at the end instead of halving each term, which matters on a GPU
+    where the division is expensive and where a scalar literal would otherwise
+    promote single-precision arithmetic to double.
+
+    Parameters
+    ----------
+    vertex_1
+        The first vertex of the triangle.
+    vertex_2
+        The second vertex of the triangle.
+    """
+    x_p1, y_p1 = vertex_1
+    x_p2, y_p2 = vertex_2
+
+    return x_p1 * y_p2 - x_p2 * y_p1
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+    inline="always",
+)
 def area_triangle(
     vertex_1: tuple[float, float],
     vertex_2: tuple[float, float],
@@ -987,12 +1019,7 @@ def area_triangle(
     vertex_2
         The second vertex of the triangle.
     """
-    x_p1, y_p1 = vertex_1
-    x_p2, y_p2 = vertex_2
-
-    area = (x_p1 * y_p2 - x_p2 * y_p1) / 2
-
-    return area
+    return cross_2d(vertex_1, vertex_2) / 2
 
 
 @numba.njit(cache=True)

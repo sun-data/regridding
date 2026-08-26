@@ -108,6 +108,7 @@ def weights(
     coalesce: bool = True,
     dtype_indices: None | np.typing.DTypeLike = None,
     dtype_values: None | np.typing.DTypeLike = None,
+    device: None | str = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """
     Save the results of a regridding operation as a sequence of weights,
@@ -203,6 +204,44 @@ def weights(
         5e-8 in the total weight of each input cell, since
         :func:`regridding.regrid_from_weights` accumulates into a double
         precision array.
+    device
+        The device to build the weights on.
+        If :obj:`None` (the default), they are built on the host as
+        :class:`numpy.ndarray`.
+
+        Passing ``"cuda"`` builds them with a CUDA kernel and leaves them
+        in device memory, as
+        :class:`numba.cuda.cudadrv.devicearray.DeviceNDArray`.
+
+        :func:`regridding.regrid_from_weights` applies them where they
+        are and leaves its result on the device as well, so a scene which
+        is already there is never brought back::
+
+            weights = regridding.weights(..., device="cuda")
+            image = regridding.regrid_from_weights(*weights, values_input=scene)
+
+        The result exposes ``__cuda_array_interface__``, so
+        :func:`torch.as_tensor` wraps it without copying.
+
+        Many arrays on the same grid are one call rather than one each,
+        and are best given somewhere already allocated to go; see the
+        notes on :func:`regridding.regrid_from_weights`.
+
+        This needs the output grid to be a uniform, axis-aligned lattice,
+        since only the clipping kernel is ported.  `coalesce` is ignored,
+        as it is for that kernel on the host: clipping a cell against each
+        of its candidates once emits no pair twice, so there is nothing to
+        merge.
+
+        Slots which received no overlap carry an index of ``-1``, and the
+        weights beside them are left uninitialized.
+        :func:`regridding.regrid_from_weights` skips them; anything else
+        reading the weights directly has to drop them.
+
+        `dtype_values` and `dtype_indices` select what the kernel builds
+        in, rather than being applied to the result afterwards.  Whether
+        the indices fit is decided from the size of the grids before any
+        are written, rather than by scanning them once they are.
 
     See Also
     --------
@@ -281,6 +320,12 @@ def weights(
     if unit_weights is not None:
         weights_input = getattr(weights_input, "value")
 
+    if device is not None:
+        if method != "conservative":
+            raise ValueError(f"{device=} is only supported by the conservative method")
+
+    clipped = False
+
     if method == "multilinear":
         result = _weights_multilinear(
             coordinates_input=coordinates_input,
@@ -293,7 +338,7 @@ def weights(
             seed=seed,
         )
     elif method == "conservative":
-        result = _weights_conservative(
+        result, clipped = _weights_conservative(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,
@@ -301,19 +346,28 @@ def weights(
             weights_input=weights_input,
             perturb=perturb,
             seed=seed,
+            device=device,
+            dtype=dtype_values,
+            dtype_indices=dtype_indices,
         )
     else:
         raise ValueError(f"unrecognized method '{method}'")
 
-    if coalesce:
-        result = _weights_to_arrays(result)
+    # The clipping kernel clips each cell against each of its candidates
+    # once, so it emits no pair twice and emits them in order: there is
+    # nothing for a merge to merge.  It is also handed the types to build
+    # in, rather than being narrowed once it has built.  Both are true of
+    # the host and the device alike, so neither step runs for it.
+    if not clipped:
+        if coalesce:
+            result = _weights_to_arrays(result)
 
-    if dtype_indices is not None or dtype_values is not None:
-        result = _weights_astype(
-            weights=result,
-            dtype_indices=dtype_indices,
-            dtype_values=dtype_values,
-        )
+        if dtype_indices is not None or dtype_values is not None:
+            result = _weights_astype(
+                weights=result,
+                dtype_indices=dtype_indices,
+                dtype_values=dtype_values,
+            )
 
     if unit_weights is not None:
         array, shape_input, shape_output = result

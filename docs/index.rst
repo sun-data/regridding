@@ -49,6 +49,10 @@ Features
 *   :func:`regridding.transpose_weights` and
     :func:`regridding.transpose_weights_conservative`,
     which reverse a saved resampling, as needed by iterative inversions.
+*   Building the weights on a CUDA device and applying them there, with the
+    ``device`` argument of :func:`regridding.weights`.
+    The result is left in device memory, so a scene which is already on the
+    card is never brought back.
 *   :func:`regridding.fill`, which fills the missing values of an array by
     interpolating from the valid points.
 *   :func:`regridding.find_indices`, which locates the input cell containing
@@ -91,15 +95,23 @@ repeated independently for every position along them.
 This is how a stack of images, or a spectrum for each pixel, is resampled in
 one call.
 
-**Degenerate grids are perturbed.**
+**Degenerate grids are perturbed, where that is what it takes.**
 Where a vertex of the output grid lands exactly on an edge of the input grid,
 the overlap between the two cells is ambiguous.
-The ``conservative`` method therefore jitters the output grid by ``1e-9`` of
-its width before clipping, which can be controlled using the ``perturb``
-argument of :func:`regridding.regrid` and :func:`regridding.weights`.
+For a general output grid the ``conservative`` method sweeps the grid lines of
+both grids, which cannot resolve that, so it jitters the output grid by
+``1e-9`` of its width first.
+The jitter can be controlled using the ``perturb`` argument of
+:func:`regridding.regrid` and :func:`regridding.weights`.
+
+Where the output grid is a uniform, axis-aligned lattice, the method clips
+each input cell against the output cells it reaches instead.
+Clipping resolves coincident vertices and collinear edges exactly, so nothing
+is jittered and the ``perturb`` and ``seed`` arguments make no difference to
+the result.
 
 **The result is reproducible.**
-That jitter is drawn from a :class:`numpy.random.Generator` with a fixed seed,
+The jitter is drawn from a :class:`numpy.random.Generator` with a fixed seed,
 so repeated calls on the same grids return identical weights, and a saved build
 can be compared or cached.
 The ``seed`` argument accepts an integer or a generator of your own, and

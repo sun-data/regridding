@@ -9,6 +9,7 @@ from ._weights_conservative_1d import weights_conservative_1d
 from ._weights_conservative_2d import (
     weights_conservative_2d,
     weights_conservative_2d_clipping,
+    weights_conservative_2d_clipping_cuda,
     grid_is_uniform_rectilinear,
 )
 
@@ -73,7 +74,10 @@ def _weights_conservative(
     weights_input: None | np.ndarray = None,
     perturb: None | bool = True,
     seed: "None | int | np.random.Generator" = _util._seed_default,
-) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+    device: None | str = None,
+    dtype: None | np.typing.DTypeLike = None,
+    dtype_indices: None | np.typing.DTypeLike = None,
+) -> tuple[tuple[np.ndarray, tuple[int, ...], tuple[int, ...]], bool]:
 
     if perturb is None:
         perturb = False
@@ -99,6 +103,12 @@ def _weights_conservative(
         axis_output=normalized[3],
         shape_orthogonal=normalized[6],
     )
+
+    if device is not None and not clipping:
+        raise ValueError(
+            f"{device=} needs the clipping kernel, which needs the output "
+            f"grid to be a uniform, axis-aligned lattice"
+        )
 
     if perturb and not clipping:
         normalized = _util._normalize_input_output_coordinates(
@@ -214,11 +224,25 @@ def _weights_conservative(
                     coordinates_output_y[index_vertices_output],
                 )
 
-                if clipping:
+                if device is not None:
+                    weights[index] = weights_conservative_2d_clipping_cuda(
+                        grid_input=grid_input_index,
+                        grid_output=grid_output_index,
+                        weights_input=weights_input_index,
+                        dtype=np.float64 if dtype is None else dtype,
+                        dtype_indices=(
+                            np.int64 if dtype_indices is None else dtype_indices
+                        ),
+                    )
+                elif clipping:
                     weights[index] = weights_conservative_2d_clipping(
                         grid_input=grid_input_index,
                         grid_output=grid_output_index,
                         weights_input=weights_input_index,
+                        dtype=np.float64 if dtype is None else dtype,
+                        dtype_indices=(
+                            np.int64 if dtype_indices is None else dtype_indices
+                        ),
                     )
                 else:
                     weights[index] = weights_conservative_2d(
@@ -232,4 +256,7 @@ def _weights_conservative(
                     "Regridding operations greater than 2D are not supported"
                 )
 
-    return weights, shape_values_input, shape_values_output
+    # whether the clipping kernel built these, which the caller needs since
+    # its result is already ordered, free of repeats, and in the types asked
+    # for.  A device build is one of these, being refused above otherwise.
+    return (weights, shape_values_input, shape_values_output), clipping

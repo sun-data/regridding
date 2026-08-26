@@ -33,6 +33,10 @@ test = [
     "scipy",
     "astropy",
 ]
+cuda = [
+    # `numba.cuda` supplies the kernels, but not a prefix sum
+    "torch",
+]
 doc = [
     "pytest",
     "scipy",
@@ -66,6 +70,14 @@ typeCheckingMode = "standard"
 regridding = ["py.typed"]
 
 [tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+markers = [
+    # applied by `requires_cuda` in the device tests, and selected with
+    # `-m cuda` by the `tests-cuda` workflow, which is the only place with
+    # a device to run them on
+    "cuda: needs a CUDA device",
+]
 
 [tool.coverage.run]
 omit = [

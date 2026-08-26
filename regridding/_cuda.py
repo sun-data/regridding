@@ -13,14 +13,21 @@ from numba import cuda
 from numba.cuda.cudadrv import driver
 
 __all__ = [
+    "threads",
     "available",
     "allocate",
     "fill",
     "zeros",
 ]
 
-_threads = 256
-"""The number of threads in each block, where nothing better is known."""
+threads = 256
+"""
+The number of threads in each block.
+
+One number for every kernel here: none of them has been shown to want a
+different one, so a difference between them would only look deliberate
+without being so.
+"""
 
 
 def available() -> bool:
@@ -60,7 +67,7 @@ def allocate(shape: Any, dtype: np.typing.DTypeLike) -> Any:
     return cuda.device_array(shape, dtype)  # type: ignore[arg-type]
 
 
-def fill(a: Any, value: Any, threads: int = _threads) -> Any:
+def fill(a: Any, value: Any, threads: int = threads) -> Any:
     """
     Fill a device array with a value, and return it.
 
@@ -78,9 +85,21 @@ def fill(a: Any, value: Any, threads: int = _threads) -> Any:
         The value to fill it with.
     threads
         The number of threads in each block.
+
+    Raises
+    ------
+    ValueError
+        If the array is not contiguous.
     """
     if not a.size:
         return a
+
+    if not a.is_c_contiguous():
+        raise ValueError(
+            "a device array has to be contiguous to be filled: the driver "
+            "is asked for `nbytes` from the start of it, which is not where "
+            "a strided view keeps its elements"
+        )
 
     pattern = np.array(value, dtype=a.dtype).tobytes()
 

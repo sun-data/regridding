@@ -199,7 +199,7 @@ def weights_conservative_2d_clipping_cuda(
     weights_input: None | np.ndarray = None,
     dtype: np.typing.DTypeLike = np.float64,
     dtype_indices: np.typing.DTypeLike = np.int64,
-    threads: int = 128,
+    threads: int = _cuda.threads,
 ) -> tuple:
     """
     Compute 2D conservative weights on a CUDA device, and leave them there.

@@ -257,7 +257,6 @@ def _weights_conservative(
                 )
 
     # whether the clipping kernel built these, which the caller needs since
-    # its result is already merged, ordered and in the types asked for
-    clipped = clipping or device is not None
-
-    return (weights, shape_values_input, shape_values_output), clipped
+    # its result is already ordered, free of repeats, and in the types asked
+    # for.  A device build is one of these, being refused above otherwise.
+    return (weights, shape_values_input, shape_values_output), clipping

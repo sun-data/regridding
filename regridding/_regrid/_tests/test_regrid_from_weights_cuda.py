@@ -294,6 +294,24 @@ class TestCube:
         assert np.allclose(cube.copy_to_host(), expected, rtol=0, atol=1e-12)
 
 
+class TestFill:
+    """The shared device fill."""
+
+    @requires_cuda
+    def test_a_strided_array_is_refused(self):
+        """
+        Filling one by memset would write somewhere else.
+
+        The driver is asked for `nbytes` from the start of the array, which
+        is where a strided view keeps only some of its elements.
+        """
+        from regridding import _cuda
+
+        wide = cuda.to_device(np.zeros((8, 16)))
+        with pytest.raises(ValueError, match="has to be contiguous"):
+            _cuda.fill(wide[:, ::2], 0)
+
+
 class TestNoOverlap:
     """An input grid which misses the output grid entirely."""
 

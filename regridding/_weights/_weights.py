@@ -217,7 +217,7 @@ def weights(
         are and leaves its result on the device as well, so a scene which
         is already there is never brought back::
 
-            weights = regridding.weights(..., coalesce=False, device="cuda")
+            weights = regridding.weights(..., device="cuda")
             image = regridding.regrid_from_weights(*weights, values_input=scene)
 
         The result exposes ``__cuda_array_interface__``, so
@@ -228,8 +228,10 @@ def weights(
         notes on :func:`regridding.regrid_from_weights`.
 
         This needs the output grid to be a uniform, axis-aligned lattice,
-        since only the clipping kernel is ported, and it needs `coalesce`
-        to be :obj:`False`, since merging repeated pairs is not.
+        since only the clipping kernel is ported.  `coalesce` is ignored,
+        as it is for that kernel on the host: clipping a cell against each
+        of its candidates once emits no pair twice, so there is nothing to
+        merge.
 
         Slots which received no overlap carry an index of ``-1``, and the
         weights beside them are left uninitialized.
@@ -321,12 +323,6 @@ def weights(
     if device is not None:
         if method != "conservative":
             raise ValueError(f"{device=} is only supported by the conservative method")
-        if coalesce:
-            raise ValueError(
-                f"{device=} needs `coalesce=False`; merging repeated pairs is "
-                f"not ported to the device, and weights which are applied once "
-                f"have nothing to amortize the merge against"
-            )
 
     clipped = False
 

@@ -334,14 +334,30 @@ class TestDeviceRejected:
                 device="cuda",
             )
 
-    def test_coalesce(self):
-        with pytest.raises(ValueError, match="needs `coalesce=False`"):
+    @requires_cuda
+    def test_coalesce_is_ignored(self):
+        """
+        Asking for the merge is allowed, and changes nothing.
+
+        The clipping kernel emits no pair twice, so there is nothing for it
+        to merge; the host ignores it for the same reason.
+        """
+        weights = [
             regridding.weights(
-                coordinates_input=self.grid_input,
-                coordinates_output=self.grid_output,
+                coordinates_input=_distorted(21),
+                coordinates_output=_lattice(9, 11),
                 method="conservative",
+                coalesce=coalesce,
                 device="cuda",
             )
+            for coalesce in (False, True)
+        ]
+
+        (ii, io, vv), (ii_c, io_c, vv_c) = (w[0].reshape(-1)[0] for w in weights)
+
+        assert np.array_equal(ii.copy_to_host(), ii_c.copy_to_host())
+        assert np.array_equal(io.copy_to_host(), io_c.copy_to_host())
+        assert np.array_equal(vv.copy_to_host(), vv_c.copy_to_host())
 
     @requires_cuda
     def test_dtype_indices_too_narrow(self):

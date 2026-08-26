@@ -12,9 +12,10 @@ transposes and broadcasts its values, so the axes are not moved here: the
 kernel addresses both sides through strides which the caller works out from
 the shapes.  An axis being broadcast is one whose stride is zero, so that
 falls out of the same arithmetic rather than needing a copy.  Addressing
-this way rather than assuming the resampled axes are contiguous costs about
-four percent, since a device resampling is always the 2D conservative one
-and the index arithmetic is therefore a fixed pair of divisions.
+this way rather than assuming the resampled axes are contiguous costs a few
+percent, 0.230 ms against 0.243 ms for four million weights, since a device
+resampling is always the 2D conservative one and splitting an index back
+into a pair is therefore two divisions rather than a loop.
 
 This is reached by calling :func:`regridding.regrid_from_weights` with
 weights built by :func:`regridding.weights` with ``device="cuda"``; there is
@@ -183,7 +184,7 @@ def regrid_from_weights_cuda(
     values_output: None | Any = None,
     axis_input: tuple[int, ...] = (),
     axis_output: tuple[int, ...] = (),
-    threads: int = 256,
+    threads: int = _cuda.threads,
 ) -> Any:
     """
     Apply weights which live in device memory.

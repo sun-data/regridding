@@ -90,6 +90,16 @@ def check_indices_fit(
         )
 
 
+# The algorithm is written across two levels of this file, and the line
+# between them is what each part calls.
+#
+# These first three call nothing but themselves, so `build` compiles them
+# for its target and is done.  The ones inside `build` call these, and a
+# kernel can only call a function compiled for its own target, so they have
+# to be written where the compiled ones are in scope.  That is the only
+# reason they are nested; they are as much a part of the algorithm as these.
+
+
 def _corners(
     x: "np.ndarray",
     y: "np.ndarray",
@@ -291,6 +301,10 @@ def _clip_halfplane(
                 num_out += 1
 
     return num_out
+
+
+# The rest of the algorithm, which calls the three above and so is compiled
+# where they are in scope.
 
 
 def build(

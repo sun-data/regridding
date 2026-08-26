@@ -22,10 +22,15 @@ weights built by :func:`regridding.weights` with ``device="cuda"``; there is
 no separate function to call.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import numpy as np
 from numba import cuda
 from regridding import _cuda
+
+if TYPE_CHECKING:  # pragma: nocover
+    # only for the annotation: importing it outright would be a cycle, since
+    # `_regrid_from_weights` is what imports this module
+    from ._regrid_from_weights import _Normalized
 
 __all__ = [
     "regrid_from_weights_cuda",
@@ -177,13 +182,9 @@ def _addressing(
 
 def regrid_from_weights_cuda(
     weights: np.ndarray,
-    shape_orthogonal: tuple[int, ...],
-    shape_input: tuple[int, ...],
-    shape_output: tuple[int, ...],
+    normalized: "_Normalized",
     values_input: Any,
     values_output: None | Any = None,
-    axis_input: tuple[int, ...] = (),
-    axis_output: tuple[int, ...] = (),
     threads: int = _cuda.threads,
 ) -> Any:
     """
@@ -198,22 +199,16 @@ def regrid_from_weights_cuda(
     ----------
     weights
         Weights built by :func:`regridding.weights` with ``device="cuda"``.
-    shape_orthogonal
-        The shape of the axes which are not resampled.
-    shape_input
-        The shape of the input values, including the orthogonal axes.
-    shape_output
-        The shape of the output values, including the orthogonal axes.
+    normalized
+        The axes and shapes the resampling operates on, as
+        :func:`~regridding._regrid._regrid_from_weights._normalize` works
+        them out.
     values_input
         The values to resample.  Anything exposing
         ``__cuda_array_interface__`` is used where it is; a host array is
         broadcast and sent to the device first.
     values_output
         An optional device array to place the output in.
-    axis_input
-        The resampled axes of the input, normalized and sorted.
-    axis_output
-        The resampled axes of the output, normalized and sorted.
     threads
         The number of threads in each block.
 
@@ -224,6 +219,8 @@ def regrid_from_weights_cuda(
         array given for either side is not contiguous, or if `values_output`
         is not the shape the weights were built for.
     """
+
+    axis_input, axis_output, shape_orthogonal, shape_input, shape_output = normalized
 
     if getattr(values_input, "unit", None) is not None:
         raise ValueError(

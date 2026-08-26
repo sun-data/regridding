@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import NamedTuple, Sequence
 import numpy as np
 import numba
 from numba import cuda
@@ -95,24 +95,21 @@ def regrid_from_weights(
 
     unit = getattr(values_input, "unit", None)
 
-    axis_input, axis_output, shape_orthogonal, shape_input, shape_output = _normalize(
+    normalized = _normalize(
         shape_input=shape_input,
         shape_output=shape_output,
         values_input=values_input,
         axis_input=axis_input,
         axis_output=axis_output,
     )
+    axis_input, axis_output, shape_orthogonal, shape_input, shape_output = normalized
 
     if _on_device(weights):
         return regrid_from_weights_cuda(
             weights=weights,
-            shape_orthogonal=shape_orthogonal,
-            shape_input=shape_input,
-            shape_output=shape_output,
+            normalized=normalized,
             values_input=values_input,
             values_output=values_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
         )
 
     weights = np.broadcast_to(np.array(weights), shape_orthogonal, subok=True)
@@ -172,19 +169,40 @@ def regrid_from_weights(
     return values_output << unit
 
 
+class _Normalized(NamedTuple):
+    """
+    The axes and shapes a resampling operates on.
+
+    These are worked out together and used together, by whichever path runs.
+
+    Parameters
+    ----------
+    axis_input
+        The resampled axes of the input, counted from the end and sorted.
+    axis_output
+        The resampled axes of the output, counted from the end and sorted.
+    shape_orthogonal
+        The shape of the axes which are not resampled.
+    shape_input
+        The shape of the input values, including the orthogonal axes.
+    shape_output
+        The shape of the output values, including the orthogonal axes.
+    """
+
+    axis_input: tuple[int, ...]
+    axis_output: tuple[int, ...]
+    shape_orthogonal: tuple[int, ...]
+    shape_input: tuple[int, ...]
+    shape_output: tuple[int, ...]
+
+
 def _normalize(
     shape_input: tuple[int, ...],
     shape_output: tuple[int, ...],
     values_input: np.ndarray,
     axis_input: None | int | Sequence[int],
     axis_output: None | int | Sequence[int],
-) -> tuple[
-    tuple[int, ...],
-    tuple[int, ...],
-    tuple[int, ...],
-    tuple[int, ...],
-    tuple[int, ...],
-]:
+) -> _Normalized:
     """
     Work out the axes and shapes the resampling operates on.
 
@@ -207,9 +225,8 @@ def _normalize(
 
     Returns
     -------
-    The normalized ``(axis_input, axis_output, shape_orthogonal, shape_input,
-    shape_output)``, where the two shapes carry the orthogonal axes as well as
-    the resampled ones.
+    The normalized axes and shapes, where the two shapes carry the orthogonal
+    axes as well as the resampled ones.
     """
 
     axis_input = _util._normalize_axis(axis_input, ndim=len(shape_input))
@@ -254,7 +271,13 @@ def _normalize(
         shape_output_new.insert(~ax, shape_output[ax])
     shape_output = tuple(reversed(shape_output_new))
 
-    return axis_input, axis_output, shape_orthogonal, shape_input, shape_output
+    return _Normalized(
+        axis_input=axis_input,
+        axis_output=axis_output,
+        shape_orthogonal=shape_orthogonal,
+        shape_input=shape_input,
+        shape_output=shape_output,
+    )
 
 
 def _on_device(weights: np.ndarray) -> bool:

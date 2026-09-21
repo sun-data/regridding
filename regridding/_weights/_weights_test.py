@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import astropy.units as u
 import regridding
 from regridding._weights import _weights_conservative as _conservative
 
@@ -368,3 +369,55 @@ class TestDtype:
         """An index which does not fit raises instead of wrapping around."""
         with pytest.raises(ValueError, match="does not fit in int8"):
             _weights_conservative(dtype_indices=np.int8)
+
+
+def _grids_unit():
+    x = np.linspace(-1, 1, num=11)
+    y = np.linspace(-1, 1, num=11)
+    return dict(
+        coordinates_input=np.meshgrid(x, y, indexing="ij"),
+        coordinates_output=np.meshgrid(1.1 * x + 0.01, 1.2 * y + 0.01, indexing="ij"),
+        method="conservative",
+    )
+
+
+@pytest.mark.parametrize("unit", [u.dimensionless_unscaled, u.percent, u.mm])
+def test_weights_input_unit_kept(unit):
+    """A ``weights_input`` with any unit carries it onto the weights."""
+    result, _, _ = regridding.weights(
+        weights_input=np.ones((10, 10)) * unit,
+        **_grids_unit(),
+    )
+    assert all(getattr(w[2], "unit", None) == unit for w in result.reshape(-1))
+
+
+@pytest.mark.cuda
+def test_weights_input_dimensionless_quantity_on_device():
+    """
+    On a device a dimensionless ``weights_input`` is applied as the number it
+    stands for, so that a percentage is applied as a fraction, and the
+    weights come back as plain floats.
+    """
+    weights_input = np.random.default_rng(0).uniform(0.5, 1.5, size=(10, 10))
+    kwargs = dict(_grids_unit(), coalesce=False, device="cuda")
+    reference, _, _ = regridding.weights(weights_input=weights_input, **kwargs)
+    values_reference = reference.reshape(-1)[0][2].copy_to_host()
+
+    for weights_quantity, factor in (
+        (weights_input * u.dimensionless_unscaled, 1),
+        (weights_input * u.percent, 0.01),
+    ):
+        result, _, _ = regridding.weights(weights_input=weights_quantity, **kwargs)
+        assert np.allclose(
+            result.reshape(-1)[0][2].copy_to_host(), factor * values_reference
+        )
+
+
+@pytest.mark.cuda
+def test_weights_input_unit_on_device():
+    """A ``weights_input`` with a real unit cannot be built on a device."""
+    with pytest.raises(ValueError, match="cannot be built on a device"):
+        regridding.weights(
+            weights_input=np.ones((10, 10)) * u.mm,
+            **dict(_grids_unit(), coalesce=False, device="cuda"),
+        )

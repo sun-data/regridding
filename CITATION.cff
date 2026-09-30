@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use regridding in your research, please cite it using these metadata."
+type: software
+title: regridding
+abstract: >-
+  Numba-accelerated multilinear and first-order conservative interpolation of
+  Numpy arrays.
+authors:
+  - family-names: Smart
+    given-names: Roy T.
+    orcid: "https://orcid.org/0000-0002-9997-5515"
+  - family-names: Parker
+    given-names: Jacob D.
+    orcid: "https://orcid.org/0000-0001-8732-8284"
+repository-code: "https://github.com/sun-data/regridding"
+url: "https://regridding.readthedocs.io"
+license: BSD-3-Clause
+keywords:
+  - interpolation
+  - regridding
+  - resampling
+  - conservative resampling
+  - curvilinear grid
+  - Numba

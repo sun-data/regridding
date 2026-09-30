@@ -342,6 +342,27 @@ Fill the missing values of an array by interpolating from the valid points.
 
 |
 
+Citation
+========
+
+If you use :mod:`regridding` in your research, please cite it.
+The citation metadata is kept in
+`CITATION.cff <https://github.com/sun-data/regridding/blob/main/CITATION.cff>`_,
+which the "Cite this repository" button on the
+`GitHub page <https://github.com/sun-data/regridding>`_
+can export as BibTeX or APA.
+Please include the version of :mod:`regridding` that you used,
+which is given by ``importlib.metadata.version("regridding")``.
+
+.. code-block:: bibtex
+
+    @software{regridding,
+      author = {Smart, Roy T. and Parker, Jacob D.},
+      title = {regridding},
+      version = {X.Y.Z},
+      url = {https://github.com/sun-data/regridding},
+    }
+
 API Reference
 =============
 

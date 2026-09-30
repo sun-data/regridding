@@ -314,6 +314,23 @@ axs[1].set_title("filled array");
 ```
 ![fill](https://regridding.readthedocs.io/en/latest/_images/index_4_0.png)
 
+## Citation
+
+If you use regridding in your research, please cite it.
+The citation metadata is kept in [`CITATION.cff`](https://github.com/sun-data/regridding/blob/main/CITATION.cff),
+which the "Cite this repository" button on GitHub can export as BibTeX or APA.
+Please include the version of regridding that you used,
+which is given by `importlib.metadata.version("regridding")`.
+
+```bibtex
+@software{regridding,
+  author = {Smart, Roy T. and Parker, Jacob D.},
+  title = {regridding},
+  version = {X.Y.Z},
+  url = {https://github.com/sun-data/regridding},
+}
+```
+
 ## Development
 
 Install the package in editable mode along with its test dependencies, and run

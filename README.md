@@ -6,6 +6,7 @@
 [![Ruff](https://github.com/sun-data/regridding/actions/workflows/ruff.yml/badge.svg)](https://github.com/sun-data/regridding/actions/workflows/ruff.yml)
 [![Documentation Status](https://readthedocs.org/projects/regridding/badge/?version=latest)](https://regridding.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/regridding.svg)](https://badge.fury.io/py/regridding)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23069898.svg)](https://doi.org/10.5281/zenodo.23069898)
 
 Numba-accelerated multilinear and first-order conservative interpolation of Numpy arrays.
 
@@ -319,14 +320,23 @@ axs[1].set_title("filled array");
 If you use regridding in your research, please cite it.
 The citation metadata is kept in [`CITATION.cff`](https://github.com/sun-data/regridding/blob/main/CITATION.cff),
 which the "Cite this repository" button on GitHub can export as BibTeX or APA.
+
+Every release of regridding is archived on Zenodo with its own DOI.
+The concept DOI, [10.5281/zenodo.23069898](https://doi.org/10.5281/zenodo.23069898),
+always resolves to the latest version,
+and the Zenodo page lists the DOI of every version.
 Please include the version of regridding that you used,
 which is given by `importlib.metadata.version("regridding")`.
+The BibTeX entry below uses the concept DOI.
+To cite a specific version instead,
+replace `doi` with the DOI of that version.
 
 ```bibtex
 @software{regridding,
   author = {Smart, Roy T. and Parker, Jacob D.},
   title = {regridding},
   version = {X.Y.Z},
+  doi = {10.5281/zenodo.23069898},
   url = {https://github.com/sun-data/regridding},
 }
 ```

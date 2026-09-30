@@ -315,10 +315,22 @@ def weights(
         axs[1, 1].set_title(r"values_output_2");
     """
     # the numba builders cannot ingest united quantities, but the flat-array
-    # form can carry them: strip the unit here and reattach it to the values
+    # form can carry them: strip the unit here and reattach it to the values.
+    # A device holds plain floats only, so there a dimensionless quantity is
+    # reduced to the number it stands for and a real unit is refused.
     unit_weights = getattr(weights_input, "unit", None)
     if unit_weights is not None:
         weights_input = getattr(weights_input, "value")
+        if device is not None:
+            try:
+                scale = unit_weights.to("")
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "`weights_input` with a unit cannot be built on a device; "
+                    "strip the unit and reapply it to the resampled values"
+                )
+            weights_input = weights_input * scale
+            unit_weights = None
 
     if device is not None:
         if method != "conservative":

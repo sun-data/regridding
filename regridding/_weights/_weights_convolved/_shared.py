@@ -218,6 +218,8 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
                 if c > extent[a]:
                     extent[a] = c
 
+        # the output cells of the run lie inside the grid, and the grown box
+        # contains them, so clipping it to the grid never leaves it empty
         size = 1
         for a in range(ndim):
             center = shape_kernel[a] // 2
@@ -227,8 +229,6 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
                 low = 0
             if high > shape_output[a] - 1:
                 high = shape_output[a] - 1
-            if high < low:
-                return 0
             lower[a] = low
             extent[a] = high - low + 1
             size = size * extent[a]

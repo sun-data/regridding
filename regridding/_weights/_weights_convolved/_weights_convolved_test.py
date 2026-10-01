@@ -70,6 +70,7 @@ def _matrix(triple, num_input, num_output):
         np.random.default_rng(3).random((2, 2)),
         np.random.default_rng(4).random((1, 3)),
         np.ones((1, 1)),
+        np.array([[0, 1, 0], [1, 4, 1], [0, 1, 0]]) / 8,
     ],
 )
 def test_convolve_weights(kernel: np.ndarray):
@@ -150,36 +151,108 @@ def test_convolve_weights_varying(axis: str):
         assert abs(actual - expected).max() < 1e-15
 
 
-def test_convolve_weights_broadcast():
-    """A kernel which varies along an axis the weights are broadcast along."""
+@pytest.mark.parametrize("num", [3, 1])
+def test_convolve_weights_broadcast(num: int):
+    """
+    The weights are broadcast along an orthogonal axis which the kernel
+    varies along, or which the kernel only has a placeholder for.
+    """
     weights_single = regridding.weights(
         coordinates_input=_rotated(),
         coordinates_output=_lattice(),
         method="conservative",
     )
     array, shape_input, shape_output = weights_single
-    weights_broadcast = array[np.newaxis], (1, *shape_input), (1, *shape_output)
+    weights_broadcast = array, (1, *shape_input), (1, *shape_output)
 
-    kernel = np.random.default_rng(8).random((3, 1, 1, 3, 3))
+    kernel = np.random.default_rng(8).random((num, 1, 1, 3, 3))
 
     result = regridding.convolve_weights(weights_broadcast, kernel, axis_output=(1, 2))
 
-    assert result[0].shape == (3,)
+    assert result[0].shape == ((num,) if num > 1 else ())
 
-    values = np.random.default_rng(9).random((3, 16, 16))
+    values = np.random.default_rng(9).random((num, 16, 16))
     actual = regridding.regrid_from_weights(
         *result,
         values_input=values,
         axis_input=(1, 2),
         axis_output=(1, 2),
     )
-    for d in range(3):
+    for d in range(num):
         expected = scipy.ndimage.convolve(
             regridding.regrid_from_weights(*weights_single, values_input=values[d]),
             kernel[d, 0, 0],
             mode="constant",
         )
         assert np.allclose(actual[d], expected, rtol=1e-12, atol=1e-15)
+
+
+def test_convolve_weights_empty_slots():
+    """
+    The shared kernel body skips empty slots when told to, as it is told to
+    on a device.
+
+    Compiled for a device, it runs where :mod:`coverage` cannot follow, so it
+    is run here as plain Python instead, on weights with an empty slot on
+    each side: weights built on a device carry the ``-1`` on the input side,
+    and transposed ones on the output side.
+    """
+    from ._shared import build, num_axis
+
+    starts_run, convolve_run = build(lambda function: function)
+
+    indices_input = np.array([-1, 3, 3, -1, 5, 0, 5])
+    indices_output = np.array([0, 5, 6, 0, 7, -1, 9])
+    values = np.array([0, 0.25, 0.75, 0, 1, 0, 0.5])
+
+    shape_output = np.array([4, 4])
+    shape_kernel = np.array([3, 3])
+    kernel = np.random.default_rng(13).random((1, 9))
+
+    lower = np.empty(num_axis, dtype=np.int64)
+    extent = np.empty(num_axis, dtype=np.int64)
+
+    triples = []
+    for w in range(values.size):
+        if not starts_run(indices_input, indices_output, w, True):
+            continue
+        result = [np.empty(16, dtype=int), np.empty(16, dtype=int), np.empty(16)]
+        count = convolve_run(
+            indices_input,
+            indices_output,
+            values,
+            kernel,
+            False,
+            shape_output,
+            shape_kernel,
+            True,
+            w,
+            lower,
+            extent,
+            True,
+            0,
+            *result,
+        )
+        triples.append([r[:count] for r in result])
+    actual = [np.concatenate(r) for r in zip(*triples)]
+
+    keep = (indices_input >= 0) & (indices_output >= 0)
+    weights_valid = np.empty((), dtype=object)
+    weights_valid[()] = (indices_input[keep], indices_output[keep], values[keep])
+    expected = regridding.convolve_weights(
+        (weights_valid, (8,), (4, 4)),
+        kernel.reshape(3, 3),
+    )[0][()]
+
+    # the empty slot between the two weights of input cell 5 splits them into
+    # two runs, which overlap, so the pairs are compared once summed
+    def dense(triple):
+        result = np.zeros((8, 16))
+        np.add.at(result, (triple[0], triple[1]), triple[2])
+        return result
+
+    assert np.allclose(dense(actual), dense(expected), rtol=1e-14, atol=0)
+    assert actual[2].size > expected[2].size
 
 
 @pytest.mark.parametrize(

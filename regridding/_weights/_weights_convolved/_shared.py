@@ -30,6 +30,7 @@ subclass but is indexed the same way.
 """
 
 from typing import Any, Callable
+import numpy as np
 
 __all__ = [
     "num_axis",
@@ -47,7 +48,12 @@ so this is generous.
 """
 
 
-def _valid(indices_input, indices_output, w, skip_negative):
+def _valid(
+    indices_input: np.ndarray,
+    indices_output: np.ndarray,
+    w: int,
+    skip_negative: bool,
+) -> bool:
     """
     Test whether a weight is a real one rather than an empty slot.
 
@@ -88,7 +94,12 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
 
     valid = jit(_valid)
 
-    def starts_run(indices_input, indices_output, w, skip_negative):
+    def starts_run(
+        indices_input: np.ndarray,
+        indices_output: np.ndarray,
+        w: int,
+        skip_negative: bool,
+    ) -> bool:
         """
         Test whether a weight is the first of a run.
 
@@ -118,23 +129,23 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
     starts_run = jit(starts_run)
 
     def convolve_run(
-        indices_input,
-        indices_output,
-        values,
-        kernel,
-        varying,
-        shape_output,
-        shape_kernel,
-        skip_negative,
-        start,
-        lower,
-        extent,
-        write,
-        index_write,
-        result_input,
-        result_output,
-        result_values,
-    ):
+        indices_input: np.ndarray,
+        indices_output: np.ndarray,
+        values: np.ndarray,
+        kernel: np.ndarray,
+        varying: bool,
+        shape_output: np.ndarray,
+        shape_kernel: np.ndarray,
+        skip_negative: bool,
+        start: int,
+        lower: np.ndarray,
+        extent: np.ndarray,
+        write: bool,
+        index_write: int,
+        result_input: np.ndarray,
+        result_output: np.ndarray,
+        result_values: np.ndarray,
+    ) -> int:
         """
         Convolve the run of weights beginning at `start`, and return how
         many weights it becomes.

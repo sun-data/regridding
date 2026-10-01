@@ -6,6 +6,7 @@ CUDA device from the same source.  What remains here is how the runs are
 spread over the threads and where the scratch space comes from.
 """
 
+from typing import Any, Callable
 import numpy as np
 import numba
 from ._shared import (
@@ -18,7 +19,7 @@ __all__ = [
 ]
 
 
-def _jit(function):
+def _jit(function: Callable) -> Any:
     """Compile one of the shared kernel bodies for the CPU."""
     return numba.njit(cache=True, inline="always", error_model="numpy")(function)
 

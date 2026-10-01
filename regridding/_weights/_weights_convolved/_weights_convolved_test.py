@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 import numpy as np
 import scipy.ndimage
@@ -7,7 +8,10 @@ import regridding
 from regridding._weights._weights_arrays import _coalesce
 
 
-def _rotated(num: int = 17, angle: float | np.ndarray = 0.3):
+def _rotated(
+    num: int = 17,
+    angle: float | np.ndarray = 0.3,
+) -> tuple[np.ndarray, np.ndarray]:
     """A square grid of vertices, rotated by `angle`."""
     t = np.linspace(-4, 4, num)
     x, y = np.meshgrid(t, t, indexing="ij")
@@ -18,7 +22,7 @@ def _rotated(num: int = 17, angle: float | np.ndarray = 0.3):
     )
 
 
-def _lattice(num_x: int = 25, num_y: int = 23):
+def _lattice(num_x: int = 25, num_y: int = 23) -> tuple[np.ndarray, ...]:
     """A uniform, axis-aligned grid of vertices, larger than `_rotated`."""
     return np.meshgrid(
         np.linspace(-6, 6, num_x),
@@ -44,7 +48,7 @@ weights = regridding.weights(
 values_input = np.random.default_rng(0).random((2, 16, 16))
 
 
-def _regrid(weights):
+def _regrid(weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]) -> Any:
     return regridding.regrid_from_weights(
         *weights,
         values_input=values_input,
@@ -53,7 +57,11 @@ def _regrid(weights):
     )
 
 
-def _matrix(triple, num_input, num_output):
+def _matrix(
+    triple: tuple[np.ndarray, np.ndarray, np.ndarray],
+    num_input: int,
+    num_output: int,
+) -> scipy.sparse.csr_matrix:
     """One element of a set of weights as a sparse matrix, output by input."""
     indices_input, indices_output, values = triple
     return scipy.sparse.coo_matrix(
@@ -73,7 +81,7 @@ def _matrix(triple, num_input, num_output):
         np.array([[0, 1, 0], [1, 4, 1], [0, 1, 0]]) / 8,
     ],
 )
-def test_convolve_weights(kernel: np.ndarray):
+def test_convolve_weights(kernel: np.ndarray) -> None:
     """Convolving the weights is the same as convolving what they produce."""
     result = regridding.convolve_weights(weights, kernel, axis_output=(1, 2))
 
@@ -88,7 +96,7 @@ def test_convolve_weights(kernel: np.ndarray):
     assert np.allclose(_regrid(result), expected, rtol=1e-12, atol=1e-15)
 
 
-def test_convolve_weights_axis_order():
+def test_convolve_weights_axis_order() -> None:
     """The axes of the kernel follow `axis_output` in the order given."""
     kernel = np.random.default_rng(5).random((5, 3))
 
@@ -98,7 +106,7 @@ def test_convolve_weights_axis_order():
     assert np.allclose(_regrid(result), _regrid(expected), rtol=1e-14)
 
 
-def test_convolve_weights_ordered():
+def test_convolve_weights_ordered() -> None:
     """Weights ordered by input cell come out ordered, with no pair twice."""
     kernel = np.random.default_rng(6).random((3, 5))
 
@@ -112,7 +120,7 @@ def test_convolve_weights_ordered():
 
 
 @pytest.mark.parametrize("axis", ["orthogonal", "resampled"])
-def test_convolve_weights_varying(axis: str):
+def test_convolve_weights_varying(axis: str) -> None:
     """A kernel which varies is the matrix product with its own matrix."""
     rng = np.random.default_rng(7)
 
@@ -152,7 +160,7 @@ def test_convolve_weights_varying(axis: str):
 
 
 @pytest.mark.parametrize("num", [3, 1])
-def test_convolve_weights_broadcast(num: int):
+def test_convolve_weights_broadcast(num: int) -> None:
     """
     The weights are broadcast along an orthogonal axis which the kernel
     varies along, or which the kernel only has a placeholder for.
@@ -187,7 +195,7 @@ def test_convolve_weights_broadcast(num: int):
         assert np.allclose(actual[d], expected, rtol=1e-12, atol=1e-15)
 
 
-def test_convolve_weights_empty_slots():
+def test_convolve_weights_empty_slots() -> None:
     """
     The shared kernel body skips empty slots when told to, as it is told to
     on a device.
@@ -246,7 +254,7 @@ def test_convolve_weights_empty_slots():
 
     # the empty slot between the two weights of input cell 5 splits them into
     # two runs, which overlap, so the pairs are compared once summed
-    def dense(triple):
+    def dense(triple: tuple[np.ndarray, ...]) -> np.ndarray:
         result = np.zeros((8, 16))
         np.add.at(result, (triple[0], triple[1]), triple[2])
         return result
@@ -263,7 +271,7 @@ def test_convolve_weights_empty_slots():
         (np.linspace(1, -1, 21), np.linspace(-1, 1, 11) + 1e-6),
     ],
 )
-def test_convolve_weights_1d(x_input: np.ndarray, x_output: np.ndarray):
+def test_convolve_weights_1d(x_input: np.ndarray, x_output: np.ndarray) -> None:
     """
     One-dimensional weights, including the descending grids whose indices
     count from the end.
@@ -284,7 +292,7 @@ def test_convolve_weights_1d(x_input: np.ndarray, x_output: np.ndarray):
     assert np.allclose(actual, expected, rtol=1e-12, atol=1e-15)
 
 
-def test_convolve_weights_transpose():
+def test_convolve_weights_transpose() -> None:
     """
     The conservative transpose of the convolved weights is the transpose of
     the weights after correlating with the kernel, its own transpose.
@@ -320,7 +328,7 @@ def test_convolve_weights_transpose():
     assert np.allclose(actual, expected, rtol=1e-12, atol=1e-15)
 
 
-def test_convolve_weights_dtype():
+def test_convolve_weights_dtype() -> None:
     """Narrower stored types are kept."""
     weights_narrow = regridding.weights(
         coordinates_input=grid_input,
@@ -344,7 +352,7 @@ def test_convolve_weights_dtype():
         assert values.dtype == np.float32
 
 
-def test_convolve_weights_unit():
+def test_convolve_weights_unit() -> None:
     """A unit on the weights is kept, and a dimensionless kernel is accepted."""
     weights_unit = regridding.weights(
         coordinates_input=_rotated(),
@@ -361,7 +369,7 @@ def test_convolve_weights_unit():
     assert values.unit == u.cm**2
 
 
-def test_convolve_weights_empty():
+def test_convolve_weights_empty() -> None:
     """An input grid entirely outside the output grid has nothing to spread."""
     x_input, y_input = _rotated()
     weights_empty = regridding.weights(
@@ -388,6 +396,8 @@ def test_convolve_weights_empty():
         (np.ones((3, 3)) * u.mm, (1, 2)),
     ],
 )
-def test_convolve_weights_errors(kernel: np.ndarray, axis_output: tuple[int, ...]):
+def test_convolve_weights_errors(
+    kernel: np.ndarray, axis_output: tuple[int, ...]
+) -> None:
     with pytest.raises(ValueError):
         regridding.convolve_weights(weights, kernel, axis_output=axis_output)

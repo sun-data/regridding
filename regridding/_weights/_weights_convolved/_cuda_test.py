@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 import numpy as np
 import scipy.ndimage
@@ -13,7 +14,7 @@ skips on, so a test says once that it needs a device.
 """
 
 
-def _grids():
+def _grids() -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, ...]]:
     """A rotated grid, twice, onto a uniform lattice which can be built on."""
     t = np.linspace(-4, 4, 17)
     x, y = np.meshgrid(t, t, indexing="ij")
@@ -33,7 +34,7 @@ def _grids():
     return grid_input, grid_output
 
 
-def _weights(**kwargs):
+def _weights(**kwargs: Any) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     grid_input, grid_output = _grids()
     return regridding.weights(
         coordinates_input=grid_input,
@@ -45,7 +46,9 @@ def _weights(**kwargs):
     )
 
 
-def _to_host(weights):
+def _to_host(
+    weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """Bring a set of weights back from the device, dropping empty slots."""
     array, shape_input, shape_output = weights
     result = np.empty(array.shape, dtype=object)
@@ -66,7 +69,7 @@ kernels = [
 
 @requires_cuda
 @pytest.mark.parametrize("kernel", kernels)
-def test_matches_host(kernel: np.ndarray):
+def test_matches_host(kernel: np.ndarray) -> None:
     """The device convolves the same weights into the same result."""
     weights = _weights(device="cuda")
 
@@ -87,7 +90,7 @@ def test_matches_host(kernel: np.ndarray):
 
 
 @requires_cuda
-def test_on_device():
+def test_on_device() -> None:
     """
     The result is left on the device, with no empty slots, and resamples
     there into a convolved array.
@@ -117,7 +120,7 @@ def test_on_device():
 
 
 @requires_cuda
-def test_dtype():
+def test_dtype() -> None:
     """Narrower stored types are kept on the device too."""
     weights = _weights(device="cuda", dtype_indices=np.int32, dtype_values=np.float32)
 
@@ -130,7 +133,7 @@ def test_dtype():
 
 
 @requires_cuda
-def test_empty_slots():
+def test_empty_slots() -> None:
     """
     An empty slot is skipped whichever side carries its ``-1``: weights
     built on a device carry it on the input side, and transposed ones on the
@@ -162,7 +165,7 @@ def test_empty_slots():
 
 @requires_cuda
 @pytest.mark.parametrize("num", [0, 2])
-def test_nothing_to_spread(num: int):
+def test_nothing_to_spread(num: int) -> None:
     """An element with no weights, or only empty slots, becomes empty."""
     weights = np.empty((), dtype=object)
     weights[()] = (

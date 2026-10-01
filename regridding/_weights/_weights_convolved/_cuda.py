@@ -9,7 +9,7 @@ local memory, the prefix sum, and the device allocations.
 """
 
 import functools
-from typing import Any
+from typing import Any, Callable
 import numpy as np
 import numba
 from numba import cuda
@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-def _jit(function: Any) -> Any:
+def _jit(function: Callable) -> Any:
     """Compile one of the shared kernel bodies for a CUDA device."""
     return cuda.jit(device=True, inline=True)(function)
 
@@ -39,22 +39,24 @@ def _build() -> Any:
 
     starts_run, convolve_run = _build_shared(_jit)
 
+    # the arrays are device arrays, which are annotated as `Any` here as they
+    # are elsewhere in this package, since `numba` does not ship types for them
     @cuda.jit
     def convolve_runs(  # pragma: nocover
-        indices_input,
-        indices_output,
-        values,
-        kernel,
-        varying,
-        shape_output,
-        shape_kernel,
-        write,
-        counts,
-        offset,
-        result_input,
-        result_output,
-        result_values,
-    ):
+        indices_input: Any,
+        indices_output: Any,
+        values: Any,
+        kernel: Any,
+        varying: bool,
+        shape_output: Any,
+        shape_kernel: Any,
+        write: bool,
+        counts: Any,
+        offset: Any,
+        result_input: Any,
+        result_output: Any,
+        result_values: Any,
+    ) -> None:
         """
         Visit every run, one thread per weight, either counting what it
         becomes or writing it.

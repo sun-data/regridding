@@ -44,9 +44,10 @@ def available() -> bool:
 
 
 # this runs on the device, where `coverage` cannot follow it, so it reports
-# the body as missed even when it does the work
+# the body as missed even when it does the work.  `a` is a device array,
+# which `numba` ships no type for, so it is annotated as `Any`
 @cuda.jit
-def _fill(a, value):  # pragma: nocover
+def _fill(a: Any, value: Any) -> None:  # pragma: nocover
     """Fill a device array, which is cheaper than sending one from the host."""
     i = cuda.grid(1)  # type: ignore[call-arg]
     if i < a.size:

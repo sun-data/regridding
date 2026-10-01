@@ -16,7 +16,7 @@ def test_index_of_point(
     point: float,
     grid: np.ndarray,
     result_expected: int,
-):
+) -> None:
     result = _grids.index_of_point(
         point=point,
         grid=grid,

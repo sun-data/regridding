@@ -20,7 +20,7 @@ import regridding
 def test_sign(
     x: float,
     result_expected: float,
-):
+) -> None:
     result = regridding.math.sign(x)
     assert result == result_expected
 
@@ -35,7 +35,7 @@ def test_sign(
 def test_norm_3d(
     a: tuple[float, float, float],
     result_expected: float,
-):
+) -> None:
     result = regridding.math.norm_3d(a)
     assert result == result_expected
 
@@ -50,7 +50,7 @@ def test_norm_3d(
 def test_negate_3d(
     a: tuple[float, float, float],
     result_expected: tuple[float, float, float],
-):
+) -> None:
     result = regridding.math.negate_3d(a)
     assert result == result_expected
 
@@ -66,7 +66,7 @@ def test_sum_3d(
     a: tuple[float, float, float],
     b: tuple[float, float, float],
     result_expected: tuple[float, float, float],
-):
+) -> None:
     result = regridding.math.sum_3d(a, b)
     assert result == result_expected
 
@@ -82,7 +82,7 @@ def test_difference_3d(
     a: tuple[float, float, float],
     b: tuple[float, float, float],
     result_expected: tuple[float, float, float],
-):
+) -> None:
     result = regridding.math.difference_3d(a, b)
     assert result == result_expected
 
@@ -97,7 +97,7 @@ def test_multiply_3d(
     r: float,
     a: tuple[float, float, float],
     result_expected: tuple[float, float, float],
-):
+) -> None:
     result = regridding.math.multiply_3d(r, a)
     assert result == result_expected
 
@@ -113,7 +113,7 @@ def test_dot_3d(
     a: tuple[float, float, float],
     b: tuple[float, float, float],
     result_expected: float,
-):
+) -> None:
     result = regridding.math.dot_3d(a, b)
     assert result == result_expected
 
@@ -129,6 +129,6 @@ def test_cross_3d(
     a: tuple[float, float, float],
     b: tuple[float, float, float],
     result_expected: float,
-):
+) -> None:
     result = regridding.math.cross_3d(a, b)
     assert result == result_expected

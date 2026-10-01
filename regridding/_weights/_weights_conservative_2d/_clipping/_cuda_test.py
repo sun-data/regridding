@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 import numpy as np
 import regridding
@@ -14,13 +15,18 @@ skips on, so a test says once that it needs a device.
 """
 
 
-def _lattice(num_x, num_y, start=0, stop=1):
+def _lattice(
+    num_x: int,
+    num_y: int,
+    start: float = 0,
+    stop: float = 1,
+) -> tuple[np.ndarray, np.ndarray]:
     x = np.linspace(start, stop, num_x)[:, np.newaxis] * np.ones(num_y)
     y = np.ones(num_x)[:, np.newaxis] * np.linspace(start, stop, num_y)
     return x, y
 
 
-def _distorted(num, angle=0.3):
+def _distorted(num: int, angle: float = 0.3) -> tuple[np.ndarray, np.ndarray]:
     t = np.linspace(0.15, 0.85, num)
     u = t[:, np.newaxis] * np.ones(num)
     v = np.ones(num)[:, np.newaxis] * t
@@ -29,7 +35,7 @@ def _distorted(num, angle=0.3):
     return x, y
 
 
-def _host(triple):
+def _host(triple: tuple[Any, Any, Any]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Bring a device triple back, dropping the slots which saw no overlap."""
     indices_input, indices_output, values = (a.copy_to_host() for a in triple)
     keep = indices_input >= 0
@@ -40,7 +46,7 @@ class TestWeightsConservative2dClippingCuda:
 
     @requires_cuda
     @pytest.mark.parametrize("dtype", [np.float64, np.float32])
-    def test_matches_host(self, dtype):
+    def test_matches_host(self, dtype: type[np.floating]) -> None:
         """The device kernel agrees with the host kernel it was ported from."""
         from ._cuda import weights_conservative_2d_clipping_cuda
 
@@ -54,7 +60,7 @@ class TestWeightsConservative2dClippingCuda:
 
         num_output = (grid_output[0].shape[0] - 1) * (grid_output[0].shape[1] - 1)
 
-        def dense(triple):
+        def dense(triple: tuple[np.ndarray, ...]) -> np.ndarray:
             result = np.zeros((20 * 20, num_output))
             np.add.at(
                 result,
@@ -72,7 +78,7 @@ class TestWeightsConservative2dClippingCuda:
 
     @requires_cuda
     @pytest.mark.parametrize("dtype", [np.float64, np.float32])
-    def test_conserved(self, dtype):
+    def test_conserved(self, dtype: type[np.floating]) -> None:
         """
         Each cell distributes the same total area as on the host.
 
@@ -85,7 +91,7 @@ class TestWeightsConservative2dClippingCuda:
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
 
-        def totals(triple):
+        def totals(triple: tuple[np.ndarray, ...]) -> np.ndarray:
             total = np.zeros(20 * 20)
             np.add.at(
                 total,
@@ -112,7 +118,7 @@ class TestWeightsConservative2dClippingCuda:
         assert np.allclose(result[full], 1, atol=tolerance)
 
     @requires_cuda
-    def test_on_device(self):
+    def test_on_device(self) -> None:
         """The result is left in device memory."""
         from numba import cuda
         from ._cuda import weights_conservative_2d_clipping_cuda
@@ -122,7 +128,7 @@ class TestWeightsConservative2dClippingCuda:
             assert cuda.is_cuda_array(array)
 
     @requires_cuda
-    def test_weights_input(self):
+    def test_weights_input(self) -> None:
         """`weights_input` scales each cell's row."""
         from ._cuda import weights_conservative_2d_clipping_cuda
 
@@ -149,7 +155,7 @@ class TestWeightsConservative2dClippingCuda:
         assert expected.max() > 1
 
     @requires_cuda
-    def test_dtype_values(self):
+    def test_dtype_values(self) -> None:
         """`dtype_values` is what the device builds in, not a later cast."""
         import regridding
 
@@ -177,7 +183,7 @@ class TestWeightsConservative2dClippingCuda:
         assert np.allclose(total, expected_total, rtol=0, atol=1e-6)
 
     @requires_cuda
-    def test_grid_input_on_device(self):
+    def test_grid_input_on_device(self) -> None:
         """A grid already on the device is used where it is, in cell units."""
         from ._cuda import weights_conservative_2d_clipping_cuda
 
@@ -201,7 +207,7 @@ class TestWeightsConservative2dClippingCuda:
             assert np.array_equal(got, want)
 
     @requires_cuda
-    def test_weights_input_on_device(self):
+    def test_weights_input_on_device(self) -> None:
         """`weights_input` already on the device is used where it is."""
         from ._cuda import weights_conservative_2d_clipping_cuda
 
@@ -228,7 +234,7 @@ class TestWeightsConservative2dClippingCuda:
             assert np.array_equal(got, want)
 
     @requires_cuda
-    def test_slots_without_overlap(self):
+    def test_slots_without_overlap(self) -> None:
         """
         A slot which sees no overlap holds the sentinel and zeros.
 
@@ -270,7 +276,7 @@ class TestDtypeIndices:
 
     @pytest.mark.parametrize("dtype_indices", [np.int32, np.int64])
     @requires_cuda
-    def test_matches_host(self, dtype_indices: np.typing.DTypeLike):
+    def test_matches_host(self, dtype_indices: np.typing.DTypeLike) -> None:
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
 
@@ -299,12 +305,12 @@ class TestDtypeIndices:
         assert np.allclose(total, expected_total, rtol=0, atol=1e-12)
 
     @requires_cuda
-    def test_narrower_indices_are_smaller(self):
+    def test_narrower_indices_are_smaller(self) -> None:
         """Which is the point: half the memory for the same weights."""
         grid_input = _distorted(21)
         grid_output = _lattice(9, 11)
 
-        def built(dtype_indices):
+        def built(dtype_indices: type[np.integer]) -> int:
             weights = regridding.weights(
                 coordinates_input=grid_input,
                 coordinates_output=grid_output,
@@ -325,7 +331,7 @@ class TestDeviceRejected:
     grid_input = _distorted(9)
     grid_output = _lattice(5, 5)
 
-    def test_multilinear(self):
+    def test_multilinear(self) -> None:
         with pytest.raises(ValueError, match="only supported by the conservative"):
             regridding.weights(
                 coordinates_input=self.grid_input,
@@ -335,7 +341,7 @@ class TestDeviceRejected:
             )
 
     @requires_cuda
-    def test_coalesce_is_ignored(self):
+    def test_coalesce_is_ignored(self) -> None:
         """
         Asking for the merge is allowed, and changes nothing.
 
@@ -360,7 +366,7 @@ class TestDeviceRejected:
         assert np.array_equal(vv.copy_to_host(), vv_c.copy_to_host())
 
     @requires_cuda
-    def test_dtype_indices_too_narrow(self):
+    def test_dtype_indices_too_narrow(self) -> None:
         """A grid too large for the index type is refused before it is built."""
         # 20 by 20 cells, so an index runs to 399 where `int8` stops at 127
         with pytest.raises(ValueError, match="does not fit in int8"):
@@ -373,7 +379,7 @@ class TestDeviceRejected:
                 dtype_indices=np.int8,
             )
 
-    def test_output_not_a_lattice(self):
+    def test_output_not_a_lattice(self) -> None:
         with pytest.raises(ValueError, match="uniform, axis-aligned lattice"):
             regridding.weights(
                 coordinates_input=self.grid_input,

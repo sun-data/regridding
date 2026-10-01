@@ -32,7 +32,7 @@ def test_index_in_bounds(
     index: tuple[int, int],
     shape: tuple[int, int],
     result_expected: bool,
-):
+) -> None:
     result = _arrays.index_in_bounds(index=index, shape=shape)
 
     assert result == result_expected
@@ -54,7 +54,7 @@ def test_index_in_bounds(
 def test_index_flat(
     index: tuple[int, int],
     shape: tuple[int, int],
-):
+) -> None:
     result = _arrays.index_flat(index=index, shape=shape)
     result_expected = np.ravel_multi_index(index, shape)
 
@@ -74,7 +74,7 @@ def test_index_flat(
 def test_index_2d(
     index: int,
     shape: tuple[int, int],
-):
+) -> None:
     result = _arrays.index_2d(index=index, shape=shape)
     result_expected = np.unravel_index(index, shape)
 

@@ -128,7 +128,7 @@ def test_weights_multilinear_1d(
     axis_output: None | int | tuple[int, ...],
     weights_input: None | np.ndarray,
     result_expected: np.ndarray,
-):
+) -> None:
     weights = regridding.weights(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,

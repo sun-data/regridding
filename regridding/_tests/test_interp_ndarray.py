@@ -30,7 +30,7 @@ def test_ndarray_linear_interpolation_1d(
     a: np.ndarray,
     x: np.ndarray,
     axis: None | int | tuple[int],
-):
+) -> None:
     result = regridding.ndarray_linear_interpolation(a=a, indices=(x,), axis=axis)
     expected = scipy.ndimage.map_coordinates(
         input=a,
@@ -75,7 +75,7 @@ def test_ndarray_linear_interpolation_2d(
     x: np.ndarray,
     y: np.ndarray,
     axis: None | tuple[int],
-):
+) -> None:
     x, y = np.broadcast_arrays(x, y)
 
     result = regridding.ndarray_linear_interpolation(a=a, indices=(x, y), axis=axis)

@@ -29,7 +29,7 @@ def test_find_indices_1d(
     coordinates_input: tuple[np.ndarray],
     coordinates_output: tuple[np.ndarray],
     method: Literal["brute", "searchsorted"],
-):
+) -> None:
     result = regridding.find_indices(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
@@ -52,7 +52,7 @@ def test_find_indices_1d(
 
 
 @pytest.mark.parametrize("method", ["brute", "searchsorted"])
-def test_find_indices_outside_grid(method: str):
+def test_find_indices_outside_grid(method: str) -> None:
     """
     An output point outside the input grid must be marked with `fill_value`.
 
@@ -79,7 +79,7 @@ def test_find_indices_outside_grid(method: str):
     assert np.array_equal(result, expected)
 
 
-def test_find_indices_outside_grid_fill_value():
+def test_find_indices_outside_grid_fill_value() -> None:
     """A caller-supplied `fill_value` should be used verbatim."""
     x = np.array([0.0, 1.0, 2.0])
     (result,) = regridding.find_indices(

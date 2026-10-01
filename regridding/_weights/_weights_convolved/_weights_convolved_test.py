@@ -242,15 +242,17 @@ def test_convolve_weights_empty_slots() -> None:
             *result,
         )
         triples.append([r[:count] for r in result])
-    actual = [np.concatenate(r) for r in zip(*triples)]
+    actual = tuple(np.concatenate(r) for r in zip(*triples))
 
     keep = (indices_input >= 0) & (indices_output >= 0)
     weights_valid = np.empty((), dtype=object)
     weights_valid[()] = (indices_input[keep], indices_output[keep], values[keep])
-    expected = regridding.convolve_weights(
+    weights_expected, _, _ = regridding.convolve_weights(
         (weights_valid, (8,), (4, 4)),
         kernel.reshape(3, 3),
-    )[0][()]
+    )
+    expected_input, expected_output, expected_values = weights_expected[()]
+    expected = (expected_input, expected_output, expected_values)
 
     # the empty slot between the two weights of input cell 5 splits them into
     # two runs, which overlap, so the pairs are compared once summed
@@ -301,7 +303,7 @@ def test_convolve_weights_transpose() -> None:
 
     result = regridding.convolve_weights(weights, kernel, axis_output=(1, 2))
 
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         coordinates_input=grid_input,
         coordinates_output=grid_output,
         axis_input=(1, 2),

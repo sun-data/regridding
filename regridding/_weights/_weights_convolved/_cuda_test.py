@@ -106,9 +106,15 @@ def test_on_device() -> None:
         assert np.all(triple[0].copy_to_host() >= 0)
 
     values = np.random.default_rng(6).random((2, 16, 16))
-    kwargs = dict(values_input=values, axis_input=(1, 2), axis_output=(1, 2))
+    kwargs: dict[str, Any] = dict(
+        values_input=values,
+        axis_input=(1, 2),
+        axis_output=(1, 2),
+    )
 
-    actual = regridding.regrid_from_weights(*result, **kwargs)
+    # `regrid_from_weights` is annotated with the host's return type, but
+    # weights on a device leave a device array
+    actual: Any = regridding.regrid_from_weights(*result, **kwargs)
     assert cuda.is_cuda_array(actual)
 
     expected = scipy.ndimage.convolve(

@@ -335,7 +335,7 @@ def build(
     bounds = jit(_bounds)
     clip_halfplane = jit(_clip_halfplane)
 
-    def area_signed(x, y, num):
+    def area_signed(x: "np.ndarray", y: "np.ndarray", num: int) -> float:
         """
         Compute the signed area of a polygon by the shoelace formula.
 
@@ -360,7 +360,14 @@ def build(
 
     area_signed = jit(area_signed)
 
-    def num_pair(x, y, index_x, index_y, num_output_x, num_output_y):
+    def num_pair(
+        x: "np.ndarray",
+        y: "np.ndarray",
+        index_x: int,
+        index_y: int,
+        num_output_x: int,
+        num_output_y: int,
+    ) -> int:
         """
         Count the output cells an input cell can touch.
 
@@ -400,23 +407,23 @@ def build(
     num_pair = jit(num_pair)
 
     def clip_cell(
-        x,
-        y,
-        weights_input,
-        num_output_x,
-        num_output_y,
-        index_x,
-        index_y,
-        index_cell,
-        index_write,
-        subject_x,
-        subject_y,
-        clipped_x,
-        clipped_y,
-        indices_input,
-        indices_output,
-        values,
-    ):
+        x: "np.ndarray",
+        y: "np.ndarray",
+        weights_input: "np.ndarray",
+        num_output_x: int,
+        num_output_y: int,
+        index_x: int,
+        index_y: int,
+        index_cell: int,
+        index_write: int,
+        subject_x: "np.ndarray",
+        subject_y: "np.ndarray",
+        clipped_x: "np.ndarray",
+        clipped_y: "np.ndarray",
+        indices_input: "np.ndarray",
+        indices_output: "np.ndarray",
+        values: "np.ndarray",
+    ) -> None:
         """
         Clip one input cell against the output cells its bounding box touches.
 

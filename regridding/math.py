@@ -18,7 +18,7 @@ __all__ = [
 
 
 @numba.njit(cache=True, inline="always", error_model="numpy")
-def sign(x: float):
+def sign(x: float) -> int:
     """
     Numba-compiled version of the `sign function <https://en.wikipedia.org/wiki/Sign_function>`_
 

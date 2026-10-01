@@ -14,7 +14,10 @@ skips on, so a test says once that it needs a device.
 """
 
 
-def _grids(num_input: int = 20, num_output: int = 12):
+def _grids(
+    num_input: int = 20,
+    num_output: int = 12,
+) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
     """A distorted input grid and the lattice it is resampled onto."""
     t = np.linspace(-0.7, 0.7, num_input + 1)
     u_ = t[:, np.newaxis] * np.ones(num_input + 1)
@@ -29,7 +32,9 @@ def _grids(num_input: int = 20, num_output: int = 12):
     return (x, y), lattice
 
 
-def _weights(device: None | str = None):
+def _weights(
+    device: None | str = None,
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     grid_input, grid_output = _grids()
     return regridding.weights(
         coordinates_input=grid_input,
@@ -40,7 +45,11 @@ def _weights(device: None | str = None):
     )
 
 
-def _grids_interleaved(num: int = 3, num_input: int = 20, num_output: int = 12):
+def _grids_interleaved(
+    num: int = 3,
+    num_input: int = 20,
+    num_output: int = 12,
+) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
     """The same grids, with an orthogonal axis between the resampled ones."""
     (x, y), (x_output, y_output) = _grids(num_input, num_output)
     grid_input = (
@@ -68,14 +77,14 @@ def _grids_interleaved(num: int = 3, num_input: int = 20, num_output: int = 12):
     return grid_input, grid_output
 
 
-def _scene(num_input: int = 20):
+def _scene(num_input: int = 20) -> np.ndarray:
     return np.random.default_rng(42).random((num_input, num_input))
 
 
 class TestRegridFromWeightsCuda:
 
     @requires_cuda
-    def test_matches_host(self):
+    def test_matches_host(self) -> None:
         """Applying the weights on the device agrees with the host."""
         scene = _scene()
 
@@ -89,7 +98,7 @@ class TestRegridFromWeightsCuda:
         assert np.allclose(result.copy_to_host(), expected, rtol=0, atol=1e-12)
 
     @requires_cuda
-    def test_values_input_on_device(self):
+    def test_values_input_on_device(self) -> None:
         """The scene may already be on the device, and then is not copied."""
         scene = _scene()
 
@@ -102,7 +111,7 @@ class TestRegridFromWeightsCuda:
         assert np.allclose(result.copy_to_host(), expected, rtol=0, atol=1e-12)
 
     @requires_cuda
-    def test_values_output(self):
+    def test_values_output(self) -> None:
         """A device array may be given to place the result in."""
         scene = _scene()
         weights = _weights(device="cuda")
@@ -122,7 +131,7 @@ class TestRegridFromWeightsCuda:
         assert np.allclose(given.copy_to_host(), expected, rtol=0, atol=1e-12)
 
     @requires_cuda
-    def test_dtype_values(self):
+    def test_dtype_values(self) -> None:
         """Weights built in single precision resample in single precision."""
         grid_input, grid_output = _grids()
         weights = regridding.weights(
@@ -148,7 +157,7 @@ class TestAxesArbitrary:
 
     @pytest.mark.parametrize("shape_values", [(3, 20, 20), (1, 20, 20), (4, 3, 20, 20)])
     @requires_cuda
-    def test_orthogonal_axes_leading(self, shape_values: tuple[int, ...]):
+    def test_orthogonal_axes_leading(self, shape_values: tuple[int, ...]) -> None:
         """Axes the weights do not touch are broadcast, without a copy."""
         values = np.random.default_rng(7).random(shape_values)
 
@@ -162,12 +171,14 @@ class TestAxesArbitrary:
         assert np.allclose(result.copy_to_host(), expected, rtol=0, atol=1e-12)
 
     @requires_cuda
-    def test_orthogonal_axis_between(self):
+    def test_orthogonal_axis_between(self) -> None:
         """A grid whose resampled axes are not the trailing ones."""
         grid_input, grid_output = _grids_interleaved()
         axis = (0, 2)
 
-        def weights(device):
+        def weights(
+            device: None | str,
+        ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
             return regridding.weights(
                 coordinates_input=grid_input,
                 coordinates_output=grid_output,
@@ -198,7 +209,7 @@ class TestAxesArbitrary:
 
     @pytest.mark.parametrize("shape_values", [(20, 20), (1, 20, 20)])
     @requires_cuda
-    def test_values_on_device_broadcast(self, shape_values: tuple[int, ...]):
+    def test_values_on_device_broadcast(self, shape_values: tuple[int, ...]) -> None:
         """
         A device scene is broadcast across the orthogonal axis, not copied.
 
@@ -214,7 +225,9 @@ class TestAxesArbitrary:
         )
         grid_output = _grids()[1]
 
-        def weights(device):
+        def weights(
+            device: None | str,
+        ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
             return regridding.weights(
                 coordinates_input=grid_input,
                 coordinates_output=grid_output,
@@ -246,7 +259,7 @@ class TestCube:
     """Resampling a stack of arrays into somewhere already allocated."""
 
     @requires_cuda
-    def test_stack_into_a_preallocated_cube(self):
+    def test_stack_into_a_preallocated_cube(self) -> None:
         """
         The whole stack is one call, and it fills the cube in place.
 
@@ -275,7 +288,7 @@ class TestCube:
         assert np.allclose(cube.copy_to_host(), expected, rtol=0, atol=1e-12)
 
     @requires_cuda
-    def test_a_cube_may_be_filled_a_slice_at_a_time(self):
+    def test_a_cube_may_be_filled_a_slice_at_a_time(self) -> None:
         """A slice of a contiguous cube is contiguous, so it may be written."""
         num = 4
         scenes = np.random.default_rng(24).random((num,) + _scene().shape)
@@ -298,7 +311,7 @@ class TestFill:
     """The shared device fill."""
 
     @requires_cuda
-    def test_a_strided_array_is_refused(self):
+    def test_a_strided_array_is_refused(self) -> None:
         """
         Filling one by memset would write somewhere else.
 
@@ -316,7 +329,9 @@ class TestNoOverlap:
     """An input grid which misses the output grid entirely."""
 
     @staticmethod
-    def _weights(device):
+    def _weights(
+        device: None | str,
+    ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
         t = np.linspace(0, 1, 9)
         u = t[:, np.newaxis] * np.ones(9)
         v = np.ones(9)[:, np.newaxis] * t
@@ -333,7 +348,7 @@ class TestNoOverlap:
         )
 
     @requires_cuda
-    def test_weights_are_empty(self):
+    def test_weights_are_empty(self) -> None:
         """No overlap means no weights, rather than a kernel launched on none."""
         indices_input, indices_output, values = self._weights("cuda")[0].reshape(-1)[0]
         assert indices_input.size == 0
@@ -341,7 +356,7 @@ class TestNoOverlap:
         assert values.size == 0
 
     @requires_cuda
-    def test_applies_to_zeros(self):
+    def test_applies_to_zeros(self) -> None:
         """Applying them gives zeros, as it does on the host."""
         scene = np.ones((8, 8))
 
@@ -362,7 +377,7 @@ class TestRegridFromWeightsCudaRejected:
     """The cases the device path cannot serve are refused, not mishandled."""
 
     @requires_cuda
-    def test_quantity(self):
+    def test_quantity(self) -> None:
         with pytest.raises(ValueError, match="cannot be resampled on a device"):
             regridding.regrid_from_weights(
                 *_weights(device="cuda"),
@@ -370,7 +385,7 @@ class TestRegridFromWeightsCudaRejected:
             )
 
     @requires_cuda
-    def test_values_input_wrong_shape(self):
+    def test_values_input_wrong_shape(self) -> None:
         with pytest.raises(ValueError, match="could not be broadcast"):
             regridding.regrid_from_weights(
                 *_weights(device="cuda"),
@@ -378,7 +393,7 @@ class TestRegridFromWeightsCudaRejected:
             )
 
     @requires_cuda
-    def test_values_input_on_device_wrong_shape(self):
+    def test_values_input_on_device_wrong_shape(self) -> None:
         """A device array is checked, since stride-zero would take any shape."""
         bad = cuda.to_device(np.ascontiguousarray(np.zeros((5, 20))))
         with pytest.raises(ValueError, match="cannot be broadcast to"):
@@ -388,7 +403,7 @@ class TestRegridFromWeightsCudaRejected:
             )
 
     @requires_cuda
-    def test_values_input_not_contiguous(self):
+    def test_values_input_not_contiguous(self) -> None:
         wide = cuda.to_device(np.zeros((20, 40)))
         with pytest.raises(ValueError, match="has to be contiguous"):
             regridding.regrid_from_weights(
@@ -397,7 +412,7 @@ class TestRegridFromWeightsCudaRejected:
             )
 
     @requires_cuda
-    def test_values_output_not_contiguous(self):
+    def test_values_output_not_contiguous(self) -> None:
         weights = _weights(device="cuda")
         given = cuda.to_device(np.zeros((weights[2][0], 2 * weights[2][1])))
         with pytest.raises(ValueError, match="has to be contiguous"):
@@ -408,7 +423,7 @@ class TestRegridFromWeightsCudaRejected:
             )
 
     @requires_cuda
-    def test_values_output_wrong_shape(self):
+    def test_values_output_wrong_shape(self) -> None:
         weights = _weights(device="cuda")
         with pytest.raises(ValueError, match="should be equal to"):
             regridding.regrid_from_weights(

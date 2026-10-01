@@ -13,7 +13,7 @@ def ndarray_linear_interpolation(
     indices: tuple[np.ndarray, ...],
     axis: None | int | tuple[int, ...] = None,
     axis_indices: None | int | tuple[int, ...] = None,
-):
+) -> np.ndarray:
     """
     Interpolate a :class:`numpy.ndarray` onto a new grid.
 

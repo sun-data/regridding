@@ -32,24 +32,26 @@ __all__ = [
 ]
 
 
-# the two kernels below run on the device, where `coverage` cannot follow
-# them, so it reports their bodies as missed even when they do the work
+# the kernel below runs on the device, where `coverage` cannot follow it, so
+# it reports its body as missed even when it does the work.  Its arrays are
+# device arrays, which `numba` ships no type for, so they are annotated as
+# `Any`
 @cuda.jit
 def _scatter(  # pragma: nocover
-    indices_input,
-    indices_output,
-    values,
-    values_input,
-    values_output,
-    base_input,
-    num_input,
-    stride_input_0,
-    stride_input_1,
-    base_output,
-    num_output,
-    stride_output_0,
-    stride_output_1,
-):
+    indices_input: Any,
+    indices_output: Any,
+    values: Any,
+    values_input: Any,
+    values_output: Any,
+    base_input: int,
+    num_input: int,
+    stride_input_0: int,
+    stride_input_1: int,
+    base_output: int,
+    num_output: int,
+    stride_output_0: int,
+    stride_output_1: int,
+) -> None:
     """
     Scatter each weight's contribution into the output.
 

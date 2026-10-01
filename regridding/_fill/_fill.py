@@ -1,4 +1,4 @@
-from typing import Sequence, Literal
+from typing import Any, Sequence, Literal
 import numpy as np
 from ._gauss_seidel import fill_gauss_seidel
 
@@ -12,7 +12,7 @@ def fill(
     where: None | np.ndarray = None,
     axis: None | int | Sequence[int] = None,
     method: Literal["gauss_seidel"] = "gauss_seidel",
-    **kwargs,
+    **kwargs: Any,
 ) -> np.ndarray:
     """
     Fill an array with missing values by interpolating from the valid points.

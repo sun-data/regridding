@@ -18,7 +18,7 @@ def test_line_equation_2d(
     y1: float,
     x2: float,
     y2: float,
-):
+) -> None:
     y_below = (x - x1) * (y2 - y1) / (x2 - x1) + y1 - 1
     y_equal = (x - x1) * (y2 - y1) / (x2 - x1) + y1 + 0
     y_above = (x - x1) * (y2 - y1) / (x2 - x1) + y1 + 1
@@ -100,7 +100,7 @@ def test_point_is_inside_box_3d(
         tuple[float, float, float],
     ],
     result_expected: bool,
-):
+) -> None:
     result = regridding.geometry.point_is_inside_box_3d(
         point=point,
         box=box,
@@ -132,7 +132,7 @@ def test_bounding_boxes_intersect_2d(
     x_q2: float,
     y_q2: float,
     result_expected: bool,
-):
+) -> None:
     result = regridding.geometry.bounding_boxes_intersect_2d(
         x_p1=x_p1,
         y_p1=y_p1,
@@ -172,7 +172,7 @@ def test_bounding_boxes_intersect_3d(
     y_q2: float,
     z_q2: float,
     result_expected: bool,
-):
+) -> None:
     result = regridding.geometry.bounding_boxes_intersect_3d(
         x_p1=x_p1,
         y_p1=y_p1,
@@ -240,7 +240,7 @@ def test_two_line_segments_intersect(
         tuple[float, float],
     ],
     result_expected: bool,
-):
+) -> None:
     p1, p2 = line_1
     q1, q2 = line_2
 
@@ -291,7 +291,7 @@ def test_two_line_segment_intersection(
         tuple[float, float],
     ],
     result_expected: tuple[float, float],
-):
+) -> None:
     p1, p2 = line_1
     q1, q2 = line_2
 
@@ -367,7 +367,7 @@ def test_line_intersects_triangle(
         tuple[float, float, float],
     ],
     result_expected: bool,
-):
+) -> None:
     tuv = regridding.geometry.line_triangle_intersection_parameters(
         line=line,
         triangle=triangle,
@@ -415,7 +415,7 @@ def test_line_triangle_intersection(
         tuple[float, float, float],
     ],
     result: tuple[float, float, float],
-):
+) -> None:
     tuv = regridding.geometry.line_triangle_intersection_parameters(
         line=line,
         triangle=triangle,
@@ -474,7 +474,7 @@ def test_point_is_inside_red_cross(
     x: float,
     y: float,
     result_expected: bool,
-):
+) -> None:
     vertices_x = np.array([2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 1, 1]) + 1
     vertices_y = np.array([2, 1, 1, 2, 2, 3, 3, 4, 4, 3, 3, 2]) + 1
 
@@ -550,7 +550,7 @@ def test_solid_angle(
         tuple[float, float, float],
     ],
     result_expected: float,
-):
+) -> None:
     result = regridding.geometry.solid_angle(
         point=point,
         triangle=triangle,
@@ -647,7 +647,7 @@ def test_point_is_inside_polyhedron(
         ],
     ],
     result_expected: bool,
-):
+) -> None:
     result = regridding.geometry.point_is_inside_polyhedron(
         point=point,
         polyhedron=polyhedron,
@@ -678,7 +678,7 @@ def test_volume_tetrahedron(
     vertex_2: tuple[float, float, float],
     vertex_3: tuple[float, float, float],
     result_expected: float,
-):
+) -> None:
     result = regridding.geometry.volume_tetrahedron(
         vertex_1=vertex_1,
         vertex_2=vertex_2,

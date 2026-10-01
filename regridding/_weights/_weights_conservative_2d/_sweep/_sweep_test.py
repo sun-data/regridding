@@ -274,7 +274,7 @@ def test_weights_conservative_2d(
     axis_output: None | int | tuple[int, ...],
     weights_input: None | np.ndarray,
     result_expected: np.ndarray,
-):
+) -> None:
 
     x, y = coordinates_output
     x = x + 1e-6

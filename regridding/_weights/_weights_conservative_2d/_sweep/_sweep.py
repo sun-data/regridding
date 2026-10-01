@@ -767,7 +767,7 @@ def _calc_and_save_weights(
     weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
-):
+) -> None:
 
     x_sweep, y_sweep = grid_sweep
 

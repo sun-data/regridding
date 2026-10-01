@@ -1,3 +1,4 @@
+from typing import Callable
 import pytest
 import sys
 import numpy as np
@@ -36,7 +37,7 @@ from . import _grids
 def test_volume_grid(
     grid: tuple[np.ndarray, np.ndarray, np.ndarray],
     result_expected: np.ndarray,
-):
+) -> None:
     result = _grids.grid_volume(grid)
     assert np.allclose(result, result_expected)
     assert result.shape == result_expected.shape
@@ -109,11 +110,11 @@ def test_volume_grid(
     ],
 )
 def test_index_of_point(
-    func,
+    func: Callable,
     point: tuple[float, float],
     grid: tuple[np.ndarray, np.ndarray],
     result_expected: tuple[int, int],
-):
+) -> None:
     result = func(
         point=point,
         grid=grid,

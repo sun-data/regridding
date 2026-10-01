@@ -38,7 +38,7 @@ class TestWeightsArrayFormat:
     def test_format(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         for element in weights[0].reshape(-1):
             indices_input, indices_output, values = element
             assert indices_input.ndim == 1
@@ -50,7 +50,7 @@ class TestWeightsArrayFormat:
     def test_weights_input_quantity(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         u = pytest.importorskip("astropy.units")
 
         weights_quantity = regridding.weights(
@@ -74,7 +74,7 @@ class TestWeightsArrayFormat:
     def test_pairs_unique(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         for element in weights[0].reshape(-1):
             indices_input, indices_output, values = element
             key = indices_input * (indices_output.max() + 1) + indices_output
@@ -83,7 +83,7 @@ class TestWeightsArrayFormat:
     def test_pickle(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         unpickled = pickle.loads(pickle.dumps(weights))
 
         result = regridding.regrid_from_weights(
@@ -99,7 +99,7 @@ class TestWeightsArrayFormat:
     def test_regrid_from_weights(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         result = regridding.regrid_from_weights(
             *weights,
             values_input=values_input,
@@ -123,7 +123,7 @@ class TestWeightsArrayFormat:
     def test_transpose_weights(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         result = regridding.transpose_weights(weights)
 
         assert result[1] == weights[2]
@@ -139,7 +139,7 @@ class TestWeightsArrayFormat:
     def test_transpose_weights_conservative(
         self,
         weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-    ):
+    ) -> None:
         weights_transposed = regridding.transpose_weights_conservative(
             weights,
             coordinates_input=(x_input_broadcasted, y_input_broadcasted),

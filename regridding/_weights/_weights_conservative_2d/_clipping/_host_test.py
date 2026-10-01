@@ -74,23 +74,23 @@ class TestGridIsUniformRectilinear:
         self,
         grid: tuple[np.ndarray, np.ndarray],
         result_expected: bool,
-    ):
+    ) -> None:
         assert grid_is_uniform_rectilinear(grid) == result_expected
 
-    def test_nonuniform_spacing_x(self):
+    def test_nonuniform_spacing_x(self) -> None:
         x, y = _lattice(6, 6)
         assert not grid_is_uniform_rectilinear((x * x, y))
 
-    def test_nonuniform_spacing_y(self):
+    def test_nonuniform_spacing_y(self) -> None:
         x, y = _lattice(6, 6)
         assert not grid_is_uniform_rectilinear((x, y * y))
 
-    def test_varies_along_wrong_axis(self):
+    def test_varies_along_wrong_axis(self) -> None:
         """`y` must vary along the second axis, not the first."""
         x, _ = _lattice(6, 6)
         assert not grid_is_uniform_rectilinear((x, x))
 
-    def test_not_finite(self):
+    def test_not_finite(self) -> None:
         x, y = _lattice(6, 6)
         x = x.copy()
         x[0] = np.inf
@@ -110,7 +110,7 @@ class TestWeightsConservative2dClipping:
     def test_matches_sweep(
         self,
         grid_input: tuple[np.ndarray, np.ndarray],
-    ):
+    ) -> None:
         """
         The clipping kernel agrees with the sweep on non-degenerate grids.
 
@@ -138,7 +138,7 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(result, expected, atol=1e-12)
 
-    def test_identical_grids(self):
+    def test_identical_grids(self) -> None:
         """
         Resampling a grid onto itself is the identity.
 
@@ -156,7 +156,7 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(result, np.eye(num), atol=1e-12)
 
-    def test_refinement(self):
+    def test_refinement(self) -> None:
         """
         A grid refined by exactly two maps each input cell into one output
         cell, which is another exactly-degenerate case for the sweep.
@@ -180,7 +180,7 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(result, expected, atol=1e-12)
 
-    def test_inverted_orientation(self):
+    def test_inverted_orientation(self) -> None:
         """
         A grid wound in the opposite sense gives the same weights, relabelled.
 
@@ -214,7 +214,7 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(result, expected, atol=1e-12)
 
-    def test_conservation(self):
+    def test_conservation(self) -> None:
         """Every fully-covered input cell distributes exactly its own area."""
         grid_input = _distorted(9)
         grid_output = _lattice(6, 6)
@@ -230,7 +230,7 @@ class TestWeightsConservative2dClipping:
         assert np.allclose(total, 1, atol=1e-12)
 
     @pytest.mark.parametrize("num_output", [50, 500])
-    def test_conservation_on_a_large_output_grid(self, num_output: int):
+    def test_conservation_on_a_large_output_grid(self, num_output: int) -> None:
         """
         Conservation does not decay as the output grid is refined.
 
@@ -265,7 +265,7 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(total, 1, rtol=0, atol=1e-14)
 
-    def test_weights_input(self):
+    def test_weights_input(self) -> None:
         """`weights_input` scales each input cell's row."""
         grid_input = _distorted(9)
         grid_output = _lattice(6, 6)
@@ -284,7 +284,7 @@ class TestWeightsConservative2dClipping:
 
         assert np.allclose(total, weights_input.reshape(-1), atol=1e-12)
 
-    def test_partial_coverage(self):
+    def test_partial_coverage(self) -> None:
         """Cells hanging outside the output grid contribute only their overlap."""
         grid_input = _lattice(3, 3, start=0, stop=2)
         grid_output = _lattice(3, 3, start=0, stop=1)
@@ -301,11 +301,11 @@ class TestWeightsConservative2dClipping:
         assert np.isclose(total[0], 1)
         assert np.allclose(total[1:], 0)
 
-    def test_grid_output_not_rectilinear(self):
+    def test_grid_output_not_rectilinear(self) -> None:
         with pytest.raises(ValueError):
             weights_conservative_2d_clipping(_lattice(6, 6), _distorted(6))
 
-    def test_degenerate_cell(self):
+    def test_degenerate_cell(self) -> None:
         """A cell with zero area contributes nothing and does not divide by it."""
         x, y = _lattice(4, 4, start=0, stop=3)
         x = x.copy()
@@ -326,7 +326,7 @@ class TestWeightsConservative2dClipping:
         assert np.allclose(total[:3], 0)
         assert np.allclose(total[3:], 1)
 
-    def test_hangs_off_lower_corner(self):
+    def test_hangs_off_lower_corner(self) -> None:
         """Cells reaching past the lower corner keep only their overlap."""
         grid_input = _lattice(3, 3, start=-1, stop=1)
         grid_output = _lattice(3, 3, start=0, stop=2)
@@ -343,7 +343,7 @@ class TestWeightsConservative2dClipping:
         assert np.allclose(total[:3], 0)
         assert np.isclose(total[3], 1)
 
-    def test_bounding_box_larger_than_overlap(self):
+    def test_bounding_box_larger_than_overlap(self) -> None:
         """
         A thin diagonal cell touches far fewer output cells than its
         bounding box spans, so most candidates clip away to nothing.
@@ -389,7 +389,7 @@ class TestNonConvexCells:
         y[1, 1] = 1.72
         return x, y
 
-    def test_conserved(self):
+    def test_conserved(self) -> None:
         """Every fully-covered cell still distributes exactly its own area."""
         grid_input = self._grid_with_dart()
         grid_output = _lattice(7, 7, start=0, stop=3)
@@ -405,7 +405,7 @@ class TestNonConvexCells:
         assert np.all(np.isfinite(values))
         assert np.allclose(total, 1, atol=1e-12)
 
-    def test_matches_sweep(self):
+    def test_matches_sweep(self) -> None:
         """The sweep agrees, which it can only do if the clip is complete."""
         grid_input = self._grid_with_dart()
         grid_output = _lattice(7, 7, start=-0.13, stop=3.11)

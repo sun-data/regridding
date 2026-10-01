@@ -20,6 +20,7 @@ source is compiled here for the CPU and in
 CUDA device.
 """
 
+from typing import Any, Callable
 import numpy as np
 import numba
 import regridding as rg
@@ -35,7 +36,7 @@ __all__ = [
 ]
 
 
-def _jit(function):
+def _jit(function: Callable) -> Any:
     """Compile one of the shared kernel bodies for the CPU."""
     return numba.njit(cache=True, inline="always", error_model="numpy")(function)
 

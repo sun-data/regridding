@@ -132,7 +132,7 @@ def test_weights_conservative_1d(
     axis_input: None | int | tuple[int],
     axis_output: None | int | tuple[int],
     weights_input: None | np.ndarray,
-):
+) -> None:
     weights_output = regridding.weights(
         coordinates_input=x_input,
         coordinates_output=x_output,

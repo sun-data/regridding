@@ -1,9 +1,8 @@
 from typing import Sequence
 import numpy as np
 import numba
-from numba import cuda
 from numba.typed.typedlist import List as TypedList
-from regridding import _util
+from regridding import _util, _cuda
 from ._regrid_from_weights_cuda import regrid_from_weights_cuda
 
 __all__ = [
@@ -103,7 +102,7 @@ def regrid_from_weights(
         axis_output=axis_output,
     )
 
-    if _on_device(weights):
+    if _cuda.on_device(weights):
         return regrid_from_weights_cuda(
             weights=weights,
             shape_orthogonal=shape_orthogonal,
@@ -255,21 +254,6 @@ def _normalize(
     shape_output = tuple(reversed(shape_output_new))
 
     return axis_input, axis_output, shape_orthogonal, shape_input, shape_output
-
-
-def _on_device(weights: np.ndarray) -> bool:
-    """
-    Test whether a set of weights lives in device memory.
-
-    Parameters
-    ----------
-    weights
-        Weights built by :func:`regridding.weights`.
-    """
-    flat = np.asarray(weights).reshape(-1)
-    if not flat.size:  # pragma: nocover
-        return False
-    return cuda.is_cuda_array(flat[0][2])
 
 
 @numba.njit(cache=True, parallel=True)

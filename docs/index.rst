@@ -49,10 +49,14 @@ Features
 *   :func:`regridding.transpose_weights` and
     :func:`regridding.transpose_weights_conservative`,
     which reverse a saved resampling, as needed by iterative inversions.
+*   :func:`regridding.convolve_weights`, which folds a convolution of the
+    output, such as a point-spread function, into a saved resampling, so that
+    it is applied and transposed along with it.
 *   Building the weights on a CUDA device and applying them there, with the
     ``device`` argument of :func:`regridding.weights`.
     The result is left in device memory, so a scene which is already on the
-    card is never brought back.
+    card is never brought back, and :func:`regridding.convolve_weights`
+    convolves weights which are there without bringing them back either.
 *   :func:`regridding.fill`, which fills the missing values of an array by
     interpolating from the valid points.
 *   :func:`regridding.find_indices`, which locates the input cell containing

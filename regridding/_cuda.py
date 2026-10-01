@@ -1,7 +1,7 @@
 """
 Allocating and filling arrays which live on a CUDA device.
 
-Both device kernels need the same few operations on device memory, and
+The device kernels need the same few operations on device memory, and
 :mod:`numba` gives its allocation and its kernels annotations which describe
 how the compiler calls them rather than how a caller does, so the waivers
 for that are kept here instead of at each use.
@@ -15,9 +15,11 @@ from numba.cuda.cudadrv import driver
 __all__ = [
     "threads",
     "available",
+    "on_device",
     "allocate",
     "fill",
     "zeros",
+    "prefix_sum",
 ]
 
 threads = 256
@@ -41,6 +43,21 @@ def available() -> bool:
         return cuda.is_available()
     except Exception:  # pragma: nocover
         return False
+
+
+def on_device(weights: np.ndarray) -> bool:
+    """
+    Test whether a set of weights lives in device memory.
+
+    Parameters
+    ----------
+    weights
+        Weights built by :func:`regridding.weights`.
+    """
+    flat = np.asarray(weights).reshape(-1)
+    if not flat.size:  # pragma: nocover
+        return False
+    return cuda.is_cuda_array(flat[0][2])
 
 
 # this runs on the device, where `coverage` cannot follow it, so it reports
@@ -124,3 +141,39 @@ def zeros(shape: Any, dtype: np.typing.DTypeLike) -> Any:
         The type of the array's elements.
     """
     return fill(allocate(shape, dtype), 0)
+
+
+def prefix_sum(counts: Any, num: int) -> tuple[Any, int]:
+    """
+    Compute the exclusive prefix sum of a device array of counts, on the
+    device.
+
+    :mod:`numba` has no scan, so this borrows :func:`torch.cumsum`, which
+    shares the memory rather than copying it.
+
+    Parameters
+    ----------
+    counts
+        The counts, on the device.
+    num
+        The number of counts.
+
+    Returns
+    -------
+    The ``num + 1`` offsets, as a :class:`torch.Tensor` whose last element is
+    the total, and that total.  The tensor owns the memory, so it has to be
+    kept alive for as long as a view of it is in use.
+    """
+    try:
+        # an optional dependency, so it is absent from the environment the
+        # type checker runs in
+        import torch  # type: ignore[import-not-found]
+    except ImportError as error:  # pragma: nocover
+        raise ImportError(
+            "weights on a device need `torch`, which provides the prefix sum; "
+            "install `regridding[cuda]`"
+        ) from error
+
+    offset = torch.zeros(num + 1, dtype=torch.int64, device="cuda")
+    torch.cumsum(torch.as_tensor(counts, device="cuda"), dim=0, out=offset[1:])
+    return offset, int(offset[~0].item())

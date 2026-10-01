@@ -52,6 +52,9 @@ pip install regridding
 * [`transpose_weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.transpose_weights.html)
   and [`transpose_weights_conservative()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.transpose_weights_conservative.html),
   which reverse a saved resampling, as needed by iterative inversions.
+* [`convolve_weights()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.convolve_weights.html),
+  which folds a convolution of the output, such as a point-spread function,
+  into a saved resampling, so that it is applied and transposed along with it.
 * [`fill()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.fill.html),
   which fills the missing values of an array by interpolating from the valid points.
 * [`find_indices()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.find_indices.html),

@@ -61,8 +61,16 @@ def _build() -> tuple[Any, Any]:
 
     num_pair, clip_cell = _build_shared(_jit, _jit(cross_2d))
 
+    # the arrays the two kernels below take are device arrays, which `numba`
+    # ships no type for, so they are annotated as `Any`
     @cuda.jit
-    def count_cells(x, y, num_output_x, num_output_y, counts):  # pragma: nocover
+    def count_cells(  # pragma: nocover
+        x: Any,
+        y: Any,
+        num_output_x: int,
+        num_output_y: int,
+        counts: Any,
+    ) -> None:
         """
         Count the output cells each input cell can touch.
 
@@ -80,16 +88,16 @@ def _build() -> tuple[Any, Any]:
 
     @cuda.jit
     def clip_cells(  # pragma: nocover
-        x,
-        y,
-        weights_input,
-        num_output_x,
-        num_output_y,
-        offset,
-        indices_input,
-        indices_output,
-        values,
-    ):
+        x: Any,
+        y: Any,
+        weights_input: Any,
+        num_output_x: int,
+        num_output_y: int,
+        offset: Any,
+        indices_input: Any,
+        indices_output: Any,
+        values: Any,
+    ) -> None:
         """
         Clip every input cell against the output cells it touches.
 

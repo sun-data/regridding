@@ -35,7 +35,7 @@ def test_fill_gauss_sidel_2d(
     axis: None | tuple[int, ...],
     guess: None | float | np.ndarray,
     num_iterations: int,
-):
+) -> None:
     result = regridding.fill(
         a=a,
         where=where,
@@ -62,7 +62,7 @@ def test_fill_gauss_sidel_2d(
 )
 def test_fill_gauss_seidel_guess(
     guess: None | float | np.ndarray,
-):
+) -> None:
     """The missing elements start at `guess`, so zero iterations returns it."""
 
     a = np.random.uniform(0, 1, size=(_num_t, _num_x, _num_y))
@@ -83,7 +83,7 @@ def test_fill_gauss_seidel_guess(
     assert np.allclose(result[where], np.broadcast_to(guess, a.shape)[where])
 
 
-def test_fill_gauss_seidel_missing_cluster():
+def test_fill_gauss_seidel_missing_cluster() -> None:
     """A contiguous block of missing elements is filled with finite values."""
 
     x = np.linspace(-1, 1, num=32)
@@ -100,7 +100,7 @@ def test_fill_gauss_seidel_missing_cluster():
     assert np.allclose(result, a, atol=1e-4)
 
 
-def test_fill_gauss_seidel_all_missing():
+def test_fill_gauss_seidel_all_missing() -> None:
     """A slice with no valid elements falls back to a guess of zero."""
 
     a = np.random.uniform(0, 1, size=(_num_t, _num_x, _num_y))

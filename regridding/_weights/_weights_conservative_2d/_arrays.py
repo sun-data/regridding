@@ -34,7 +34,7 @@ vector_unit = (
 def index_in_bounds(
     index: tuple[int, int],
     shape: tuple[int, int],
-):
+) -> bool:
     """
     Check if a 2D index is within array bounds specified by `shape`.
 

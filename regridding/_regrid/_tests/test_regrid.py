@@ -55,7 +55,7 @@ def test_regrid(
     axis_input: None | int | Sequence[int],
     axis_output: None | int | Sequence[int],
     method: str,
-):
+) -> None:
     result = regridding.regrid(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
@@ -91,7 +91,7 @@ class TestCoalesce:
     change the answer.
     """
 
-    def test_same_result(self):
+    def test_same_result(self) -> None:
         method = "conservative"
         num_input = 21
         num_output = 17

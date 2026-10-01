@@ -45,7 +45,7 @@ def test_transpose_weights(
     axis_input: None | int | tuple[int, ...],
     axis_output: None | int | tuple[int, ...],
     method: None | str,
-):
+) -> None:
     weights = regridding.weights(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
@@ -168,7 +168,7 @@ def test_transpose_weights_conservative(
     axis_output: None | int | tuple[int, ...],
     weights_input: None | np.ndarray,
     result_expected: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
-):
+) -> None:
     weights_transposed = regridding.transpose_weights_conservative(
         weights=weights,
         coordinates_input=coordinates_input,
@@ -195,7 +195,7 @@ def test_transpose_weights_conservative(
     assert np.allclose(values, values_expected)
 
 
-def test_transpose_weights_conservative_inverts_weights_input():
+def test_transpose_weights_conservative_inverts_weights_input() -> None:
     """
     A conservative transpose given ``weights_input`` must *invert* that input
     weighting, not merely remove it: transposing a forward-weighted array must
@@ -252,7 +252,7 @@ def test_transpose_weights_conservative_inverts_weights_input():
     assert np.allclose(result, result_expected)
 
 
-def test_transpose_weights_conservative_inverts_weights_input_2d():
+def test_transpose_weights_conservative_inverts_weights_input_2d() -> None:
     """
     Regression test that a spatially-varying ``weights_input`` is inverted on a
     2D grid.

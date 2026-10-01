@@ -24,7 +24,7 @@ def _jit(function: Callable) -> Any:
     return numba.njit(cache=True, inline="always", error_model="numpy")(function)
 
 
-_starts_run, _convolve_run = _build_shared(_jit)
+_starts_run, _box_run, _convolve_run = _build_shared(_jit)
 
 _size_block = 1024
 """
@@ -32,8 +32,8 @@ The number of weights each thread is handed at a time.
 
 Most weights do not start a run, so a thread per weight would mostly be
 asked whether it has anything to do.  Handing out blocks instead also lets
-each thread allocate its scratch space once per block rather than once per
-run.
+each thread keep its scratch space from one run to the next rather than
+allocating it for every run.
 """
 
 
@@ -43,10 +43,10 @@ def _convolve_runs(
     indices_output: np.ndarray,
     values: np.ndarray,
     kernel: np.ndarray,
-    varying: bool,
+    shape_grid: np.ndarray,
     shape_output: np.ndarray,
     shape_kernel: np.ndarray,
-    skip_negative: bool,
+    offsets: np.ndarray,
     write: bool,
     counts: np.ndarray,
     offset: np.ndarray,
@@ -57,6 +57,10 @@ def _convolve_runs(
     """
     Visit every run, either counting what it becomes or writing it.
 
+    Each thread keeps one scratch box, which it grows whenever a run needs a
+    larger one, so the scratch space is allocated a handful of times rather
+    than once for every run.
+
     Parameters
     ----------
     indices_input
@@ -66,15 +70,15 @@ def _convolve_runs(
     values
         The value of each weight.
     kernel
-        The kernel, with one row for every output cell or a single row.
-    varying
-        Whether `kernel` has a row for every output cell.
+        The kernel, with one row for each cell of `shape_grid`.
+    shape_grid
+        The number of rows of the kernel along each resampled axis.
     shape_output
         The number of output cells along each resampled axis.
     shape_kernel
         The length of the kernel along each resampled axis.
-    skip_negative
-        Whether a negative index marks an empty slot.
+    offsets
+        The offset of each element of the kernel from its center.
     write
         Whether to write the result into the result arrays at `offset`,
         rather than to count it into `counts`.
@@ -98,28 +102,53 @@ def _convolve_runs(
 
         lower = np.empty(_num_axis, dtype=np.int64)
         extent = np.empty(_num_axis, dtype=np.int64)
+        coordinates = np.empty(_num_axis, dtype=np.int64)
+        strides = np.empty(_num_axis, dtype=np.int64)
 
-        stop = min((b + 1) * _size_block, num)
+        scratch_values = np.empty(0, dtype=np.float64)
+        scratch_reached = np.empty(0, dtype=np.bool_)
 
-        for w in range(b * _size_block, stop):
+        stop_block = min((b + 1) * _size_block, num)
 
-            if not _starts_run(indices_input, indices_output, w, skip_negative):
+        for w in range(b * _size_block, stop_block):
+
+            if not _starts_run(indices_input, indices_output, w, False):
                 if not write:
                     counts[w] = 0
                 continue
+
+            stop, size = _box_run(
+                indices_input,
+                indices_output,
+                shape_output,
+                shape_kernel,
+                False,
+                w,
+                lower,
+                extent,
+            )
+
+            if size > scratch_values.shape[0]:
+                scratch_values = np.empty(2 * size, dtype=np.float64)
+                scratch_reached = np.empty(2 * size, dtype=np.bool_)
 
             count = _convolve_run(
                 indices_input,
                 indices_output,
                 values,
                 kernel,
-                varying,
+                shape_grid,
                 shape_output,
-                shape_kernel,
-                skip_negative,
+                offsets,
                 w,
+                stop,
                 lower,
                 extent,
+                coordinates,
+                strides,
+                scratch_values,
+                scratch_reached,
+                0,
                 write,
                 offset[w],
                 result_input,
@@ -136,8 +165,10 @@ def convolve_weights_host(
     indices_output: np.ndarray,
     values: np.ndarray,
     kernel: np.ndarray,
+    shape_grid: np.ndarray,
     shape_output: np.ndarray,
     shape_kernel: np.ndarray,
+    offsets: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Convolve one element of a set of weights with a kernel, on the CPU.
@@ -148,17 +179,22 @@ def convolve_weights_host(
         The flattened index of the input cell of each weight.  A negative
         index counts from the end of the grid, and is kept as it is.
     indices_output
-        The flattened index of the output cell of each weight.  A negative
-        index counts from the end of the grid.
+        The flattened index of the output cell of each weight, which has to
+        address a cell of the grid.  A negative index counts from the end of
+        the grid.
     values
         The value of each weight.
     kernel
-        The kernel, with one row for every output cell or a single row, and
-        one column for every element of the kernel.
+        The kernel, with one row for each cell of `shape_grid` and one
+        column for each element of the kernel.
+    shape_grid
+        The number of rows of the kernel along each resampled axis.
     shape_output
         The number of output cells along each resampled axis.
     shape_kernel
         The length of the kernel along each resampled axis.
+    offsets
+        The offset of each element of the kernel from its center.
 
     Returns
     -------
@@ -180,7 +216,6 @@ def convolve_weights_host(
         ).astype(indices_output.dtype)
 
     kernel = np.ascontiguousarray(kernel, dtype=np.float64)
-    varying = kernel.shape[0] > 1
 
     counts = np.empty(num, dtype=np.int64)
     offset = np.zeros(num + 1, dtype=np.int64)
@@ -194,10 +229,10 @@ def convolve_weights_host(
         indices_output,
         values,
         kernel,
-        varying,
+        shape_grid,
         shape_output,
         shape_kernel,
-        False,
+        offsets,
         False,
         counts,
         offset,
@@ -219,10 +254,10 @@ def convolve_weights_host(
             indices_output,
             values,
             kernel,
-            varying,
+            shape_grid,
             shape_output,
             shape_kernel,
-            False,
+            offsets,
             True,
             counts,
             offset,

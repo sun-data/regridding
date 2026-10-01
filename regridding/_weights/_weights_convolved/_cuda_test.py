@@ -4,6 +4,7 @@ import numpy as np
 import scipy.ndimage
 from numba import cuda
 import regridding
+from ._weights_convolved_test import grid_input, grid_output, _rotated, _lattice
 
 requires_cuda = pytest.mark.cuda
 """
@@ -14,28 +15,8 @@ skips on, so a test says once that it needs a device.
 """
 
 
-def _grids() -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, ...]]:
-    """A rotated grid, twice, onto a uniform lattice which can be built on."""
-    t = np.linspace(-4, 4, 17)
-    x, y = np.meshgrid(t, t, indexing="ij")
-    angle = np.array([0.1, 0.7])[:, np.newaxis, np.newaxis]
-    grid_input = (
-        x * np.cos(angle) - y * np.sin(angle),
-        x * np.sin(angle) + y * np.cos(angle),
-    )
-    grid_output = tuple(
-        c[np.newaxis]
-        for c in np.meshgrid(
-            np.linspace(-6, 6, 25),
-            np.linspace(-6, 5, 23),
-            indexing="ij",
-        )
-    )
-    return grid_input, grid_output
-
-
 def _weights(**kwargs: Any) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
-    grid_input, grid_output = _grids()
+    """The weights of the host tests, built with `kwargs`, such as a device."""
     return regridding.weights(
         coordinates_input=grid_input,
         coordinates_output=grid_output,
@@ -64,6 +45,8 @@ kernels = [
     np.random.default_rng(2).random((5, 4)),
     np.random.default_rng(3).random((2, 1, 1, 3, 3)),
     np.random.default_rng(4).random((24, 1, 3, 3)),
+    np.random.default_rng(5).random((22, 3, 3)),
+    np.random.default_rng(6).random((2, 24, 22, 3, 3)),
 ]
 
 
@@ -186,3 +169,45 @@ def test_nothing_to_spread(num: int) -> None:
     for array in result[0][()]:
         assert cuda.is_cuda_array(array)
         assert array.size == 0
+
+
+@requires_cuda
+def test_long_runs() -> None:
+    """
+    An input grid much coarser than the output grid, so that each input cell
+    covers many output cells, convolves to the same result as on the host.
+    """
+    t = np.linspace(-4, 4, 6)
+    x, y = np.meshgrid(t, t, indexing="ij")
+    weights = regridding.weights(
+        coordinates_input=(0.9 * x + 0.1 * y, 0.9 * y - 0.1 * x),
+        coordinates_output=_lattice(81, 77),
+        method="conservative",
+        device="cuda",
+    )
+    kernel = np.random.default_rng(16).random((7, 5))
+
+    result = regridding.convolve_weights(weights, kernel)
+    expected = regridding.convolve_weights(_to_host(weights), kernel)
+
+    actual = _to_host(result)[0][()]
+    desired = expected[0][()]
+    assert np.array_equal(actual[0], desired[0])
+    assert np.array_equal(actual[1], desired[1])
+    assert np.allclose(actual[2], desired[2], rtol=1e-14, atol=0)
+
+
+@requires_cuda
+def test_axis_mismatch() -> None:
+    """
+    An `axis_output` which selects only one of the two resampled axes is
+    caught on the device as it is on the host.
+    """
+    weights = regridding.weights(
+        coordinates_input=_rotated(),
+        coordinates_output=_lattice(),
+        method="conservative",
+        device="cuda",
+    )
+    with pytest.raises(ValueError, match="outside the grid"):
+        regridding.convolve_weights(weights, np.ones(3), axis_output=1)

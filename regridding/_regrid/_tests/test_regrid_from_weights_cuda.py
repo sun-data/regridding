@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 import numpy as np
 import astropy.units as u
@@ -431,3 +432,45 @@ class TestRegridFromWeightsCudaRejected:
                 values_input=_scene(),
                 values_output=cuda.to_device(np.zeros((3, 3))),
             )
+
+
+@requires_cuda
+def test_transposed_empty_slots() -> None:
+    """
+    Transposing weights built on a device moves the ``-1`` of their empty
+    slots to the output side, where the scatter has to skip it as well.
+
+    A slot which is not skipped adds its input value times zero just before
+    the start of its element of the output, which is the last cell of the
+    element before, so a NaN in the input shows up there.
+    """
+    num = 2
+    (x, y), lattice = _grids()
+    grid_input = tuple(np.broadcast_to(c, (num,) + c.shape) for c in (x, y))
+    grid_output = tuple(np.broadcast_to(c, (num,) + c.shape) for c in lattice)
+
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        axis_input=(1, 2),
+        axis_output=(1, 2),
+        method="conservative",
+        device="cuda",
+    )
+
+    indices_input = weights[0].reshape(-1)[0][0].copy_to_host()
+    assert np.any(indices_input < 0), "the test needs weights with empty slots"
+
+    transposed = regridding.transpose_weights(weights)
+
+    image = np.random.default_rng(17).random((num, 12, 12))
+    image[1, 0, 0] = np.nan
+
+    result: Any = regridding.regrid_from_weights(
+        *transposed,
+        values_input=image,
+        axis_input=(1, 2),
+        axis_output=(1, 2),
+    )
+
+    assert np.all(np.isfinite(result.copy_to_host()[0]))

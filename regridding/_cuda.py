@@ -149,8 +149,18 @@ def prefix_sum(counts: Any, num: int) -> tuple[Any, int]:
     Compute the exclusive prefix sum of a device array of counts, on the
     device.
 
-    :mod:`numba` has no scan, so this borrows :func:`torch.cumsum`, which
-    shares the memory rather than copying it.
+    :mod:`numba` has no scan, so this borrows :func:`torch.cumsum`, writing
+    into memory which :mod:`numba` allocated and owns.  The result can then
+    be read by a kernel launched after this returns without anything having
+    to keep a tensor alive: :mod:`torch` returns memory to its own cache when
+    a tensor is dropped and hands it out again without waiting for kernels
+    it does not know about, whereas memory :mod:`numba` frees is only
+    released once the device is done with it.
+
+    The sum runs on the default stream, which is where :mod:`numba` launches
+    the kernels which write `counts` and read the result, so it is ordered
+    after the one and before the other whatever stream :mod:`torch` has been
+    told to use.
 
     Parameters
     ----------
@@ -161,9 +171,8 @@ def prefix_sum(counts: Any, num: int) -> tuple[Any, int]:
 
     Returns
     -------
-    The ``num + 1`` offsets, as a :class:`torch.Tensor` whose last element is
-    the total, and that total.  The tensor owns the memory, so it has to be
-    kept alive for as long as a view of it is in use.
+    The ``num + 1`` offsets, as a device array whose last element is the
+    total, and that total.
     """
     try:
         # an optional dependency, so it is absent from the environment the
@@ -175,6 +184,12 @@ def prefix_sum(counts: Any, num: int) -> tuple[Any, int]:
             "install `regridding[cuda]`"
         ) from error
 
-    offset = torch.zeros(num + 1, dtype=torch.int64, device="cuda")
-    torch.cumsum(torch.as_tensor(counts, device="cuda"), dim=0, out=offset[1:])
-    return offset, int(offset[~0].item())
+    offset = allocate(num + 1, np.int64)
+
+    with torch.cuda.stream(torch.cuda.default_stream()):
+        view = torch.as_tensor(offset, device="cuda")
+        view[0] = 0
+        torch.cumsum(torch.as_tensor(counts, device="cuda"), dim=0, out=view[1:])
+        total = int(view[~0].item())
+
+    return offset, total

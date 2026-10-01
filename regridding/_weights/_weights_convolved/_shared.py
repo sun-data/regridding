@@ -9,14 +9,21 @@ convolution applies to both, and the device cannot drift away from the host
 it is tested against.
 
 The work is divided into *runs*: maximal stretches of consecutive weights
-which share an input cell.  A run is convolved on its own, by gathering
-rather than scattering: every output cell its convolved footprint can reach
-sums the contributions of the run's weights to it.  That needs no scratch
-space to merge into and no atomics, so each run is one independent thread,
-and since it visits the cells of its footprint in order, a run comes out
-ordered by output cell and with no cell twice.  Weights ordered by input
-cell, as :func:`regridding.weights` returns them, are therefore convolved
-into the same ordered, merged form they arrived in.
+which share an input cell.  A run is convolved on its own, in a scratch box
+which covers its footprint, the bounding box of the run's output cells grown
+by the kernel.  Each weight of the run scatters itself through the kernel
+into the box, and the box is then read out in order, so a run costs one
+multiply-add for each weight and element of the kernel, plus one visit to
+each cell of the box, however many output cells the input cell covers.
+Reading the box in order means a run comes out ordered by output cell and
+with no cell twice, so weights ordered by input cell, as
+:func:`regridding.weights` returns them, are convolved into the same ordered,
+merged form they arrived in.
+
+The scratch box is not allocated here, since the host and the device
+allocate it differently: the host keeps one per thread and grows it as
+needed, and the device, which cannot allocate inside a kernel, measures every
+run's box first and gives each its own slice of one allocation.
 
 Weights that are not ordered by input cell are still convolved correctly,
 since every weight belongs to some run.  They just split into more, shorter
@@ -41,10 +48,10 @@ num_axis = 8
 """
 The most axes a kernel can act along.
 
-Each run keeps the bounding box of its footprint in two arrays with one
-element per axis, and a device has to know the size of an array like that
-when the kernel is compiled.  Weights resample one or two axes in practice,
-so this is generous.
+Each run keeps a few small arrays with one element per axis, such as the
+corner and size of its scratch box, and a device has to know the size of an
+array like that when the kernel is compiled.  Weights resample one or two
+axes in practice, so this is generous.
 """
 
 
@@ -76,7 +83,7 @@ def _valid(
     return indices_input[w] >= 0 and indices_output[w] >= 0
 
 
-def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
+def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable, Callable]:
     """
     Compile the shared kernel bodies for one target.
 
@@ -89,7 +96,7 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
 
     Returns
     -------
-    The compiled ``(starts_run, convolve_run)``.
+    The compiled ``(starts_run, box_run, convolve_run)``.
     """
 
     valid = jit(_valid)
@@ -128,38 +135,25 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
 
     starts_run = jit(starts_run)
 
-    def convolve_run(
+    def box_run(
         indices_input: np.ndarray,
         indices_output: np.ndarray,
-        values: np.ndarray,
-        kernel: np.ndarray,
-        varying: bool,
         shape_output: np.ndarray,
         shape_kernel: np.ndarray,
         skip_negative: bool,
         start: int,
         lower: np.ndarray,
         extent: np.ndarray,
-        write: bool,
-        index_write: int,
-        result_input: np.ndarray,
-        result_output: np.ndarray,
-        result_values: np.ndarray,
-    ) -> int:
+    ) -> tuple[int, int]:
         """
-        Convolve the run of weights beginning at `start`, and return how
-        many weights it becomes.
+        Find where the run beginning at `start` ends, and the scratch box its
+        footprint needs.
 
-        The light that a weight sends to output cell :math:`i` is spread
-        over the cells around it by the kernel, which is centered on
-        :math:`i`.  The footprint of the run is the bounding box of its
-        output cells grown by the kernel, clipped to the grid: light the
-        kernel spreads beyond the grid is lost, as it would be off the edge
-        of a sensor.  Each cell of the footprint is visited in order and
-        gathers what each weight of the run sends it.  A cell no weight
-        reaches with a nonzero element of the kernel is skipped, so the
-        count depends only on where the kernel is nonzero and is the same
-        whether or not anything is written.
+        The box is the bounding box of the run's output cells, grown by the
+        kernel and clipped to the grid: light the kernel spreads beyond the
+        grid is lost, as it would be off the edge of a sensor.  Every output
+        cell lies inside the grid, so the box always holds at least the run's
+        own cells.
 
         Parameters
         ----------
@@ -168,13 +162,6 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
         indices_output
             The flattened index of the output cell of each weight, which
             has to lie inside the grid.
-        values
-            The value of each weight.
-        kernel
-            The kernel, flattened to one row for every output cell if it
-            varies between them, or to a single row if it does not.
-        varying
-            Whether `kernel` has a row for every output cell.
         shape_output
             The number of output cells along each resampled axis.
         shape_kernel
@@ -184,21 +171,16 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
         start
             The index of the first weight of the run.
         lower
-            Scratch space with one element per axis, for the lower corner
-            of the footprint.
+            An output array with one element per axis, for the lower corner
+            of the box.
         extent
-            Scratch space with one element per axis, for the size of the
-            footprint.
-        write
-            Whether to write the result, or only to count it.
-        index_write
-            Where in the result arrays the run begins.
-        result_input
-            An output array for the flattened index of the input cell.
-        result_output
-            An output array for the flattened index of the output cell.
-        result_values
-            An output array for the convolved weights.
+            An output array with one element per axis, for the size of the
+            box.
+
+        Returns
+        -------
+        The index one past the last weight of the run, and the number of
+        cells in the box.
         """
 
         num = indices_input.shape[0]
@@ -229,8 +211,6 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
                 if c > extent[a]:
                     extent[a] = c
 
-        # the output cells of the run lie inside the grid, and the grown box
-        # contains them, so clipping it to the grid never leaves it empty
         size = 1
         for a in range(ndim):
             center = shape_kernel[a] // 2
@@ -244,66 +224,177 @@ def build(jit: Callable[[Callable], Any]) -> tuple[Callable, Callable]:
             extent[a] = high - low + 1
             size = size * extent[a]
 
-        count = 0
+        return stop, size
+
+    box_run = jit(box_run)
+
+    def convolve_run(
+        indices_input: np.ndarray,
+        indices_output: np.ndarray,
+        values: np.ndarray,
+        kernel: np.ndarray,
+        shape_grid: np.ndarray,
+        shape_output: np.ndarray,
+        offsets: np.ndarray,
+        start: int,
+        stop: int,
+        lower: np.ndarray,
+        extent: np.ndarray,
+        coordinates: np.ndarray,
+        strides: np.ndarray,
+        scratch_values: np.ndarray,
+        scratch_reached: np.ndarray,
+        index_scratch: int,
+        write: bool,
+        index_write: int,
+        result_input: np.ndarray,
+        result_output: np.ndarray,
+        result_values: np.ndarray,
+    ) -> int:
+        """
+        Convolve the run of weights from `start` to `stop` in its scratch
+        box, and return how many weights it becomes.
+
+        The light that a weight sends to output cell :math:`i` is spread
+        over the cells around it by the kernel, which is centered on
+        :math:`i`.  Each weight scatters into the box once for each element
+        of the kernel, and the box is then read out in order.  A cell no
+        weight reaches with a nonzero element of the kernel is skipped, so
+        the count depends only on where the kernel is nonzero and is the
+        same whether or not anything is written.
+
+        Parameters
+        ----------
+        indices_input
+            The flattened index of the input cell of each weight.
+        indices_output
+            The flattened index of the output cell of each weight, which
+            has to lie inside the grid.
+        values
+            The value of each weight.
+        kernel
+            The kernel, with one row for each cell of `shape_grid` and one
+            column for each element of the kernel.
+        shape_grid
+            The number of rows of the kernel along each resampled axis,
+            either one, if the kernel does not vary along that axis, or the
+            number of output cells along it.  The row a weight uses is the
+            one for the cell its light lands in.
+        shape_output
+            The number of output cells along each resampled axis.
+        offsets
+            The offset of each element of the kernel from its center, with
+            one row for each element and one column for each resampled axis.
+        start
+            The index of the first weight of the run.
+        stop
+            The index one past the last weight of the run, from `box_run`.
+        lower
+            The lower corner of the box, from `box_run`.
+        extent
+            The size of the box, from `box_run`.
+        coordinates
+            Scratch space with one element per axis, for the cell a weight
+            lands in.
+        strides
+            Scratch space with one element per axis, for the strides of the
+            box.
+        scratch_values
+            Scratch space for what each cell of the box receives.
+        scratch_reached
+            Scratch space for whether each cell of the box is reached.
+        index_scratch
+            Where in the scratch arrays the run's box begins.
+        write
+            Whether to write the result, or only to count it.
+        index_write
+            Where in the result arrays the run begins.
+        result_input
+            An output array for the flattened index of the input cell.
+        result_output
+            An output array for the flattened index of the output cell.
+        result_values
+            An output array for the convolved weights.
+        """
+
+        ndim = shape_output.shape[0]
+        size_kernel = offsets.shape[0]
+
+        size = 1
+        for a in range(ndim - 1, -1, -1):
+            strides[a] = size
+            size = size * extent[a]
 
         for t in range(size):
+            scratch_values[index_scratch + t] = 0
+            scratch_reached[index_scratch + t] = False
 
-            # the cell of the footprint, visited in the order of its
-            # flattened index in the grid
-            index_cell = 0
+        for q in range(start, stop):
+
+            # the cell the weight lands in, and the row of the kernel for it
+            r = indices_output[q]
+            row = 0
             stride = 1
-            r = t
             for a in range(ndim - 1, -1, -1):
-                c = lower[a] + r % extent[a]
-                r = r // extent[a]
-                index_cell += c * stride
-                stride = stride * shape_output[a]
+                c = r % shape_output[a]
+                r = r // shape_output[a]
+                coordinates[a] = c
+                if shape_grid[a] > 1:
+                    row += c * stride
+                stride = stride * shape_grid[a]
 
-            total = 0.0
-            reached = False
+            value = values[q]
 
-            for q in range(start, stop):
+            for k in range(size_kernel):
 
-                index_kernel = 0
-                stride = 1
+                element = kernel[row, k]
+                if element == 0:
+                    continue
+
+                index_box = 0
                 inside = True
-                r_cell = index_cell
-                r_weight = indices_output[q]
-                for a in range(ndim - 1, -1, -1):
-                    c_cell = r_cell % shape_output[a]
-                    c_weight = r_weight % shape_output[a]
-                    r_cell = r_cell // shape_output[a]
-                    r_weight = r_weight // shape_output[a]
-                    k = c_cell - c_weight + shape_kernel[a] // 2
-                    if k < 0 or k >= shape_kernel[a]:
+                for a in range(ndim):
+                    position = coordinates[a] + offsets[k, a] - lower[a]
+                    if position < 0 or position >= extent[a]:
                         inside = False
                         break
-                    index_kernel += k * stride
-                    stride = stride * shape_kernel[a]
+                    index_box += position * strides[a]
 
                 if not inside:
                     continue
 
-                row = 0
-                if varying:
-                    row = indices_output[q]
+                scratch_values[index_scratch + index_box] += value * element
+                scratch_reached[index_scratch + index_box] = True
 
-                element = kernel[row, index_kernel]
-                if element == 0:
-                    continue
+        index_input = indices_input[start]
 
-                reached = True
-                total += values[q] * element
+        count = 0
 
-            if reached:
-                if write:
-                    result_input[index_write + count] = index_input
-                    result_output[index_write + count] = index_cell
-                    result_values[index_write + count] = total
-                count += 1
+        for t in range(size):
+
+            if not scratch_reached[index_scratch + t]:
+                continue
+
+            if write:
+                # the cell of the box, visited in the order of its flattened
+                # index in the grid
+                index_cell = 0
+                stride = 1
+                r = t
+                for a in range(ndim - 1, -1, -1):
+                    c = lower[a] + r % extent[a]
+                    r = r // extent[a]
+                    index_cell += c * stride
+                    stride = stride * shape_output[a]
+
+                result_input[index_write + count] = index_input
+                result_output[index_write + count] = index_cell
+                result_values[index_write + count] = scratch_values[index_scratch + t]
+
+            count += 1
 
         return count
 
     convolve_run = jit(convolve_run)
 
-    return starts_run, convolve_run
+    return starts_run, box_run, convolve_run

@@ -267,7 +267,7 @@ def weights_conservative_2d_clipping_cuda(
         factor,
         num_output_x,
         num_output_y,
-        cuda.as_cuda_array(offset),
+        offset,
         indices_input,
         indices_output,
         values,

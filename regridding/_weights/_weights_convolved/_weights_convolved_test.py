@@ -119,20 +119,25 @@ def test_convolve_weights_ordered() -> None:
         assert np.array_equal(coalesced[2], values)
 
 
-@pytest.mark.parametrize("axis", ["orthogonal", "resampled"])
-def test_convolve_weights_varying(axis: str) -> None:
+@pytest.mark.parametrize(
+    argnames="shape_grid",
+    argvalues=[
+        (2, 1, 1),
+        (24, 1),
+        (22,),
+        (24, 22),
+        (2, 24, 1),
+    ],
+    ids=["orthogonal", "x", "y", "both", "orthogonal and x"],
+)
+def test_convolve_weights_varying(shape_grid: tuple[int, ...]) -> None:
     """A kernel which varies is the matrix product with its own matrix."""
-    rng = np.random.default_rng(7)
+    kernel = np.random.default_rng(7).random(shape_grid + (3, 3))
+
+    result = regridding.convolve_weights(weights, kernel, axis_output=(1, 2))
 
     shape = weights[2]
     num_x, num_y = shape[1], shape[2]
-
-    if axis == "orthogonal":
-        kernel = rng.random((2, 1, 1, 3, 3))
-    else:
-        kernel = rng.random((num_x, 1, 3, 3))
-
-    result = regridding.convolve_weights(weights, kernel, axis_output=(1, 2))
 
     kernel_full = np.broadcast_to(kernel, (2, num_x, num_y, 3, 3))
 
@@ -159,40 +164,95 @@ def test_convolve_weights_varying(axis: str) -> None:
         assert abs(actual - expected).max() < 1e-15
 
 
+def test_convolve_weights_long_runs() -> None:
+    """
+    An input grid much coarser than the output grid, so that each input cell
+    covers many output cells and its run of weights is long.
+    """
+    t = np.linspace(-4, 4, 6)
+    x, y = np.meshgrid(t, t, indexing="ij")
+    weights_coarse = regridding.weights(
+        coordinates_input=(0.9 * x + 0.1 * y, 0.9 * y - 0.1 * x),
+        coordinates_output=_lattice(81, 77),
+        method="conservative",
+    )
+
+    kernel = np.random.default_rng(14).random((7, 5))
+
+    result = regridding.convolve_weights(weights_coarse, kernel)
+
+    values = np.random.default_rng(15).random((5, 5))
+    expected = scipy.ndimage.convolve(
+        regridding.regrid_from_weights(*weights_coarse, values_input=values),
+        kernel,
+        mode="constant",
+    )
+    actual = regridding.regrid_from_weights(*result, values_input=values)
+
+    assert np.allclose(actual, expected, rtol=1e-12, atol=1e-15)
+
+
 @pytest.mark.parametrize("num", [3, 1])
 def test_convolve_weights_broadcast(num: int) -> None:
     """
     The weights are broadcast along an orthogonal axis which the kernel
-    varies along, or which the kernel only has a placeholder for.
+    varies along, or which the kernel only has a placeholder for, and the
+    result can be applied and transposed like any other set of weights.
     """
-    weights_single = regridding.weights(
-        coordinates_input=_rotated(),
-        coordinates_output=_lattice(),
-        method="conservative",
-    )
+    grid_single = _rotated(), _lattice()
+    weights_single = regridding.weights(*grid_single, method="conservative")
     array, shape_input, shape_output = weights_single
     weights_broadcast = array, (1, *shape_input), (1, *shape_output)
 
     kernel = np.random.default_rng(8).random((num, 1, 1, 3, 3))
 
-    result = regridding.convolve_weights(weights_broadcast, kernel, axis_output=(1, 2))
-
-    assert result[0].shape == ((num,) if num > 1 else ())
-
-    values = np.random.default_rng(9).random((num, 16, 16))
-    actual = regridding.regrid_from_weights(
-        *result,
-        values_input=values,
+    result = regridding.convolve_weights(
+        weights_broadcast,
+        kernel,
         axis_input=(1, 2),
         axis_output=(1, 2),
     )
+
+    assert result[0].shape == ((num,) if num > 1 else ())
+    assert result[1] == (num, *shape_input)
+    assert result[2] == (num, *shape_output)
+
+    rng = np.random.default_rng(9)
+    values = rng.random(shape_input)
+    image = rng.random((num, *shape_output))
+
+    kwargs: dict[str, Any] = dict(axis_input=(1, 2), axis_output=(1, 2))
+
+    actual = regridding.regrid_from_weights(*result, values_input=values, **kwargs)
+
+    transposed = regridding.transpose_weights_conservative(
+        result,
+        coordinates_input=tuple(c[np.newaxis] for c in grid_single[0]),
+        coordinates_output=tuple(c[np.newaxis] for c in grid_single[1]),
+        **kwargs,
+    )
+    actual_transposed = regridding.regrid_from_weights(
+        *transposed,
+        values_input=image,
+        **kwargs,
+    )
+
     for d in range(num):
-        expected = scipy.ndimage.convolve(
-            regridding.regrid_from_weights(*weights_single, values_input=values[d]),
-            kernel[d, 0, 0],
-            mode="constant",
-        )
+        weights_d = regridding.convolve_weights(weights_single, kernel[d, 0, 0])
+
+        expected = regridding.regrid_from_weights(*weights_d, values_input=values)
         assert np.allclose(actual[d], expected, rtol=1e-12, atol=1e-15)
+
+        expected_transposed = regridding.regrid_from_weights(
+            *regridding.transpose_weights_conservative(weights_d, *grid_single),
+            values_input=image[d],
+        )
+        assert np.allclose(
+            actual_transposed[d],
+            expected_transposed,
+            rtol=1e-12,
+            atol=1e-15,
+        )
 
 
 def test_convolve_weights_empty_slots() -> None:
@@ -207,7 +267,7 @@ def test_convolve_weights_empty_slots() -> None:
     """
     from ._shared import build, num_axis
 
-    starts_run, convolve_run = build(lambda function: function)
+    starts_run, box_run, convolve_run = build(lambda function: function)
 
     indices_input = np.array([-1, 3, 3, -1, 5, 0, 5])
     indices_output = np.array([0, 5, 6, 0, 7, -1, 9])
@@ -215,28 +275,48 @@ def test_convolve_weights_empty_slots() -> None:
 
     shape_output = np.array([4, 4])
     shape_kernel = np.array([3, 3])
+    shape_grid = np.array([1, 1])
+    offsets = np.stack(np.unravel_index(np.arange(9), (3, 3)), axis=~0) - 1
     kernel = np.random.default_rng(13).random((1, 9))
 
-    lower = np.empty(num_axis, dtype=np.int64)
-    extent = np.empty(num_axis, dtype=np.int64)
+    lower, extent, coordinates, strides = (
+        np.empty(num_axis, dtype=np.int64) for _ in range(4)
+    )
+    scratch_values = np.empty(16)
+    scratch_reached = np.empty(16, dtype=bool)
 
     triples = []
     for w in range(values.size):
         if not starts_run(indices_input, indices_output, w, True):
             continue
-        result = [np.empty(16, dtype=int), np.empty(16, dtype=int), np.empty(16)]
-        count = convolve_run(
+        stop, _ = box_run(
             indices_input,
             indices_output,
-            values,
-            kernel,
-            False,
             shape_output,
             shape_kernel,
             True,
             w,
             lower,
             extent,
+        )
+        result = [np.empty(16, dtype=int), np.empty(16, dtype=int), np.empty(16)]
+        count = convolve_run(
+            indices_input,
+            indices_output,
+            values,
+            kernel,
+            shape_grid,
+            shape_output,
+            offsets,
+            w,
+            stop,
+            lower,
+            extent,
+            coordinates,
+            strides,
+            scratch_values,
+            scratch_reached,
+            0,
             True,
             0,
             *result,
@@ -403,3 +483,28 @@ def test_convolve_weights_errors(
 ) -> None:
     with pytest.raises(ValueError):
         regridding.convolve_weights(weights, kernel, axis_output=axis_output)
+
+
+def test_convolve_weights_axis_mismatch() -> None:
+    """
+    An `axis_output` which does not describe the grid the weights were built
+    for is caught, rather than convolving along the wrong axes.
+    """
+    weights_single = regridding.weights(_rotated(), _lattice(), method="conservative")
+
+    # one of the two resampled axes, so the indices run past the grid
+    with pytest.raises(ValueError, match="outside the grid"):
+        regridding.convolve_weights(weights_single, np.ones(3), axis_output=1)
+
+    # every axis, including the orthogonal one the weights are an array over
+    with pytest.raises(ValueError, match="orthogonal axes"):
+        regridding.convolve_weights(weights, np.ones((2, 3, 3)))
+
+    # a kernel adding an orthogonal axis needs to know the input grid's axes
+    array, shape_input, shape_output = weights_single
+    with pytest.raises(ValueError, match="axis_input"):
+        regridding.convolve_weights(
+            (array, (1, *shape_input), (1, *shape_output)),
+            np.ones((3, 1, 1, 3, 3)),
+            axis_output=(1, 2),
+        )

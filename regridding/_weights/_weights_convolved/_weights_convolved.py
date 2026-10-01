@@ -1,7 +1,6 @@
 from typing import Any, Sequence
 import numpy as np
 from numba import cuda
-from regridding import _util
 from regridding._cuda import on_device
 from ._shared import num_axis
 from ._host import convolve_weights_host
@@ -15,6 +14,7 @@ __all__ = [
 def convolve_weights(
     weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
     kernel: np.ndarray,
+    axis_input: None | int | Sequence[int] = None,
     axis_output: None | int | Sequence[int] = None,
 ) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     r"""
@@ -57,6 +57,13 @@ def convolve_weights(
         the light lands in *before* it is spread, :math:`i` above.
 
         The kernel must be dimensionless.
+    axis_input
+        The resampled axes of the input grid, as given to
+        :func:`regridding.weights` and :func:`regridding.regrid_from_weights`.
+        If :obj:`None`, all the axes of the input grid are resampled.
+        This is only needed when the kernel varies along an orthogonal axis
+        which the weights are broadcast along, since the shape of the input
+        grid then has to be broadcast too.
     axis_output
         The resampled axes of the output grid, as given to
         :func:`regridding.weights` and :func:`regridding.regrid_from_weights`.
@@ -64,13 +71,18 @@ def convolve_weights(
 
     Returns
     -------
-    The convolved weights, with the same shapes as `weights`.
+    The convolved weights, with the same shapes as `weights`, unless the
+    kernel varies along an orthogonal axis the weights are broadcast along,
+    in which case the weights and both shapes are broadcast along it.
 
     Raises
     ------
     ValueError
         If `kernel` has too few axes, if its leading axes cannot be broadcast
-        to the output grid, or if it is not dimensionless.
+        to the output grid, or if it is not dimensionless; or if
+        `axis_output` does not describe the grid the weights were built for,
+        which shows as the weights having more orthogonal axes than it leaves
+        or as an output index outside the grid it selects.
 
     Notes
     -----
@@ -85,10 +97,18 @@ def convolve_weights(
     lost, as it would be off the edge of a sensor, so the total of the
     result is reduced near the edges.
 
-    Each input cell is convolved independently of every other, by gathering
-    what each cell of its footprint receives from it.  Weights ordered by
-    input cell, as :func:`regridding.weights` returns them, come out ordered
-    and with each ``(input, output)`` pair once.
+    Each input cell is convolved independently of every other, in a scratch
+    box covering its footprint: the bounding box of the output cells it
+    reaches, grown by the kernel.  Each of its weights is spread through the
+    kernel into the box, and the box is then read out in order, so the cost
+    is one multiply-add for each weight and element of the kernel, plus one
+    visit to each cell of the box.  Weights ordered by input cell, as
+    :func:`regridding.weights` returns them, come out ordered and with each
+    ``(input, output)`` pair once.
+
+    A kernel which varies along some of the resampled axes is stored with
+    one row for each cell along those axes only, so a kernel which varies
+    along one axis of a large grid costs no more than that axis.
 
     The result has more weights than `weights` does, by roughly the factor
     by which the kernel grows the footprint of an input cell: for a cell
@@ -187,15 +207,31 @@ def convolve_weights(
     weights_array = np.asarray(weights_array)
 
     ndim = len(shape_output)
+    ndim_input = len(shape_input)
 
-    axis_output = _util._normalize_axis(axis_output, ndim=ndim)
-    axis_output = tuple(int(ax) % ndim for ax in axis_output)
+    if axis_output is None:
+        axis_output = tuple(range(ndim))
+    axis_output = tuple(np.lib.array_utils.normalize_axis_tuple(axis_output, ndim))
+
+    if axis_input is None:
+        axis_input = tuple(range(ndim_input))
+    axis_input = tuple(np.lib.array_utils.normalize_axis_tuple(axis_input, ndim_input))
 
     ndim_kernel = len(axis_output)
 
     if ndim_kernel > num_axis:  # pragma: nocover
         raise ValueError(
             f"a kernel can act along at most {num_axis} axes, got {ndim_kernel}"
+        )
+
+    # the weights carry one element for each position along the orthogonal
+    # axes, so they cannot have more axes than `axis_output` leaves over
+    axis_orthogonal = tuple(ax for ax in range(ndim) if ax not in axis_output)
+    if weights_array.ndim > len(axis_orthogonal):
+        raise ValueError(
+            f"the weights have {weights_array.ndim} orthogonal axes, but "
+            f"axis_output={axis_output} leaves only {len(axis_orthogonal)} of "
+            f"the {ndim} axes of the output grid, {shape_output}"
         )
 
     unit = getattr(kernel, "unit", None)
@@ -241,11 +277,9 @@ def convolve_weights(
                 f"the leading axes of the kernel, {shape_grid}, cannot be "
                 f"broadcast to the output grid, {shape_output}"
             )
-    varying = any(shape_grid[ax] != 1 for ax in axis_output)
 
     # the output grid can be broadcast along the orthogonal axes, so those
     # are checked against the weights, which are not
-    axis_orthogonal = tuple(ax for ax in range(ndim) if ax not in axis_output)
     shape_orthogonal_kernel = tuple(shape_grid[ax] for ax in axis_orthogonal)
     try:
         np.broadcast_shapes(
@@ -259,21 +293,19 @@ def convolve_weights(
             f"broadcast to the output grid, {shape_output}"
         ) from error
 
-    # put the resampled axes of the grid next to the kernel and flatten
-    # them, so that every element of the orthogonal axes has a row for each
-    # output cell, or one row for all of them
+    # put the resampled axes of the kernel's grid next to the kernel itself
+    # and flatten them, so that every element of the orthogonal axes has one
+    # row for each cell of the grid the kernel varies over.  A kernel which
+    # varies along only some of the resampled axes keeps only those, rather
+    # than being copied out to one row for every output cell.
+    shape_grid_resampled = tuple(shape_grid[ax] for ax in axis_output)
     kernel = np.transpose(
         kernel,
         axis_orthogonal + axis_output + tuple(range(ndim, ndim + ndim_kernel)),
     )
-    if varying:
-        kernel = np.broadcast_to(
-            kernel,
-            shape_orthogonal_kernel + shape_resampled + shape_kernel,
-        )
-    num_row = int(np.prod(shape_resampled)) if varying else 1
     kernel = kernel.reshape(
-        shape_orthogonal_kernel + (num_row, int(np.prod(shape_kernel)))
+        shape_orthogonal_kernel
+        + (int(np.prod(shape_grid_resampled)), int(np.prod(shape_kernel)))
     )
 
     # the orthogonal shape of the result is the weights' own, unless the
@@ -288,16 +320,45 @@ def convolve_weights(
         shape_orthogonal_kernel,
     )
 
+    if shape_orthogonal != weights_array.shape:
+        shape_input, shape_output = _broadcast_orthogonal(
+            shape_orthogonal=shape_orthogonal,
+            shape_input=shape_input,
+            shape_output=shape_output,
+            axis_input=axis_input,
+            axis_output=axis_output,
+        )
+
     weights_array = np.broadcast_to(weights_array, shape_orthogonal)
     kernel = np.broadcast_to(kernel, shape_orthogonal + kernel.shape[~1:])
 
+    size_resampled = int(np.prod(shape_resampled))
+
+    # the offset of every element of the kernel from its center, along each
+    # resampled axis
+    offsets = np.stack(
+        np.unravel_index(np.arange(int(np.prod(shape_kernel))), shape_kernel),
+        axis=~0,
+    )
+    offsets = offsets - np.array(shape_kernel) // 2
+
+    shape_grid_resampled = np.array(shape_grid_resampled, dtype=np.int64)
     shape_resampled = np.array(shape_resampled, dtype=np.int64)
     shape_kernel = np.array(shape_kernel, dtype=np.int64)
+    offsets = np.ascontiguousarray(offsets, dtype=np.int64)
 
     device = on_device(weights_array)
+
+    # set on the device if any weight's output cell lies outside the grid,
+    # and read once all the elements are done
+    outside = None
+
     if device:
+        shape_grid_resampled = cuda.to_device(shape_grid_resampled)
         shape_resampled = cuda.to_device(shape_resampled)
         shape_kernel = cuda.to_device(shape_kernel)
+        offsets = cuda.to_device(offsets)
+        outside = cuda.to_device(np.zeros(1, dtype=np.int64))
 
     # the kernel sent to the device for each distinct element, so that a
     # kernel shared by every element is only sent once
@@ -319,22 +380,40 @@ def convolve_weights(
                 indices_output=indices_output,
                 values=values,
                 kernel=kernels_device[key],
+                shape_grid=shape_grid_resampled,
                 shape_output=shape_resampled,
                 shape_kernel=shape_kernel,
+                offsets=offsets,
+                size_output=size_resampled,
+                outside=outside,
             )
             continue
+
+        indices_input = np.asarray(indices_input)
+        indices_output = np.asarray(indices_output)
+
+        # an index outside the grid means `axis_output` does not describe the
+        # grid the weights were built for
+        if indices_output.size:
+            if (
+                indices_output.max() >= size_resampled
+                or indices_output.min() < -size_resampled
+            ):
+                raise ValueError(_message_outside(axis_output, shape_output))
 
         unit_values = getattr(values, "unit", None)
         if unit_values is not None:
             values = getattr(values, "value")
 
         indices_input, indices_output, values = convolve_weights_host(
-            indices_input=np.asarray(indices_input),
-            indices_output=np.asarray(indices_output),
+            indices_input=indices_input,
+            indices_output=indices_output,
             values=np.asarray(values),
             kernel=kernel_index,
+            shape_grid=shape_grid_resampled,
             shape_output=shape_resampled,
             shape_kernel=shape_kernel,
+            offsets=offsets,
         )
 
         if unit_values is not None:
@@ -342,4 +421,86 @@ def convolve_weights(
 
         result[index] = (indices_input, indices_output, values)
 
+    if outside is not None and outside.copy_to_host()[0]:
+        raise ValueError(_message_outside(axis_output, shape_output))
+
     return result, shape_input, shape_output
+
+
+def _message_outside(
+    axis_output: tuple[int, ...],
+    shape_output: tuple[int, ...],
+) -> str:
+    """
+    Explain an output index which lies outside the grid.
+
+    Parameters
+    ----------
+    axis_output
+        The resampled axes of the output grid, as given.
+    shape_output
+        The shape of the output grid.
+    """
+    return (
+        f"the weights address output cells outside the grid selected by "
+        f"axis_output={axis_output} from {shape_output}; it should be the "
+        f"axis_output given to `regridding.weights()`"
+    )
+
+
+def _broadcast_orthogonal(
+    shape_orthogonal: tuple[int, ...],
+    shape_input: tuple[int, ...],
+    shape_output: tuple[int, ...],
+    axis_input: tuple[int, ...],
+    axis_output: tuple[int, ...],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """
+    Broadcast the orthogonal axes of the input and output grids against the
+    orthogonal shape of a set of weights.
+
+    The orthogonal axes are matched from the right, as
+    :func:`regridding.regrid_from_weights` matches them.
+
+    Parameters
+    ----------
+    shape_orthogonal
+        The shape of the array of weights.
+    shape_input
+        The shape of the input grid.
+    shape_output
+        The shape of the output grid.
+    axis_input
+        The resampled axes of the input grid.
+    axis_output
+        The resampled axes of the output grid.
+
+    Raises
+    ------
+    ValueError
+        If either grid has fewer orthogonal axes than the weights, which
+        is what happens when `axis_input` is left out for weights which
+        have orthogonal axes.
+    """
+
+    result = []
+
+    for shape, axis, name in (
+        (shape_input, axis_input, "axis_input"),
+        (shape_output, axis_output, "axis_output"),
+    ):
+        axis_orthogonal = [ax for ax in range(len(shape)) if ax not in axis]
+        if len(axis_orthogonal) < len(shape_orthogonal):
+            raise ValueError(
+                f"the kernel adds orthogonal axes {shape_orthogonal} to the "
+                f"weights, but {name}={axis} leaves the grid {shape} with "
+                f"only {len(axis_orthogonal)} orthogonal axes to broadcast"
+            )
+        shape = list(shape)
+        for ax, num in zip(reversed(axis_orthogonal), reversed(shape_orthogonal)):
+            shape[ax] = np.broadcast_shapes((shape[ax],), (num,))[0]
+        result.append(tuple(shape))
+
+    shape_input, shape_output = result
+
+    return shape_input, shape_output

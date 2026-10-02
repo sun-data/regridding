@@ -172,35 +172,6 @@ def _allocate_result(
     )
 
 
-def _prefix_sum(counts: Any, num_cell: int) -> tuple[Any, int]:
-    """
-    Compute the exclusive prefix sum of the per-cell counts, on the device.
-
-    :mod:`numba` has no scan, so this borrows :func:`torch.cumsum`, which
-    shares the memory rather than copying it.
-
-    Parameters
-    ----------
-    counts
-        The per-cell counts, on the device.
-    num_cell
-        The number of input cells.
-    """
-    try:
-        # an optional dependency, so it is absent from the environment the
-        # type checker runs in
-        import torch  # type: ignore[import-not-found]
-    except ImportError as error:  # pragma: nocover
-        raise ImportError(
-            "building weights on a device needs `torch`, which provides the "
-            "prefix sum; install `regridding[cuda]`"
-        ) from error
-
-    offset = torch.zeros(num_cell + 1, dtype=torch.int64, device="cuda")
-    torch.cumsum(torch.as_tensor(counts, device="cuda"), dim=0, out=offset[1:])
-    return offset, int(offset[~0].item())
-
-
 def weights_conservative_2d_clipping_cuda(
     grid_input: tuple[np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray],
@@ -279,7 +250,7 @@ def weights_conservative_2d_clipping_cuda(
     counts = _cuda.allocate(num_cell, np.int64)
     count_cells[blocks, threads](x, y, num_output_x, num_output_y, counts)  # type: ignore[index]
 
-    offset, num_total = _prefix_sum(counts, num_cell)
+    offset, num_total = _cuda.prefix_sum(counts, num_cell)
 
     indices_input, indices_output, values = _allocate_result(
         num_total,
@@ -296,7 +267,7 @@ def weights_conservative_2d_clipping_cuda(
         factor,
         num_output_x,
         num_output_y,
-        cuda.as_cuda_array(offset),
+        offset,
         indices_input,
         indices_output,
         values,

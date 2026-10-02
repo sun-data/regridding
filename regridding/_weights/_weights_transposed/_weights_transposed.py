@@ -217,23 +217,39 @@ def transpose_weights_conservative(
     axis_input = tuple(sorted(axis_input))
     axis_output = tuple(sorted(axis_output))
 
-    axis_numba_input = ~np.arange(len(axis_input))[::-1]
-    axis_numba_output = ~np.arange(len(axis_output))[::-1]
-
-    size_orthogonal = int(np.prod(shape_orthogonal))
+    # the weights can have more orthogonal elements than the grids do, when
+    # `convolve_weights` folds in a kernel which varies along an orthogonal
+    # axis the grids are broadcast along, so the grids are broadcast to the
+    # weights rather than the other way around
+    shape_orthogonal_grids = tuple(shape_orthogonal)
+    shape_orthogonal = np.broadcast_shapes(
+        shape_orthogonal_grids,
+        weights_array.shape,
+    )
+    weights_array = np.broadcast_to(weights_array, shape_orthogonal)
 
     if weights_input is not None:
-        weights_input = np.broadcast_to(weights_input, shape_input)
-        weights_input = np.moveaxis(weights_input, axis_input, axis_numba_input)
-        weights_input = weights_input.reshape(size_orthogonal, -1)
+        weights_input = _flatten_cells(
+            np.broadcast_to(weights_input, shape_input),
+            axis=axis_input,
+            shape_orthogonal=shape_orthogonal,
+        )
 
-    volume_input = _cell_volume(coordinates_input, axis_input)
-    volume_input = np.moveaxis(volume_input, axis_input, axis_numba_input)
-    volume_input = volume_input.reshape(size_orthogonal, -1)
+    # `_cell_volume` flattens the orthogonal axes of the grids into one, so
+    # their shape is restored before broadcasting
+    volume_input = _flatten_cells(
+        _cell_volume(coordinates_input, axis_input),
+        axis=axis_input,
+        shape_orthogonal=shape_orthogonal,
+        shape_orthogonal_source=shape_orthogonal_grids,
+    )
 
-    volume_output = _cell_volume(coordinates_output, axis_output)
-    volume_output = np.moveaxis(volume_output, axis_output, axis_numba_output)
-    volume_output = volume_output.reshape(size_orthogonal, -1)
+    volume_output = _flatten_cells(
+        _cell_volume(coordinates_output, axis_output),
+        axis=axis_output,
+        shape_orthogonal=shape_orthogonal,
+        shape_orthogonal_source=shape_orthogonal_grids,
+    )
 
     shape = weights_array.shape
     flat = weights_array.reshape(-1)
@@ -257,6 +273,41 @@ def transpose_weights_conservative(
         result[d] = (indices_output, indices_input, values)
 
     return result.reshape(shape), shape_output, shape_input
+
+
+def _flatten_cells(
+    a: np.ndarray,
+    axis: tuple[int, ...],
+    shape_orthogonal: tuple[int, ...],
+    shape_orthogonal_source: None | tuple[int, ...] = None,
+) -> np.ndarray:
+    """
+    Arrange an array defined on the cells of a grid with one row for each
+    element of the orthogonal axes and one column for each cell.
+
+    The columns are in the order the flat cell indices of a set of weights
+    address them.
+
+    Parameters
+    ----------
+    a
+        An array defined on the cells of a grid.
+    axis
+        The resampled axes of the grid, in ascending order.
+    shape_orthogonal
+        The shape of the orthogonal axes to broadcast `a` to, matched from
+        the right.
+    shape_orthogonal_source
+        The shape of the orthogonal axes of `a`, if they have been flattened
+        into fewer.  If :obj:`None`, its own axes are used.
+    """
+    axis_numba = ~np.arange(len(axis))[::-1]
+    a = np.moveaxis(a, axis, axis_numba)
+    shape_cells = a.shape[a.ndim - len(axis) :]
+    if shape_orthogonal_source is not None:
+        a = a.reshape(tuple(shape_orthogonal_source) + shape_cells)
+    a = np.broadcast_to(a, tuple(shape_orthogonal) + shape_cells)
+    return a.reshape(-1, int(np.prod(shape_cells)))
 
 
 def _cell_volume(

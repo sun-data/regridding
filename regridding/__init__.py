@@ -14,6 +14,7 @@ from ._weights import (
     weights,
     transpose_weights,
     transpose_weights_conservative,
+    convolve_weights,
 )
 from ._interp_ndarray import ndarray_linear_interpolation
 from ._regrid import regrid_from_weights, regrid
@@ -26,6 +27,7 @@ __all__ = [
     "weights",
     "transpose_weights",
     "transpose_weights_conservative",
+    "convolve_weights",
     "ndarray_linear_interpolation",
     "regrid_from_weights",
     "regrid",

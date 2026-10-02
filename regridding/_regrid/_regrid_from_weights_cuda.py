@@ -58,20 +58,22 @@ def _scatter(  # pragma: nocover
     The indices address a flattened grid of the resampled axes, so each is
     split back into a pair and applied to the strides of those axes.  Slots
     which saw no overlap carry an index of ``-1`` and are skipped, so the
-    weights do not have to be compacted first.
+    weights do not have to be compacted first.  The ``-1`` is on the input
+    side of weights as they were built, and on the output side once they
+    have been transposed, so either side marks a slot as empty.
     """
     w = cuda.grid(1)  # type: ignore[call-arg]
     if w >= values.size:
         return
 
     index_input = indices_input[w]
-    if index_input < 0:
+    index_output = indices_output[w]
+    if index_input < 0 or index_output < 0:
         return
 
     i0 = index_input // num_input
     i1 = index_input - i0 * num_input
 
-    index_output = indices_output[w]
     o0 = index_output // num_output
     o1 = index_output - o0 * num_output
 

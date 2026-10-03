@@ -400,6 +400,7 @@ def _cell_volume_1d(
 @numba.njit(
     cache=True,
     fastmath=True,
+    parallel=True,
 )
 def _cell_volume_2d(
     grid: tuple[np.ndarray, np.ndarray],

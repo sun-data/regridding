@@ -18,6 +18,8 @@ __all__ = [
     "on_device",
     "allocate",
     "fill",
+    "rows",
+    "row",
     "zeros",
     "prefix_sum",
 ]
@@ -128,6 +130,45 @@ def fill(a: Any, value: Any, threads: int = threads) -> Any:
         _fill[(flat.size + threads - 1) // threads, threads](flat, value)  # type: ignore[index]
 
     return a
+
+
+def rows(a: np.ndarray, ndim: int) -> Any:
+    """
+    Send an array which is to be broadcast along the orthogonal axes of a
+    set of weights to the device, once, before it is broadcast.
+
+    Its leading axes are flattened into one, so that each element of the
+    orthogonal axes reads one row of it, found by :func:`row`.
+
+    Parameters
+    ----------
+    a
+        The array, with the orthogonal axes first, of length one where it is
+        to be broadcast, followed by the axes of each row.
+    ndim
+        The number of axes of each row.
+    """
+    a = np.ascontiguousarray(a)
+    return cuda.to_device(a.reshape((-1,) + a.shape[a.ndim - ndim :]))
+
+
+def row(index: tuple[int, ...], shape: tuple[int, ...]) -> int:
+    """
+    Find the row of an array sent by :func:`rows` which an element of the
+    orthogonal axes reads.
+
+    Parameters
+    ----------
+    index
+        The index of the element, into the orthogonal axes the array is
+        broadcast to.
+    shape
+        The shape of the orthogonal axes of the array, matched to `index`
+        from the right.  An axis of length one is broadcast.
+    """
+    index = index[len(index) - len(shape) :]
+    index = tuple(0 if num == 1 else i for i, num in zip(index, shape))
+    return int(np.ravel_multi_index(index, shape)) if shape else 0
 
 
 def zeros(shape: Any, dtype: np.typing.DTypeLike) -> Any:

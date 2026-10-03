@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Any, Sequence
 import numpy as np
 
 _seed_default = 42
@@ -7,6 +7,46 @@ The default seed used to perturb the output coordinates.
 
 Fixed so that repeated calls on the same grids return identical results.
 """
+
+
+def _dimensionless(
+    a: Any,
+    strict: bool = True,
+) -> np.ndarray:
+    """
+    Reduce an array to the plain numbers it stands for, in double precision.
+
+    `regridding` does not depend on `astropy`, so a
+    :class:`astropy.units.Quantity` is recognized by duck typing.  A
+    dimensionless one, such as a percentage, is scaled to the number it
+    stands for.  Its value is converted to double precision before it is
+    scaled, so that a single-precision percentage is scaled exactly as a
+    double-precision one is.
+
+    Parameters
+    ----------
+    a
+        An array, which may be a quantity.
+    strict
+        Whether a unit with dimensions raises.  If :obj:`False`, it is
+        dropped instead, leaving the value in that unit.
+
+    Raises
+    ------
+    ValueError
+        If `strict` is set and `a` has a unit with dimensions.
+    """
+    unit = getattr(a, "unit", None)
+    value = np.asarray(getattr(a, "value", a), dtype=np.float64)
+    if unit is None:
+        return value
+    try:
+        scale = unit.to("")
+    except (TypeError, ValueError) as error:
+        if strict:
+            raise ValueError(f"{unit} is not dimensionless") from error
+        return value
+    return value * scale
 
 
 def _normalize_axis(

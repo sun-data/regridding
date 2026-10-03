@@ -323,11 +323,11 @@ def weights(
         if device is not None:
             try:
                 weights_input = _util._dimensionless(weights_input)
-            except ValueError:
+            except ValueError as error:
                 raise ValueError(
                     "`weights_input` with a unit cannot be built on a device; "
                     "strip the unit and reapply it to the resampled values"
-                )
+                ) from error
             unit_weights = None
         else:
             weights_input = getattr(weights_input, "value")

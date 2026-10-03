@@ -234,13 +234,6 @@ def transpose_weights_conservative(
     axis_input = tuple(sorted(axis_input))
     axis_output = tuple(sorted(axis_output))
 
-    # the weights can have more orthogonal elements than the grids do, when
-    # `convolve_weights` folds in a kernel which varies along an orthogonal
-    # axis the grids are broadcast along, so the grids are broadcast to the
-    # weights rather than the other way around
-    shape_orthogonal = np.broadcast_shapes(shape_orthogonal, weights_array.shape)
-    weights_array = np.broadcast_to(weights_array, shape_orthogonal)
-
     # a grid which does not have the cells the weights were built for would
     # be read at the wrong cells, or past its end, without anything failing
     _check_grids(
@@ -251,6 +244,19 @@ def transpose_weights_conservative(
         shape_input=shape_input,
         shape_output=shape_output,
     )
+
+    # the weights can have more orthogonal elements than the grids do, when
+    # `convolve_weights` folds in a kernel which varies along an orthogonal
+    # axis the grids are broadcast along, so the grids are broadcast to the
+    # weights rather than the other way around
+    try:
+        shape_orthogonal = np.broadcast_shapes(shape_orthogonal, weights_array.shape)
+    except ValueError as error:
+        raise ValueError(
+            f"the orthogonal axes of the grids, {shape_orthogonal}, cannot be "
+            f"broadcast against those of the weights, {weights_array.shape}"
+        ) from error
+    weights_array = np.broadcast_to(weights_array, shape_orthogonal)
 
     # the volumes of each grid are computed only along the orthogonal axes it
     # varies along, so a grid shared by every element of the other is
@@ -272,11 +278,11 @@ def transpose_weights_conservative(
     # its volume once rather than applied to every weight which touches it.
     factor_input = volume_input
     if weights_input is not None:
-        weights_input = np.broadcast_to(
-            _util._dimensionless(weights_input, strict=False),
-            shape_input,
-        )
+        # the axes it is broadcast along are found before it is converted to
+        # numbers, which would copy it out to its full shape
+        weights_input = np.broadcast_to(weights_input, shape_input, subok=True)
         (weights_input,) = _unbroadcast((weights_input,), axis_input)
+        weights_input = _util._dimensionless(weights_input, strict=False)
         factor_input = factor_input / np.square(_cells(weights_input, axis_input))
 
     if on_device(weights_array):
@@ -348,7 +354,9 @@ def _check_grids(
     ------
     ValueError
         If either grid has a different number of cells along any of its
-        resampled axes.
+        resampled axes than the weights address, which is also the case for
+        weights which address the vertices of the grids rather than their
+        cells, such as multilinear ones.
     """
     cells_input = tuple(coordinates_input[0].shape[ax] - 1 for ax in axis_input)
     cells_output = tuple(coordinates_output[0].shape[ax] - 1 for ax in axis_output)
@@ -356,11 +364,11 @@ def _check_grids(
     expected_output = tuple(shape_output[ax] for ax in axis_output)
     if cells_input != expected_input or cells_output != expected_output:
         raise ValueError(
-            f"the grids have {cells_input} input and {cells_output} output "
-            f"cells along their resampled axes, but the weights were built for "
-            f"{expected_input} and {expected_output}; `coordinates_input` and "
-            f"`coordinates_output` should be the grids given to "
-            f"`regridding.weights()`"
+            f"the weights address {expected_input} input and {expected_output} "
+            f"output elements along their resampled axes, but the grids have "
+            f"{cells_input} and {cells_output} cells; the weights should be "
+            f"built from these grids by `regridding.weights()` with "
+            f'`method="conservative"`, which addresses their cells'
         )
 
 
@@ -419,7 +427,8 @@ def _cells(
     axis_numba = ~np.arange(len(axis))[::-1]
     a = np.moveaxis(a, axis, axis_numba)
     shape_orthogonal = a.shape[: a.ndim - len(axis)]
-    return a.reshape(shape_orthogonal + (-1,))
+    num_cells = int(np.prod(a.shape[a.ndim - len(axis) :], dtype=int))
+    return a.reshape(shape_orthogonal + (num_cells,))
 
 
 def _cell_volume(

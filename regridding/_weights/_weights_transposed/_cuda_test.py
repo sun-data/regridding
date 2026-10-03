@@ -74,6 +74,10 @@ varies along it, and one in single precision.
 """
 
 
+weights_input_cells = rng.uniform(0.5, 1.5, size=(16, 16))
+"""A weight for each input cell, for the tests to broadcast themselves."""
+
+
 def _weights(**kwargs: Any) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
     """The weights between the test grids, built with `kwargs`."""
     return regridding.weights(method="conservative", **grids, **kwargs)
@@ -240,7 +244,7 @@ def test_grids() -> None:
     """
     weights = _weights(device="cuda")
 
-    with pytest.raises(ValueError, match="the weights were built for"):
+    with pytest.raises(ValueError, match="the weights address"):
         regridding.transpose_weights_conservative(
             weights,
             coordinates_input=grid_output,
@@ -315,13 +319,15 @@ def test_single() -> None:
     _assert_matches(actual, expected)
 
 
-@requires_cuda
-def test_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
+def _convolved() -> tuple[
+    tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+    dict[str, Any],
+]:
     """
-    Weights with more orthogonal elements than their grids, as
-    :func:`regridding.convolve_weights` leaves them, are transposed as on the
-    host, and each grid's volumes are sent to the device once rather than
-    once for each element.
+    Weights on the device with three orthogonal elements but grids with
+    one, as :func:`regridding.convolve_weights` leaves them when its kernel
+    varies along an axis the grids do not, and the grids to transpose them
+    with.
     """
     grid_single = _rotated(), _lattice()
     array, shape_input, shape_output = regridding.weights(
@@ -339,6 +345,18 @@ def test_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
         coordinates_output=tuple(c[np.newaxis] for c in grid_single[1]),
         **axes,
     )
+    return weights, kwargs
+
+
+@requires_cuda
+def test_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Weights with more orthogonal elements than their grids, as
+    :func:`regridding.convolve_weights` leaves them, are transposed as on the
+    host, and each grid's volumes are sent to the device once rather than
+    once for each element.
+    """
+    weights, kwargs = _convolved()
 
     sent = _count_sent(monkeypatch)
     actual = regridding.transpose_weights_conservative(weights, **kwargs)
@@ -398,3 +416,41 @@ def test_transpose_weights() -> None:
         **axes,
     )
     assert np.allclose(actual.copy_to_host(), expected, rtol=1e-12, atol=1e-15)
+
+
+@requires_cuda
+@pytest.mark.parametrize(
+    argnames="weights_input",
+    argvalues=[
+        np.broadcast_to(weights_input_cells.astype(np.float32), (3, 16, 16)),
+        np.broadcast_to(weights_input_cells * 100 * u.percent, (3, 16, 16), subok=True),
+    ],
+    ids=["single", "percent"],
+)
+def test_weights_input_sent_once(
+    monkeypatch: pytest.MonkeyPatch,
+    weights_input: np.ndarray,
+) -> None:
+    """
+    A `weights_input` which the caller broadcast along the orthogonal axis
+    is sent to the device once, even when it has to be converted to double
+    precision or from a unit, which would copy it out to its full shape.
+    """
+    weights, kwargs = _convolved()
+
+    sent = _count_sent(monkeypatch)
+    actual = regridding.transpose_weights_conservative(
+        weights,
+        weights_input=weights_input,
+        **kwargs,
+    )
+    monkeypatch.undo()
+
+    assert sent == [(1, 16 * 16), (1, 24 * 22)]
+
+    expected = regridding.transpose_weights_conservative(
+        _to_host(weights),
+        weights_input=weights_input,
+        **kwargs,
+    )
+    _assert_matches(actual, expected)

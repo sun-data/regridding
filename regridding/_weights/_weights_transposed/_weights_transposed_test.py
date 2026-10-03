@@ -432,7 +432,7 @@ def test_transpose_weights_conservative_grids(grid: str) -> None:
     else:
         grid_output = tuple(c[:, :-1] for c in grid_output)
 
-    with pytest.raises(ValueError, match="the weights were built for"):
+    with pytest.raises(ValueError, match="the weights address"):
         regridding.transpose_weights_conservative(
             weights,
             coordinates_input=grid_input,
@@ -529,3 +529,58 @@ def test_cell_volume(num_grid: int) -> None:
         assert np.array_equal(transposed[0][t][0], expected[0][()][0])
         assert np.array_equal(transposed[0][t][1], expected[0][()][1])
         assert np.allclose(transposed[0][t][2], expected[0][()][2], rtol=1e-14, atol=0)
+
+
+def test_transpose_weights_conservative_multilinear() -> None:
+    """
+    Weights which address the vertices of the grids rather than their
+    cells, as multilinear ones do, raise, and say the weights should be
+    conservative ones.
+    """
+    x_input = np.linspace(-1, 1, num=11)
+    x_output = np.linspace(-1, 1, num=7)
+    weights = regridding.weights((x_input,), (x_output,), method="multilinear")
+
+    with pytest.raises(ValueError, match='method="conservative"'):
+        regridding.transpose_weights_conservative(weights, x_input, x_output)
+
+
+def test_transpose_weights_conservative_orthogonal() -> None:
+    """
+    Grids whose orthogonal axes cannot be broadcast against those of the
+    weights raise, and say so.
+    """
+    grid_input, grid_output = _grids_rotated(2)
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+        **axes,
+    )
+
+    with pytest.raises(ValueError, match="cannot be broadcast"):
+        regridding.transpose_weights_conservative(
+            weights,
+            coordinates_input=_grids_rotated(3)[0],
+            coordinates_output=grid_output,
+            **axes,
+        )
+
+
+def test_transpose_weights_conservative_empty() -> None:
+    """
+    Grids with an orthogonal axis of length zero have no weights, which
+    transpose into none.
+    """
+    grid_input, grid_output = _grids_rotated(2)
+    grid_input = tuple(c[:0] for c in grid_input)
+    kwargs: dict[str, Any] = dict(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        **axes,
+    )
+    weights = regridding.weights(method="conservative", **kwargs)
+
+    result = regridding.transpose_weights_conservative(weights, **kwargs)
+
+    assert result[0].shape == (0,)

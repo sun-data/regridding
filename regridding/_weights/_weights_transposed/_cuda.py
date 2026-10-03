@@ -111,10 +111,16 @@ def transpose_weights_conservative_cuda(
     # each is sent once, which is the size of the grids, one row for each
     # element of the orthogonal axes they vary along, rather than of the
     # weights
-    factor_input_device = _cuda.rows(factor_input, ndim=1)
-    volume_output_device = _cuda.rows(volume_output, ndim=1)
-    shape_factor_input = factor_input.shape[:~0]
-    shape_volume_output = volume_output.shape[:~0]
+    factor_input_device, factor_input_row = _cuda.rows(
+        factor_input,
+        ndim=1,
+        shape_orthogonal=weights.shape,
+    )
+    volume_output_device, volume_output_row = _cuda.rows(
+        volume_output,
+        ndim=1,
+        shape_orthogonal=weights.shape,
+    )
 
     # set on the device if any weight addresses a cell outside the grids,
     # and read once all the elements are done
@@ -134,8 +140,8 @@ def transpose_weights_conservative_cuda(
                 indices_input,
                 indices_output,
                 values,
-                factor_input_device[_cuda.row(index, shape_factor_input)],
-                volume_output_device[_cuda.row(index, shape_volume_output)],
+                factor_input_device[factor_input_row[index]],
+                volume_output_device[volume_output_row[index]],
                 outside,
                 values_result,
             )

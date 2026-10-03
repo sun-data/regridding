@@ -508,3 +508,12 @@ def test_convolve_weights_axis_mismatch() -> None:
             np.ones((3, 1, 1, 3, 3)),
             axis_output=(1, 2),
         )
+
+
+def test_convolve_weights_kernel_not_numbers() -> None:
+    """
+    A kernel which is not numbers is reported as such, rather than as one
+    with the wrong unit.
+    """
+    with pytest.raises(ValueError, match="could not convert"):
+        regridding.convolve_weights(weights, np.array([["a"]]), axis_output=(1, 2))

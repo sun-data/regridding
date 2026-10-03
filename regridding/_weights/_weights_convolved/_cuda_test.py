@@ -211,3 +211,41 @@ def test_axis_mismatch() -> None:
     )
     with pytest.raises(ValueError, match="outside the grid"):
         regridding.convolve_weights(weights, np.ones(3), axis_output=1)
+
+
+@requires_cuda
+def test_kernel_sent_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    A kernel which the caller broadcast along the orthogonal axis is sent to
+    the device once, rather than once for each element, and convolves as on
+    the host.
+    """
+    weights = _weights(device="cuda")
+    kernel = np.random.default_rng(17).random((24, 22, 3, 3))
+    kernel = np.broadcast_to(kernel, (2, 24, 22, 3, 3))
+
+    sent = []
+    to_device = cuda.to_device
+
+    def _to_device(a: Any, *args: Any, **kwargs: Any) -> Any:
+        sent.append(np.shape(a))
+        return to_device(a, *args, **kwargs)
+
+    monkeypatch.setattr(cuda, "to_device", _to_device)
+    result = regridding.convolve_weights(weights, kernel, axis_output=(1, 2))
+    monkeypatch.undo()
+
+    assert [s for s in sent if len(s) == 3] == [(1, 24 * 22, 3 * 3)]
+
+    expected = regridding.convolve_weights(
+        _to_host(weights),
+        kernel,
+        axis_output=(1, 2),
+    )
+    for actual, desired in zip(
+        _to_host(result)[0].reshape(-1),
+        expected[0].reshape(-1),
+    ):
+        assert np.array_equal(actual[0], desired[0])
+        assert np.array_equal(actual[1], desired[1])
+        assert np.allclose(actual[2], desired[2], rtol=1e-14, atol=0)

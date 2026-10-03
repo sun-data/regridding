@@ -19,7 +19,6 @@ __all__ = [
     "allocate",
     "fill",
     "rows",
-    "row",
     "zeros",
     "prefix_sum",
 ]
@@ -132,43 +131,48 @@ def fill(a: Any, value: Any, threads: int = threads) -> Any:
     return a
 
 
-def rows(a: np.ndarray, ndim: int) -> Any:
+def rows(
+    a: np.ndarray,
+    ndim: int,
+    shape_orthogonal: tuple[int, ...],
+) -> tuple[Any, np.ndarray]:
     """
-    Send an array which is to be broadcast along the orthogonal axes of a
-    set of weights to the device, once, before it is broadcast.
+    Send an array which is broadcast along the orthogonal axes of a set of
+    weights to the device, once for each distinct row of it.
 
-    Its leading axes are flattened into one, so that each element of the
-    orthogonal axes reads one row of it, found by :func:`row`.
+    Every orthogonal axis along which `a` has been broadcast, which is to
+    say has a stride of zero, is reduced to a length of one before it is
+    sent, so an array which the caller broadcast is sent no larger than it
+    was before.  The orthogonal axes are then flattened into one axis of
+    rows.
 
     Parameters
     ----------
     a
-        The array, with the orthogonal axes first, of length one where it is
-        to be broadcast, followed by the axes of each row.
+        The array, with its orthogonal axes first, matched to
+        `shape_orthogonal` from the right, followed by the axes of each row.
     ndim
         The number of axes of each row.
-    """
-    a = np.ascontiguousarray(a)
-    return cuda.to_device(a.reshape((-1,) + a.shape[a.ndim - ndim :]))
+    shape_orthogonal
+        The orthogonal shape of the weights which read the rows.
 
-
-def row(index: tuple[int, ...], shape: tuple[int, ...]) -> int:
+    Returns
+    -------
+    The rows on the device, and the row which each element of the
+    orthogonal axes reads, as an array of `shape_orthogonal`.
     """
-    Find the row of an array sent by :func:`rows` which an element of the
-    orthogonal axes reads.
-
-    Parameters
-    ----------
-    index
-        The index of the element, into the orthogonal axes the array is
-        broadcast to.
-    shape
-        The shape of the orthogonal axes of the array, matched to `index`
-        from the right.  An axis of length one is broadcast.
-    """
-    index = index[len(index) - len(shape) :]
-    index = tuple(0 if num == 1 else i for i, num in zip(index, shape))
-    return int(np.ravel_multi_index(index, shape)) if shape else 0
+    num_orthogonal = a.ndim - ndim
+    a = a[
+        tuple(
+            slice(0, 1) if a.strides[i] == 0 else slice(None)
+            for i in range(num_orthogonal)
+        )
+    ]
+    shape = a.shape[:num_orthogonal]
+    num_rows = int(np.prod(shape, dtype=int))
+    a = np.ascontiguousarray(a).reshape((num_rows,) + a.shape[num_orthogonal:])
+    lookup = np.arange(num_rows).reshape(shape)
+    return cuda.to_device(a), np.broadcast_to(lookup, shape_orthogonal)
 
 
 def zeros(shape: Any, dtype: np.typing.DTypeLike) -> Any:

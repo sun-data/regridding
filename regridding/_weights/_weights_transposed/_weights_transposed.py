@@ -1,8 +1,10 @@
 import numpy as np
 import numba
 from ... import _util
+from ..._cuda import on_device
 from .._weights_conservative_1d._grids import cell_length
 from .._weights_conservative_2d._grids import grid_volume as cell_area
+from ._cuda import transpose_weights_conservative_cuda
 
 __all__ = [
     "transpose_weights",
@@ -25,6 +27,11 @@ def transpose_weights(
     Note that this transpose is not conservative:
     use :func:`regridding.transpose_weights_conservative` if the reverse
     transform needs to conserve the total of the resampled array.
+
+    Weights in device memory are swapped the same way and stay there.  Their
+    empty slots, which carry an index of ``-1`` on the input side, carry it
+    on the output side once transposed, where
+    :func:`regridding.regrid_from_weights` skips them too.
 
     Parameters
     ----------
@@ -112,6 +119,15 @@ def transpose_weights_conservative(
     divides each cell by its own weight, which does not preserve the total, so
     the round trip conserves flux exactly only when `weights_input` is
     :obj:`None` or constant.
+
+    Weights built with ``device="cuda"`` are transposed on the device, and
+    the result is left there.  The cell volumes, and `weights_input`, are
+    computed on the host from the grids, which are small next to the
+    weights, and each distinct element of them is sent to the device once.
+    The index arrays are reused rather than copied, as on the host, and the
+    values are stored as :class:`numpy.float64`, as on the host.  Empty
+    slots keep their index of ``-1``, now on the output side, where
+    :func:`regridding.regrid_from_weights` skips it as well.
 
     Independently of `weights_input`, a round trip reproduces the input values
     exactly only for a constant field, since resampling onto a grid whose cells
@@ -251,12 +267,18 @@ def transpose_weights_conservative(
         shape_orthogonal_source=shape_orthogonal_grids,
     )
 
-    shape = weights_array.shape
-    flat = weights_array.reshape(-1)
+    if on_device(weights_array):
+        result = transpose_weights_conservative_cuda(
+            weights=weights_array,
+            volume_input=volume_input,
+            volume_output=volume_output,
+            weights_input=weights_input,
+        )
+        return result, shape_output, shape_input
 
-    result = np.empty(flat.size, dtype=object)
-    for d in range(flat.size):
-        indices_input, indices_output, values = flat[d]
+    result = np.empty(shape_orthogonal, dtype=object)
+    for index in np.ndindex(*shape_orthogonal):
+        indices_input, indices_output, values = weights_array[index]
 
         values = np.array(values, dtype=np.float64)
         if weights_input is not None:
@@ -265,14 +287,16 @@ def transpose_weights_conservative(
             # so the transpose *inverts* that weighting (retaining a factor
             # of ``1 / weights_input``). This makes the round trip recover
             # the original input values.
-            values = values / np.square(weights_input[d][indices_input])
+            values = values / np.square(weights_input[index][indices_input])
         values = (
-            values * volume_input[d][indices_input] / volume_output[d][indices_output]
+            values
+            * volume_input[index][indices_input]
+            / volume_output[index][indices_output]
         )
 
-        result[d] = (indices_output, indices_input, values)
+        result[index] = (indices_output, indices_input, values)
 
-    return result.reshape(shape), shape_output, shape_input
+    return result, shape_output, shape_input
 
 
 def _flatten_cells(
@@ -282,11 +306,12 @@ def _flatten_cells(
     shape_orthogonal_source: None | tuple[int, ...] = None,
 ) -> np.ndarray:
     """
-    Arrange an array defined on the cells of a grid with one row for each
-    element of the orthogonal axes and one column for each cell.
+    Arrange an array defined on the cells of a grid with the orthogonal axes
+    first, followed by one axis of the cells.
 
-    The columns are in the order the flat cell indices of a set of weights
-    address them.
+    The cells are in the order the flat cell indices of a set of weights
+    address them.  The orthogonal axes are broadcast rather than copied, so
+    the rows of the result which are the same row of `a` share its memory.
 
     Parameters
     ----------
@@ -303,11 +328,11 @@ def _flatten_cells(
     """
     axis_numba = ~np.arange(len(axis))[::-1]
     a = np.moveaxis(a, axis, axis_numba)
-    shape_cells = a.shape[a.ndim - len(axis) :]
-    if shape_orthogonal_source is not None:
-        a = a.reshape(tuple(shape_orthogonal_source) + shape_cells)
-    a = np.broadcast_to(a, tuple(shape_orthogonal) + shape_cells)
-    return a.reshape(-1, int(np.prod(shape_cells)))
+    num_cells = int(np.prod(a.shape[a.ndim - len(axis) :]))
+    if shape_orthogonal_source is None:
+        shape_orthogonal_source = a.shape[: a.ndim - len(axis)]
+    a = a.reshape(tuple(shape_orthogonal_source) + (num_cells,))
+    return np.broadcast_to(a, tuple(shape_orthogonal) + (num_cells,))
 
 
 def _cell_volume(

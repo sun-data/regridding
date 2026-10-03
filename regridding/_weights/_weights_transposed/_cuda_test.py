@@ -233,14 +233,14 @@ def test_percent() -> None:
 
 
 @requires_cuda
-def test_outside() -> None:
+def test_grids() -> None:
     """
-    Grids which are not the ones the weights were built on raise, rather
-    than reading past the end of them on the device.
+    Grids which are not the ones the weights were built on raise before
+    anything is sent to the device.
     """
     weights = _weights(device="cuda")
 
-    with pytest.raises(ValueError, match="outside the grids"):
+    with pytest.raises(ValueError, match="the weights were built for"):
         regridding.transpose_weights_conservative(
             weights,
             coordinates_input=grid_output,
@@ -250,17 +250,69 @@ def test_outside() -> None:
 
 
 @requires_cuda
-def test_sent_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_outside() -> None:
     """
-    The output grid, which both input grids share, has its volumes computed
-    and sent to the device once rather than once for each input grid.
+    Weights which address cells outside the grids they say they were built
+    for raise, rather than reading past the end of them on the device.
+    """
+    weights = _weights(device="cuda")
+    array = weights[0].copy()
+    indices_input, indices_output, values = (a.copy_to_host() for a in array[1])
+    # a slot which saw an overlap, since an empty one is skipped unread
+    indices_output[np.flatnonzero(indices_input >= 0)[0]] = 24 * 22
+    array[1] = tuple(cuda.to_device(a) for a in (indices_input, indices_output, values))
+
+    with pytest.raises(ValueError, match="outside the input"):
+        regridding.transpose_weights_conservative((array, *weights[1:]), **grids)
+
+
+@requires_cuda
+@pytest.mark.parametrize(
+    argnames="broadcast",
+    argvalues=[False, True],
+    ids=["given", "broadcast"],
+)
+def test_sent_once(monkeypatch: pytest.MonkeyPatch, broadcast: bool) -> None:
+    """
+    The volumes are sent to the device once, before they are broadcast, so
+    the output grid, which both input grids share, is sent once rather than
+    once for each of them.  That holds when the caller has already broadcast
+    the output grid along the orthogonal axis, as :mod:`named_arrays` does,
+    too.
     """
     weights = _weights(device="cuda")
 
-    sent = _count_sent(monkeypatch)
-    regridding.transpose_weights_conservative(weights, **grids)
+    kwargs = dict(grids)
+    if broadcast:
+        shape = grid_input[0].shape[:1] + grid_output[0].shape[1:]
+        kwargs["coordinates_output"] = tuple(
+            np.broadcast_to(c, shape) for c in grid_output
+        )
 
-    assert sent == [(16 * 16,), (24 * 22,), (16 * 16,)]
+    sent = _count_sent(monkeypatch)
+    actual = regridding.transpose_weights_conservative(weights, **kwargs)
+    monkeypatch.undo()
+
+    assert sent == [(2, 16 * 16), (1, 24 * 22)]
+
+    expected = regridding.transpose_weights_conservative(_to_host(weights), **grids)
+    _assert_matches(actual, expected)
+
+
+@requires_cuda
+def test_single() -> None:
+    """Weights with no orthogonal axes are transposed as on the host."""
+    grid_single = _rotated(), _lattice()
+    weights = regridding.weights(*grid_single, method="conservative", device="cuda")
+
+    actual = regridding.transpose_weights_conservative(weights, *grid_single)
+    expected = regridding.transpose_weights_conservative(
+        _to_host(weights),
+        *grid_single,
+    )
+
+    assert actual[0].shape == ()
+    _assert_matches(actual, expected)
 
 
 @requires_cuda
@@ -293,7 +345,7 @@ def test_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.undo()
 
     assert actual[0].shape == (3,)
-    assert sent == [(16 * 16,), (24 * 22,)]
+    assert sent == [(1, 16 * 16), (1, 24 * 22)]
 
     expected = regridding.transpose_weights_conservative(_to_host(weights), **kwargs)
     _assert_matches(actual, expected)

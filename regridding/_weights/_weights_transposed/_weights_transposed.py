@@ -1,10 +1,9 @@
-from typing import Any
 import numpy as np
 import numba
 from ... import _util
 from ..._cuda import on_device
 from .._weights_conservative_1d._grids import cell_length
-from .._weights_conservative_2d._grids import grid_volume as cell_area
+from ...geometry import area_triangle
 from ._cuda import transpose_weights_conservative_cuda
 
 __all__ = [
@@ -131,11 +130,11 @@ def transpose_weights_conservative(
     Weights built with ``device="cuda"`` are transposed on the device, and
     the result is left there.  The volumes of the cells are computed on the
     host from the grids, which are small next to the weights, and divided
-    there by the square of `weights_input`.  Each distinct row of them is
-    sent to the device once.  The index arrays are reused rather than
-    copied, as on the host, and the values are stored as
-    :class:`numpy.float64`, as on the host.  Empty slots keep their index of
-    ``-1``, now on the output side, where
+    there by the square of `weights_input`.  They are sent to the device
+    once, before they are broadcast along the orthogonal axes.  The index
+    arrays are reused rather than copied, as on the host, and the values are
+    stored as :class:`numpy.float64`, as on the host.  Empty slots keep their
+    index of ``-1``, now on the output side, where
     :func:`regridding.regrid_from_weights` skips it as well.
 
     Examples
@@ -216,8 +215,8 @@ def transpose_weights_conservative(
         coordinates_output,
         axis_input,
         axis_output,
-        shape_coordinates_input,
-        shape_coordinates_output,
+        _,
+        _,
         shape_orthogonal,
     ) = _util._normalize_input_output_coordinates(
         coordinates_input=coordinates_input,
@@ -242,11 +241,28 @@ def transpose_weights_conservative(
     shape_orthogonal = np.broadcast_shapes(shape_orthogonal, weights_array.shape)
     weights_array = np.broadcast_to(weights_array, shape_orthogonal)
 
-    # the two grids have been broadcast against each other, so the volumes of
-    # each are computed only along the orthogonal axes it varies along, and a
-    # grid shared by every element of the other is computed once
-    volume_input = _volume(coordinates_input, shape_coordinates_input, axis_input)
-    volume_output = _volume(coordinates_output, shape_coordinates_output, axis_output)
+    # a grid which does not have the cells the weights were built for would
+    # be read at the wrong cells, or past its end, without anything failing
+    _check_grids(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        shape_input=shape_input,
+        shape_output=shape_output,
+    )
+
+    # the volumes of each grid are computed only along the orthogonal axes it
+    # varies along, so a grid shared by every element of the other is
+    # computed once
+    volume_input = _cells(
+        _cell_volume(_unbroadcast(coordinates_input, axis_input), axis_input),
+        axis_input,
+    )
+    volume_output = _cells(
+        _cell_volume(_unbroadcast(coordinates_output, axis_output), axis_output),
+        axis_output,
+    )
 
     # Divide by the input weight twice: once to remove the weight that the
     # forward transform multiplied into the values, and again so the
@@ -256,19 +272,27 @@ def transpose_weights_conservative(
     # its volume once rather than applied to every weight which touches it.
     factor_input = volume_input
     if weights_input is not None:
-        weights_input = np.asarray(_number(weights_input), dtype=np.float64)
-        weights_input = _cells(
-            _unbroadcast(
-                np.broadcast_to(weights_input, shape_input),
-                shape=weights_input.shape,
-                axis=axis_input,
-            ),
-            axis=axis_input,
+        weights_input = np.broadcast_to(
+            _util._dimensionless(weights_input, strict=False),
+            shape_input,
         )
-        factor_input = factor_input / np.square(weights_input)
+        (weights_input,) = _unbroadcast((weights_input,), axis_input)
+        factor_input = factor_input / np.square(_cells(weights_input, axis_input))
 
-    # broadcast rather than copied, so that rows which are the same row of a
-    # grid share their memory
+    if on_device(weights_array):
+        result, outside = transpose_weights_conservative_cuda(
+            weights=weights_array,
+            factor_input=factor_input,
+            volume_output=volume_output,
+        )
+        if outside:
+            raise ValueError(
+                f"the weights address cells outside the input of "
+                f"{shape_input} and the output of {shape_output} they were "
+                f"built for"
+            )
+        return result, shape_output, shape_input
+
     factor_input = np.broadcast_to(
         factor_input,
         shape_orthogonal + factor_input.shape[~0:],
@@ -278,38 +302,15 @@ def transpose_weights_conservative(
         shape_orthogonal + volume_output.shape[~0:],
     )
 
-    if on_device(weights_array):
-        result, outside = transpose_weights_conservative_cuda(
-            weights=weights_array,
-            factor_input=factor_input,
-            volume_output=volume_output,
-        )
-        if outside:
-            raise ValueError(_message_outside(shape_input, shape_output))
-        return result, shape_output, shape_input
-
     result = np.empty(shape_orthogonal, dtype=object)
     for index in np.ndindex(*shape_orthogonal):
         indices_input, indices_output, values = weights_array[index]
 
-        factor_input_index = factor_input[index]
-        volume_output_index = volume_output[index]
-
-        # an index past the end of a grid means the grids are not the ones
-        # the weights were built on, which `numpy` would report only as an
-        # `IndexError`
-        if np.size(indices_input):
-            if (
-                np.max(indices_input) >= factor_input_index.size
-                or np.max(indices_output) >= volume_output_index.size
-            ):
-                raise ValueError(_message_outside(shape_input, shape_output))
-
-        values = np.array(_number(values), dtype=np.float64)
+        values = _util._dimensionless(values, strict=False)
         values = (
             values
-            * factor_input_index[indices_input]
-            / volume_output_index[indices_output]
+            * factor_input[index][indices_input]
+            / volume_output[index][indices_output]
         )
 
         result[index] = (indices_output, indices_input, values)
@@ -317,83 +318,84 @@ def transpose_weights_conservative(
     return result, shape_output, shape_input
 
 
-def _message_outside(
+def _check_grids(
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
+    axis_input: tuple[int, ...],
+    axis_output: tuple[int, ...],
     shape_input: tuple[int, ...],
     shape_output: tuple[int, ...],
-) -> str:
+) -> None:
     """
-    Explain a weight which addresses a cell outside the grids.
+    Check that the grids have the cells a set of weights was built for.
 
     Parameters
     ----------
+    coordinates_input
+        The vertices of the input grid.
+    coordinates_output
+        The vertices of the output grid.
+    axis_input
+        The resampled axes of the input grid.
+    axis_output
+        The resampled axes of the output grid.
     shape_input
-        The shape of the input grid the weights were built for.
+        The shape of the input the weights were built for.
     shape_output
-        The shape of the output grid the weights were built for.
+        The shape of the output the weights were built for.
+
+    Raises
+    ------
+    ValueError
+        If either grid has a different number of cells along any of its
+        resampled axes.
     """
-    return (
-        f"the weights address cells outside the grids given; they were built "
-        f"for an input of {shape_input} and an output of {shape_output}, and "
-        f"`coordinates_input` and `coordinates_output` should be the grids "
-        f"given to `regridding.weights()`"
-    )
-
-
-def _number(a: Any) -> Any:
-    """
-    Reduce a quantity to the number it stands for if it is dimensionless,
-    or else to its value.
-
-    :func:`regridding.weights` keeps the unit of `weights_input` on the
-    weights it builds on the host, and reduces a dimensionless one to its
-    number on a device.  Reducing both `weights_input` and the weights here
-    makes a percentage, say, cancel in either case.  A unit with dimensions
-    is dropped, as it always has been.
-
-    Parameters
-    ----------
-    a
-        An array, which may be an :class:`astropy.units.Quantity`.
-    """
-    unit = getattr(a, "unit", None)
-    if unit is None:
-        return a
-    value = getattr(a, "value")
-    try:
-        return value * unit.to("")
-    except (TypeError, ValueError):
-        return value
+    cells_input = tuple(coordinates_input[0].shape[ax] - 1 for ax in axis_input)
+    cells_output = tuple(coordinates_output[0].shape[ax] - 1 for ax in axis_output)
+    expected_input = tuple(shape_input[ax] for ax in axis_input)
+    expected_output = tuple(shape_output[ax] for ax in axis_output)
+    if cells_input != expected_input or cells_output != expected_output:
+        raise ValueError(
+            f"the grids have {cells_input} input and {cells_output} output "
+            f"cells along their resampled axes, but the weights were built for "
+            f"{expected_input} and {expected_output}; `coordinates_input` and "
+            f"`coordinates_output` should be the grids given to "
+            f"`regridding.weights()`"
+        )
 
 
 def _unbroadcast(
-    a: np.ndarray,
-    shape: tuple[int, ...],
+    arrays: tuple[np.ndarray, ...],
     axis: tuple[int, ...],
-) -> np.ndarray:
+) -> tuple[np.ndarray, ...]:
     """
-    Undo broadcasting an array along its orthogonal axes.
+    Undo broadcasting arrays along their orthogonal axes.
 
-    Every orthogonal axis which the array was broadcast along is reduced to
-    a length of one, as a view.  The resampled axes are left whole, since
-    an array defined on the cells is needed on all of them.
+    An orthogonal axis along which every array has been broadcast, which is
+    to say has a stride of zero, is reduced to a length of one, as a view.
+    The strides rather than the shapes the arrays were given with are what
+    is looked at, so arrays which the caller broadcast before passing them
+    are found as well.  The resampled axes are left whole, since an array
+    defined on the cells is needed on all of them.
 
     Parameters
     ----------
-    a
-        An array which has been broadcast.
-    shape
-        The shape of the array before it was broadcast, matched to the
-        shape of `a` from the right.
+    arrays
+        Arrays of the same shape, such as the coordinates of a grid.
     axis
-        The resampled axes of `a`.
+        The resampled axes of the arrays.
     """
-    shape = (1,) * (a.ndim - len(shape)) + tuple(shape)
-    resampled = [ax % a.ndim for ax in axis]
+    ndim = arrays[0].ndim
+    resampled = [ax % ndim for ax in axis]
     index = tuple(
-        slice(0, 1) if num == 1 and i not in resampled else slice(None)
-        for i, num in enumerate(shape)
+        (
+            slice(0, 1)
+            if i not in resampled and all(a.strides[i] == 0 for a in arrays)
+            else slice(None)
+        )
+        for i in range(ndim)
     )
-    return a[index]
+    return tuple(a[index] for a in arrays)
 
 
 def _cells(
@@ -418,31 +420,6 @@ def _cells(
     a = np.moveaxis(a, axis, axis_numba)
     shape_orthogonal = a.shape[: a.ndim - len(axis)]
     return a.reshape(shape_orthogonal + (-1,))
-
-
-def _volume(
-    grid: tuple[np.ndarray, ...],
-    shape: tuple[int, ...],
-    axis: tuple[int, ...],
-) -> np.ndarray:
-    """
-    Compute the volume of each cell of a grid which has been broadcast
-    against another, arranged by :func:`_cells`.
-
-    The volumes are computed only along the orthogonal axes the grid varies
-    along, and have a length of one along the others.
-
-    Parameters
-    ----------
-    grid
-        The vertices of the grid, broadcast against the other grid.
-    shape
-        The shape of the grid before it was broadcast.
-    axis
-        The resampled axes of the grid, in ascending order.
-    """
-    grid = tuple(_unbroadcast(c, shape=shape, axis=axis) for c in grid)
-    return _cells(_cell_volume(grid, axis), axis=axis)
 
 
 def _cell_volume(
@@ -480,10 +457,7 @@ def _cell_volume(
         y = np.moveaxis(y, axis, axis_numba)
         x_ = np.reshape(x, (-1,) + shape_numba)
         y_ = np.reshape(y, (-1,) + shape_numba)
-        if x_.shape[0] < _num_grids_across:
-            result = _cell_volume_2d(grid=(x_, y_))
-        else:
-            result = _cell_volume_2d_across(grid=(x_, y_))
+        result = _cell_volume_2d(grid=(x_, y_))
         result = np.reshape(result, x.shape[:-2] + result.shape[-2:])
         result = np.moveaxis(result, axis_numba, axis)
 
@@ -491,20 +465,6 @@ def _cell_volume(
         raise ValueError("Grids greater than 2D not supported.")
 
     return result
-
-
-_num_grids_across = 8
-"""
-The number of 2D grids from which their areas are computed in parallel
-across the grids, rather than one grid at a time in parallel within each.
-
-Within a grid, every thread is used however few grids there are, but each
-grid costs about 0.1 ms to start the threads on.  Across grids, a thread
-does a whole grid at a time, so there is nothing to start for each one, but
-only as many threads are used as there are grids.  On 48 threads, four grids
-of a million cells take 29 ms within against 35 ms across, eight take 61 ms
-against 49 ms, and 500 grids of four thousand cells take 71 ms against 5 ms.
-"""
 
 
 @numba.njit(
@@ -526,8 +486,6 @@ def _cell_volume_1d(
     return result
 
 
-# `cell_area` is inlined, so its own parallel loop over the cells of one grid
-# runs in parallel only in a caller which is compiled with `parallel=True`
 @numba.njit(
     cache=True,
     fastmath=True,
@@ -537,8 +495,17 @@ def _cell_volume_2d(
     grid: tuple[np.ndarray, np.ndarray],
 ) -> np.ndarray:
     """
-    Compute the area of each cell of a stack of 2D grids, one grid at a
-    time, in parallel within each.
+    Compute the area of each cell of a stack of 2D grids.
+
+    The area of a cell is the sum of the signed areas of the triangles which
+    its edges form with the origin, as
+    :func:`~regridding._weights._weights_conservative_2d._grids.grid_volume`
+    computes it for one grid, and in the same order.  The edges along each
+    axis are swept in turn, and a line of edges does not touch a cell of any
+    other line, in the same grid or another, so each sweep is one parallel
+    loop over every line of every grid.  Many small grids then cost no more
+    to start than one large one, and a few large grids still use every
+    thread.
 
     Parameters
     ----------
@@ -547,42 +514,38 @@ def _cell_volume_2d(
     """
     x, y = grid
 
-    shape_t, shape_x, shape_y = x.shape
+    num_t, num_x, num_y = x.shape
 
-    result = np.empty((shape_t, shape_x - 1, shape_y - 1))
+    result = np.zeros((num_t, num_x - 1, num_y - 1))
 
-    for t in range(shape_t):
-        result[t] = cell_area(grid=(x[t], y[t]))
+    # the edges which run along the first axis, one line of them for each
+    # row of cells
+    for k in numba.prange(num_t * (num_x - 1)):
+        t = k // (num_x - 1)
+        i = k - t * (num_x - 1)
+        for j in range(num_y):
+            area = area_triangle(
+                (y[t, i, j], x[t, i, j]),
+                (y[t, i + 1, j], x[t, i + 1, j]),
+            )
+            if j >= 1:
+                result[t, i, j - 1] += area
+            if j < num_y - 1:
+                result[t, i, j] -= area
 
-    return result
-
-
-# only the outermost parallel loop runs in parallel, so the one inside the
-# inlined `cell_area` runs on one thread here, which is what is wanted
-@numba.njit(
-    cache=True,
-    fastmath=True,
-    parallel=True,
-)
-def _cell_volume_2d_across(
-    grid: tuple[np.ndarray, np.ndarray],
-) -> np.ndarray:
-    """
-    Compute the area of each cell of a stack of 2D grids, in parallel across
-    the grids.
-
-    Parameters
-    ----------
-    grid
-        The vertices of the grids, stacked along the first axis.
-    """
-    x, y = grid
-
-    shape_t, shape_x, shape_y = x.shape
-
-    result = np.empty((shape_t, shape_x - 1, shape_y - 1))
-
-    for t in numba.prange(shape_t):
-        result[t] = cell_area(grid=(x[t], y[t]))
+    # the edges which run along the second axis, one line of them for each
+    # column of cells
+    for k in numba.prange(num_t * (num_y - 1)):
+        t = k // (num_y - 1)
+        j = k - t * (num_y - 1)
+        for i in range(num_x):
+            area = area_triangle(
+                (x[t, i, j], y[t, i, j]),
+                (x[t, i, j + 1], y[t, i, j + 1]),
+            )
+            if i >= 1:
+                result[t, i - 1, j] += area
+            if i < num_x - 1:
+                result[t, i, j] -= area
 
     return result

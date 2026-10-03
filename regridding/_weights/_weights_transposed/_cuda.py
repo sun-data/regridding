@@ -9,8 +9,9 @@ the values are computed on the device and the indices are reused where they
 are.
 
 The factors are defined on the cells of the grids rather than on the
-weights, so they are computed on the host, where the grids are, and sent to
-the device once for each distinct row.
+weights, so they are computed on the host, where the grids are.  They are
+sent to the device once, as they are before being broadcast along the
+orthogonal axes, and each element reads its own row of them there.
 
 This is reached by calling :func:`regridding.transpose_weights_conservative`
 with weights built by :func:`regridding.weights` with ``device="cuda"``;
@@ -94,7 +95,8 @@ def transpose_weights_conservative_cuda(
         already broadcast to their orthogonal shape.
     factor_input
         The factor to multiply each weight by, for its input cell, with the
-        orthogonal axes of `weights` followed by one axis of the cells.
+        orthogonal axes first, of length one where it is to be broadcast
+        along those of `weights`, followed by one axis of the cells.
     volume_output
         The volume of each cell of the output grid, arranged as
         `factor_input`.
@@ -106,12 +108,13 @@ def transpose_weights_conservative_cuda(
     The transposed weights, and whether any of them addressed a cell
     outside the grids, which leaves them meaningless.
     """
-    # the rows sent are kept until every element is done, since any later
-    # element may share them.  That is at most one row of each grid for each
-    # distinct element of the orthogonal axes it varies along, which is the
-    # size of the grid rather than of the weights.
-    cache_input: dict[Any, Any] = dict()
-    cache_output: dict[Any, Any] = dict()
+    # each is sent once, which is the size of the grids, one row for each
+    # element of the orthogonal axes they vary along, rather than of the
+    # weights
+    factor_input_device = _cuda.rows(factor_input, ndim=1)
+    volume_output_device = _cuda.rows(volume_output, ndim=1)
+    shape_factor_input = factor_input.shape[:~0]
+    shape_volume_output = volume_output.shape[:~0]
 
     # set on the device if any weight addresses a cell outside the grids,
     # and read once all the elements are done
@@ -131,8 +134,8 @@ def transpose_weights_conservative_cuda(
                 indices_input,
                 indices_output,
                 values,
-                _cuda.to_device_cached(factor_input[index], cache_input),
-                _cuda.to_device_cached(volume_output[index], cache_output),
+                factor_input_device[_cuda.row(index, shape_factor_input)],
+                volume_output_device[_cuda.row(index, shape_volume_output)],
                 outside,
                 values_result,
             )

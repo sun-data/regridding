@@ -1,15 +1,9 @@
 from typing import Any
 import pytest
 import numpy as np
+import astropy.units as u
 from numba import cuda
 import regridding
-from .._weights_convolved._weights_convolved_test import (
-    grid_input,
-    grid_output,
-    _rotated,
-    _lattice,
-)
-from .._weights_convolved._cuda_test import _to_host
 
 requires_cuda = pytest.mark.cuda
 """
@@ -18,6 +12,42 @@ Mark a test as needing a CUDA device.
 The mark is what the `tests-cuda` workflow selects on and what `conftest`
 skips on, so a test says once that it needs a device.
 """
+
+
+def _rotated(
+    angle: float | np.ndarray = 0.3,
+    scale: float | np.ndarray = 1,
+    num: int = 17,
+) -> tuple[np.ndarray, np.ndarray]:
+    """A square grid of vertices, rotated by `angle` and scaled by `scale`."""
+    t = np.linspace(-4, 4, num)
+    x, y = np.meshgrid(t, t, indexing="ij")
+    angle = np.asarray(angle)[..., np.newaxis, np.newaxis]
+    scale = np.asarray(scale)[..., np.newaxis, np.newaxis]
+    return (
+        scale * (x * np.cos(angle) - y * np.sin(angle)),
+        scale * (x * np.sin(angle) + y * np.cos(angle)),
+    )
+
+
+def _lattice() -> tuple[np.ndarray, np.ndarray]:
+    """A uniform, axis-aligned grid of vertices, larger than `_rotated`."""
+    x, y = np.meshgrid(
+        np.linspace(-6, 6, 25),
+        np.linspace(-6, 5, 23),
+        indexing="ij",
+    )
+    return x, y
+
+
+grid_input = _rotated(angle=np.array([0.1, 0.7]), scale=np.array([1, 0.8]))
+"""
+Two input grids, rotated and scaled differently, so that the weights have
+an orthogonal axis along which the areas of the input cells differ.
+"""
+
+grid_output = tuple(c[np.newaxis] for c in _lattice())
+"""One output grid, which both input grids are resampled onto."""
 
 axes: dict[str, Any] = dict(axis_input=(1, 2), axis_output=(1, 2))
 """The resampled axes of the grids, which have one orthogonal axis first."""
@@ -29,17 +59,37 @@ grids: dict[str, Any] = dict(
 )
 """The grids the weights are built on, with their resampled axes."""
 
-weights_input = np.random.default_rng(13).uniform(0.5, 1.5, size=(16, 16))
+rng = np.random.default_rng(13)
+
+weights_inputs = dict(
+    unweighted=None,
+    shared=rng.uniform(0.5, 1.5, size=(16, 16)),
+    varying=rng.uniform(0.5, 1.5, size=(2, 16, 16)),
+    single=rng.uniform(0.5, 1.5, size=(16, 16)).astype(np.float32),
+)
 """
-A weight for each input cell which varies differently along each axis, and
-is the same for both rotations, so that it is broadcast along the
-orthogonal axis.
+The weights of the input cells to test with: none, one set which varies
+across the cells and is broadcast along the orthogonal axis, one which also
+varies along it, and one in single precision.
 """
 
 
 def _weights(**kwargs: Any) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
-    """The weights of the host tests, built with `kwargs`, such as a device."""
+    """The weights between the test grids, built with `kwargs`."""
     return regridding.weights(method="conservative", **grids, **kwargs)
+
+
+def _to_host(
+    weights: tuple[np.ndarray, tuple[int, ...], tuple[int, ...]],
+) -> tuple[np.ndarray, tuple[int, ...], tuple[int, ...]]:
+    """Bring a set of weights back from the device, dropping empty slots."""
+    array, shape_input, shape_output = weights
+    result = np.empty(array.shape, dtype=object)
+    for index in np.ndindex(*array.shape):
+        indices_input, indices_output, values = (a.copy_to_host() for a in array[index])
+        keep = (indices_input >= 0) & (indices_output >= 0)
+        result[index] = (indices_input[keep], indices_output[keep], values[keep])
+    return result, shape_input, shape_output
 
 
 def _assert_matches(
@@ -61,11 +111,31 @@ def _assert_matches(
         assert np.array_equal(a[2], e[2])
 
 
+def _count_sent(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, ...]]:
+    """
+    Record the shape of every array sent to the device from here on.
+
+    Parameters
+    ----------
+    monkeypatch
+        The fixture which undoes the recording once the test is done.
+    """
+    sent = []
+    to_device = cuda.to_device
+
+    def _to_device(a: Any, *args: Any, **kwargs: Any) -> Any:
+        sent.append(a.shape)
+        return to_device(a, *args, **kwargs)
+
+    monkeypatch.setattr(cuda, "to_device", _to_device)
+    return sent
+
+
 @requires_cuda
 @pytest.mark.parametrize(
     argnames="weights_input",
-    argvalues=[None, weights_input],
-    ids=["unweighted", "weighted"],
+    argvalues=list(weights_inputs.values()),
+    ids=list(weights_inputs),
 )
 def test_matches_host(weights_input: None | np.ndarray) -> None:
     """The device transposes the same weights into the same result."""
@@ -139,6 +209,61 @@ def test_dtype() -> None:
 
 
 @requires_cuda
+def test_percent() -> None:
+    """
+    A dimensionless `weights_input` with a scale, such as a percentage, is
+    the number it stands for, as it is when the weights are built.
+    """
+    percent = np.full((16, 16), 50) * u.percent
+    number = np.full((16, 16), 0.5)
+
+    actual = regridding.transpose_weights_conservative(
+        _weights(device="cuda", weights_input=percent),
+        weights_input=percent,
+        **grids,
+    )
+    expected = regridding.transpose_weights_conservative(
+        _weights(device="cuda", weights_input=number),
+        weights_input=number,
+        **grids,
+    )
+
+    for a, e in zip(_to_host(actual)[0].reshape(-1), _to_host(expected)[0]):
+        assert np.allclose(a[2], e[2], rtol=1e-14, atol=0)
+
+
+@requires_cuda
+def test_outside() -> None:
+    """
+    Grids which are not the ones the weights were built on raise, rather
+    than reading past the end of them on the device.
+    """
+    weights = _weights(device="cuda")
+
+    with pytest.raises(ValueError, match="outside the grids"):
+        regridding.transpose_weights_conservative(
+            weights,
+            coordinates_input=grid_output,
+            coordinates_output=grid_input,
+            **axes,
+        )
+
+
+@requires_cuda
+def test_sent_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    The output grid, which both input grids share, has its volumes computed
+    and sent to the device once rather than once for each input grid.
+    """
+    weights = _weights(device="cuda")
+
+    sent = _count_sent(monkeypatch)
+    regridding.transpose_weights_conservative(weights, **grids)
+
+    assert sent == [(16 * 16,), (24 * 22,), (16 * 16,)]
+
+
+@requires_cuda
 def test_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     Weights with more orthogonal elements than their grids, as
@@ -163,14 +288,7 @@ def test_broadcast(monkeypatch: pytest.MonkeyPatch) -> None:
         **axes,
     )
 
-    sent = []
-    to_device = cuda.to_device
-
-    def _to_device(a: Any, *args: Any, **kw: Any) -> Any:
-        sent.append(a.shape)
-        return to_device(a, *args, **kw)
-
-    monkeypatch.setattr(cuda, "to_device", _to_device)
+    sent = _count_sent(monkeypatch)
     actual = regridding.transpose_weights_conservative(weights, **kwargs)
     monkeypatch.undo()
 

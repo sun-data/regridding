@@ -3,14 +3,14 @@ Transpose weights which are already in device memory, without bringing them
 back.
 
 The conservative transpose swaps the two index arrays of each weight and
-scales its value by the volumes of the two cells it joins.  The swap needs
-no work at all, and the scaling is a loop over independent slots, so the
-values are computed on the device and the indices are reused where they are.
+scales its value by a factor for each of the two cells it joins.  The swap
+needs no work at all, and the scaling is a loop over independent slots, so
+the values are computed on the device and the indices are reused where they
+are.
 
-The volumes, and any `weights_input`, are defined on the cells of the grids
-rather than on the weights, so they are computed on the host, where the
-grids are, and sent to the device once for each distinct element of the
-orthogonal axes.
+The factors are defined on the cells of the grids rather than on the
+weights, so they are computed on the host, where the grids are, and sent to
+the device once for each distinct row.
 
 This is reached by calling :func:`regridding.transpose_weights_conservative`
 with weights built by :func:`regridding.weights` with ``device="cuda"``;
@@ -36,21 +36,22 @@ def _normalize(  # pragma: nocover
     indices_input: Any,
     indices_output: Any,
     values: Any,
-    volume_input: Any,
+    factor_input: Any,
     volume_output: Any,
-    weights_input: Any,
+    outside: Any,
     result: Any,
 ) -> None:
     """
-    Scale each weight by the volumes of the cells it joins.
+    Scale each weight by the factors of the cells it joins.
 
-    The weight is multiplied by the volume of its input cell and divided by
-    the volume of its output cell.  If `weights_input` is not empty, it is
-    also divided by the square of its input cell's weight, in the same order
-    as on the host so that the two agree to the last bit.
+    The weight is multiplied by the factor of its input cell and divided by
+    the volume of its output cell, in the same order as on the host, so
+    that the two agree to the last bit.
 
     Slots which saw no overlap carry an index of ``-1`` on one side or the
-    other, and are given a weight of zero rather than being read.
+    other, and are given a weight of zero rather than being read.  An index
+    past the end of either grid means the grids are not the ones the
+    weights were built on: it is flagged in `outside` rather than read.
     """
     w = cuda.grid(1)  # type: ignore[call-arg]
     if w >= values.size:
@@ -62,47 +63,20 @@ def _normalize(  # pragma: nocover
         result[w] = 0
         return
 
-    value = values[w]
-    if weights_input.size:
-        weight = weights_input[index_input]
-        value = value / (weight * weight)
+    if index_input >= factor_input.size or index_output >= volume_output.size:
+        outside[0] = 1
+        result[w] = 0
+        return
 
-    result[w] = value * volume_input[index_input] / volume_output[index_output]
-
-
-def _to_device(
-    row: np.ndarray,
-    cache: dict[int, Any],
-) -> Any:
-    """
-    Send one row of an array defined on the cells of a grid to the device,
-    unless an identical row has already been sent.
-
-    The rows are views into an array broadcast along the orthogonal axes, so
-    rows which are the same row of the grid share their memory, and that is
-    what identifies them.
-
-    Parameters
-    ----------
-    row
-        The values on the cells of the grid, for one element of the
-        orthogonal axes.
-    cache
-        The rows already sent, keyed by where their memory begins.
-    """
-    key = row.__array_interface__["data"][0]
-    if key not in cache:
-        cache[key] = cuda.to_device(np.ascontiguousarray(row, dtype=np.float64))
-    return cache[key]
+    result[w] = values[w] * factor_input[index_input] / volume_output[index_output]
 
 
 def transpose_weights_conservative_cuda(
     weights: np.ndarray,
-    volume_input: np.ndarray,
+    factor_input: np.ndarray,
     volume_output: np.ndarray,
-    weights_input: None | np.ndarray = None,
     threads: int = _cuda.threads,
-) -> np.ndarray:
+) -> tuple[np.ndarray, bool]:
     """
     Transpose weights which live in device memory, and normalize them to be
     conservative.
@@ -118,25 +92,30 @@ def transpose_weights_conservative_cuda(
     weights
         Weights built by :func:`regridding.weights` with ``device="cuda"``,
         already broadcast to their orthogonal shape.
-    volume_input
-        The volume of each cell of the input grid, with the orthogonal axes
-        of `weights` followed by one axis of the cells.
+    factor_input
+        The factor to multiply each weight by, for its input cell, with the
+        orthogonal axes of `weights` followed by one axis of the cells.
     volume_output
         The volume of each cell of the output grid, arranged as
-        `volume_input`.
-    weights_input
-        The weights which were applied to the input values, arranged as
-        `volume_input`, if any were.
+        `factor_input`.
     threads
         The number of threads in each block.
-    """
-    cache_input: dict[int, Any] = dict()
-    cache_output: dict[int, Any] = dict()
-    cache_weights: dict[int, Any] = dict()
 
-    # an empty array stands for no `weights_input`, since a kernel is
-    # compiled for the types of its arguments and `None` is a different one
-    empty = _cuda.allocate(0, np.float64)
+    Returns
+    -------
+    The transposed weights, and whether any of them addressed a cell
+    outside the grids, which leaves them meaningless.
+    """
+    # the rows sent are kept until every element is done, since any later
+    # element may share them.  That is at most one row of each grid for each
+    # distinct element of the orthogonal axes it varies along, which is the
+    # size of the grid rather than of the weights.
+    cache_input: dict[Any, Any] = dict()
+    cache_output: dict[Any, Any] = dict()
+
+    # set on the device if any weight addresses a cell outside the grids,
+    # and read once all the elements are done
+    outside = _cuda.zeros(1, np.int64)
 
     result = np.empty(weights.shape, dtype=object)
 
@@ -152,16 +131,12 @@ def transpose_weights_conservative_cuda(
                 indices_input,
                 indices_output,
                 values,
-                _to_device(volume_input[index], cache_input),
-                _to_device(volume_output[index], cache_output),
-                (
-                    empty
-                    if weights_input is None
-                    else _to_device(weights_input[index], cache_weights)
-                ),
+                _cuda.to_device_cached(factor_input[index], cache_input),
+                _cuda.to_device_cached(volume_output[index], cache_output),
+                outside,
                 values_result,
             )
 
         result[index] = (indices_output, indices_input, values_result)
 
-    return result
+    return result, bool(outside.copy_to_host()[0])

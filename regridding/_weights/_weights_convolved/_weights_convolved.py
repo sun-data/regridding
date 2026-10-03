@@ -1,7 +1,7 @@
 from typing import Any, Sequence
 import numpy as np
 from numba import cuda
-from regridding._cuda import on_device
+from regridding._cuda import on_device, to_device_cached
 from ._shared import num_axis
 from ._host import convolve_weights_host
 from ._cuda import convolve_weights_cuda
@@ -362,7 +362,7 @@ def convolve_weights(
 
     # the kernel sent to the device for each distinct element, so that a
     # kernel shared by every element is only sent once
-    kernels_device: dict[int, Any] = dict()
+    kernels_device: dict[Any, Any] = dict()
 
     result = np.empty(shape_orthogonal, dtype=object)
 
@@ -372,14 +372,11 @@ def convolve_weights(
         kernel_index = kernel[index]
 
         if device:
-            key = kernel_index.__array_interface__["data"][0]
-            if key not in kernels_device:
-                kernels_device[key] = cuda.to_device(np.ascontiguousarray(kernel_index))
             result[index] = convolve_weights_cuda(
                 indices_input=indices_input,
                 indices_output=indices_output,
                 values=values,
-                kernel=kernels_device[key],
+                kernel=to_device_cached(kernel_index, kernels_device),
                 shape_grid=shape_grid_resampled,
                 shape_output=shape_resampled,
                 shape_kernel=shape_kernel,

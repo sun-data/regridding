@@ -18,6 +18,7 @@ __all__ = [
     "on_device",
     "allocate",
     "fill",
+    "to_device_cached",
     "zeros",
     "prefix_sum",
 ]
@@ -128,6 +129,31 @@ def fill(a: Any, value: Any, threads: int = threads) -> Any:
         _fill[(flat.size + threads - 1) // threads, threads](flat, value)  # type: ignore[index]
 
     return a
+
+
+def to_device_cached(a: np.ndarray, cache: dict[Any, Any]) -> Any:
+    """
+    Send an array to the device, unless the same view of the same memory
+    has been sent already.
+
+    A loop over the orthogonal axes of a set of weights sends one row of a
+    host array for each element, and a host array broadcast along those
+    axes repeats its rows by repeating where they point, so that is what
+    identifies a row which has been sent before.  The cache is the
+    caller's, so it lives as long as the loop and no longer.
+
+    Parameters
+    ----------
+    a
+        The array to send.
+    cache
+        The arrays already sent, keyed by where their memory begins and how
+        it is laid out.
+    """
+    key = (a.__array_interface__["data"][0], a.shape, a.strides, a.dtype.str)
+    if key not in cache:
+        cache[key] = cuda.to_device(np.ascontiguousarray(a))
+    return cache[key]
 
 
 def zeros(shape: Any, dtype: np.typing.DTypeLike) -> Any:

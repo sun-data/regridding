@@ -2,6 +2,7 @@ from typing import Any
 import pytest
 import numpy as np
 import scipy.ndimage
+import astropy.units as u
 from numba import cuda
 import regridding
 from ._weights_convolved_test import grid_input, grid_output, _rotated, _lattice
@@ -213,16 +214,28 @@ def test_axis_mismatch() -> None:
         regridding.convolve_weights(weights, np.ones(3), axis_output=1)
 
 
+kernel_cells = np.random.default_rng(17).random((24, 22, 3, 3))
+"""A kernel for each output cell, for the tests to broadcast themselves."""
+
+
 @requires_cuda
-def test_kernel_sent_once(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    argnames="kernel",
+    argvalues=[
+        np.broadcast_to(kernel_cells, (2, 24, 22, 3, 3)),
+        np.broadcast_to(kernel_cells.astype(np.float32), (2, 24, 22, 3, 3)),
+        np.broadcast_to(kernel_cells * 100 * u.percent, (2, 24, 22, 3, 3), subok=True),
+    ],
+    ids=["double", "single", "percent"],
+)
+def test_kernel_sent_once(monkeypatch: pytest.MonkeyPatch, kernel: Any) -> None:
     """
     A kernel which the caller broadcast along the orthogonal axis is sent to
-    the device once, rather than once for each element, and convolves as on
-    the host.
+    the device once, rather than once for each element, even when it has to
+    be converted to double precision or from a unit, and convolves as on the
+    host.
     """
     weights = _weights(device="cuda")
-    kernel = np.random.default_rng(17).random((24, 22, 3, 3))
-    kernel = np.broadcast_to(kernel, (2, 24, 22, 3, 3))
 
     sent = []
     to_device = cuda.to_device

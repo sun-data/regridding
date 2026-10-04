@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from numba import cuda
 from numba.cuda.cudadrv import driver
+from regridding import _util
 
 __all__ = [
     "threads",
@@ -162,12 +163,7 @@ def rows(
     orthogonal axes reads, as an array of `shape_orthogonal`.
     """
     num_orthogonal = a.ndim - ndim
-    a = a[
-        tuple(
-            slice(0, 1) if a.strides[i] == 0 else slice(None)
-            for i in range(num_orthogonal)
-        )
-    ]
+    (a,) = _util._unbroadcast((a,), axis=tuple(range(num_orthogonal, a.ndim)))
     shape = a.shape[:num_orthogonal]
     num_rows = int(np.prod(shape, dtype=int))
     a = np.ascontiguousarray(a).reshape((num_rows,) + a.shape[num_orthogonal:])

@@ -1,4 +1,5 @@
 from typing import Any
+import warnings
 import pytest
 import numpy as np
 import astropy.units as u
@@ -584,3 +585,52 @@ def test_transpose_weights_conservative_empty() -> None:
     result = regridding.transpose_weights_conservative(weights, **kwargs)
 
     assert result[0].shape == (0,)
+
+
+def test_transpose_weights_conservative_unused_zero_weight() -> None:
+    """
+    A `weights_input` of zero in a cell which no weight touches is allowed
+    without a warning, as it was before the weight of each cell was folded
+    into its volume.
+    """
+    x_input = np.linspace(-2, 2, num=21)
+    x_output = np.linspace(-1, 1, num=11)
+    weights_input = np.ones(x_input.size - 1)
+    weights_input[0] = 0
+
+    weights = regridding.weights(
+        (x_input,),
+        (x_output,),
+        weights_input=weights_input,
+        method="conservative",
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = regridding.transpose_weights_conservative(
+            weights,
+            (x_input,),
+            (x_output,),
+            weights_input=weights_input,
+        )
+
+    assert np.all(np.isfinite(result[0][()][2]))
+
+
+def test_transpose_weights_conservative_axes() -> None:
+    """
+    Grids with more resampled axes than the weights have axes raise, rather
+    than an `IndexError` from deep inside.
+    """
+    x_input = np.linspace(-1, 1, num=11)
+    x_output = np.linspace(-1, 1, num=7)
+    weights = regridding.weights((x_input,), (x_output,), method="conservative")
+
+    grid_input, grid_output = _grids_rotated(1)
+
+    with pytest.raises(ValueError, match="more than"):
+        regridding.transpose_weights_conservative(
+            weights,
+            coordinates_input=tuple(c[0] for c in grid_input),
+            coordinates_output=tuple(c[0] for c in grid_output),
+        )

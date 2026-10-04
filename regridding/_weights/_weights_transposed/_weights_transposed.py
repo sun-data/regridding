@@ -262,11 +262,11 @@ def transpose_weights_conservative(
     # varies along, so a grid shared by every element of the other is
     # computed once
     volume_input = _cells(
-        _cell_volume(_unbroadcast(coordinates_input, axis_input), axis_input),
+        _cell_volume(_util._unbroadcast(coordinates_input, axis_input), axis_input),
         axis_input,
     )
     volume_output = _cells(
-        _cell_volume(_unbroadcast(coordinates_output, axis_output), axis_output),
+        _cell_volume(_util._unbroadcast(coordinates_output, axis_output), axis_output),
         axis_output,
     )
 
@@ -278,12 +278,15 @@ def transpose_weights_conservative(
     # its volume once rather than applied to every weight which touches it.
     factor_input = volume_input
     if weights_input is not None:
-        # the axes it is broadcast along are found before it is converted to
-        # numbers, which would copy it out to its full shape
         weights_input = np.broadcast_to(weights_input, shape_input, subok=True)
-        (weights_input,) = _unbroadcast((weights_input,), axis_input)
+        (weights_input,) = _util._unbroadcast((weights_input,), axis_input)
         weights_input = _util._dimensionless(weights_input, strict=False)
-        factor_input = factor_input / np.square(_cells(weights_input, axis_input))
+        # the factor is computed for every cell, but read only for those which
+        # a weight touches, so a cell which none does may have a weight of
+        # zero without anything being wrong.  A cell which one does still
+        # warns, when its weights are scaled by the factor.
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            factor_input = factor_input / np.square(_cells(weights_input, axis_input))
 
     if on_device(weights_array):
         result, outside = transpose_weights_conservative_cuda(
@@ -353,11 +356,28 @@ def _check_grids(
     Raises
     ------
     ValueError
-        If either grid has a different number of cells along any of its
-        resampled axes than the weights address, which is also the case for
-        weights which address the vertices of the grids rather than their
-        cells, such as multilinear ones.
+        If either grid has more resampled axes than the weights have axes,
+        or a different number of cells along any of its resampled axes than
+        the weights address, which is also the case for weights which
+        address the vertices of the grids rather than their cells, such as
+        multilinear ones.
     """
+    hint = (
+        "`coordinates_input`, `coordinates_output`, `axis_input` and "
+        "`axis_output` should be the grids and axes which were given to "
+        '`regridding.weights()`, with `method="conservative"`, for these '
+        "weights, with input and output swapped if the weights have been "
+        "transposed since"
+    )
+
+    if len(axis_input) > len(shape_input) or len(axis_output) > len(shape_output):
+        raise ValueError(
+            f"the grids have {len(axis_input)} input and {len(axis_output)} "
+            f"output resampled axes, more than the input of {shape_input} and "
+            f"the output of {shape_output} the weights were built for have; "
+            f"{hint}"
+        )
+
     cells_input = tuple(coordinates_input[0].shape[ax] - 1 for ax in axis_input)
     cells_output = tuple(coordinates_output[0].shape[ax] - 1 for ax in axis_output)
     expected_input = tuple(shape_input[ax] for ax in axis_input)
@@ -366,44 +386,8 @@ def _check_grids(
         raise ValueError(
             f"the weights address {expected_input} input and {expected_output} "
             f"output elements along their resampled axes, but the grids have "
-            f"{cells_input} and {cells_output} cells; the weights should be "
-            f"built from these grids by `regridding.weights()` with "
-            f'`method="conservative"`, which addresses their cells'
+            f"{cells_input} and {cells_output} cells; {hint}"
         )
-
-
-def _unbroadcast(
-    arrays: tuple[np.ndarray, ...],
-    axis: tuple[int, ...],
-) -> tuple[np.ndarray, ...]:
-    """
-    Undo broadcasting arrays along their orthogonal axes.
-
-    An orthogonal axis along which every array has been broadcast, which is
-    to say has a stride of zero, is reduced to a length of one, as a view.
-    The strides rather than the shapes the arrays were given with are what
-    is looked at, so arrays which the caller broadcast before passing them
-    are found as well.  The resampled axes are left whole, since an array
-    defined on the cells is needed on all of them.
-
-    Parameters
-    ----------
-    arrays
-        Arrays of the same shape, such as the coordinates of a grid.
-    axis
-        The resampled axes of the arrays.
-    """
-    ndim = arrays[0].ndim
-    resampled = [ax % ndim for ax in axis]
-    index = tuple(
-        (
-            slice(0, 1)
-            if i not in resampled and all(a.strides[i] == 0 for a in arrays)
-            else slice(None)
-        )
-        for i in range(ndim)
-    )
-    return tuple(a[index] for a in arrays)
 
 
 def _cells(

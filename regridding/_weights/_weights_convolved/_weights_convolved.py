@@ -235,13 +235,7 @@ def convolve_weights(
             f"the {ndim} axes of the output grid, {shape_output}"
         )
 
-    try:
-        kernel = _util._dimensionless(kernel)
-    except ValueError as error:
-        unit = getattr(kernel, "unit", None)
-        if unit is None:
-            raise
-        raise ValueError(f"the kernel must be dimensionless, got {unit}") from error
+    kernel = _util._dimensionless(kernel, name="the kernel")
 
     if kernel.ndim < ndim_kernel:
         raise ValueError(

@@ -69,13 +69,18 @@ class Regridder:
     shape_weights: tuple[int, ...]
     """The length of the weights along each orthogonal axis, in order."""
 
-    indptr: np.ndarray
-    """Where each row of the matrix starts in :attr:`indices` and :attr:`data`."""
+    indptr: Any
+    """
+    Where each row of the matrix starts in :attr:`indices` and :attr:`data`.
 
-    indices: np.ndarray
+    The arrays of the matrix are :mod:`numpy` arrays on the host, and
+    :mod:`torch` tensors on a device.
+    """
+
+    indices: Any
     """The column of each entry of the matrix."""
 
-    data: np.ndarray
+    data: Any
     """The value of each entry of the matrix."""
 
     unit: Any = None
@@ -83,8 +88,8 @@ class Regridder:
 
     device: None | str = None
     """
-    Where the operator is applied: on the host if :obj:`None`, or on a CUDA
-    device if ``"cuda"``.
+    Where the operator is stored and applied: on the host if :obj:`None`, or
+    on a CUDA device if ``"cuda"``.
     """
 
     _transposed: "None | Regridder" = dataclasses.field(
@@ -114,17 +119,24 @@ class Regridder:
         shape_input: None | tuple[int, ...] = None,
         shape_output: None | tuple[int, ...] = None,
         device: None | str = None,
+        dtype: type = np.float64,
     ) -> "Regridder":
         """
         Assemble an operator from weights computed by
         :func:`regridding.weights`.
 
+        The operator is assembled where it will be applied.  On a device, the
+        weights are read where they are, one element at a time, so weights
+        built on the device never visit the host.  Either way the entries of
+        each row are in the order of the elements of the weights, so the two
+        give exactly the same matrix from the same weights.
+
         Parameters
         ----------
         weights
             The weights computed by :func:`regridding.weights`, with the
-            shapes of the grids they were computed for.  Weights in device
-            memory are brought back to the host, dropping their empty slots.
+            shapes of the grids they were computed for, on the host or on a
+            device.  Their empty slots are dropped.
         axis_input
             The resampled axes of the input, as given to
             :func:`regridding.weights`.
@@ -139,7 +151,11 @@ class Regridder:
             The shape of the arrays the operator returns.  If :obj:`None`,
             the shape of the output grid.
         device
-            Where to apply the operator, see :attr:`device`.
+            Where to store and apply the operator, see :attr:`device`.
+        dtype
+            The type of the entries of the matrix.  :obj:`numpy.float32`
+            halves the memory the values take, for operators which would not
+            otherwise fit on a device.
         """
         array, shape_grid_input, shape_grid_output = weights
 
@@ -240,27 +256,17 @@ class Regridder:
         lookup_columns = _lookup(shape_input, axis_input, strides_columns)
         lookup_rows = _lookup(shape_output, axis_output, strides_rows)
 
-        # `numba.typed.List()` is declared to return a plain `list` when Numba's
-        # JIT is disabled, a mode this library is not usable in.
-        list_input: TypedList = TypedList()  # type: ignore[assignment]
-        list_output: TypedList = TypedList()  # type: ignore[assignment]
-        list_values: TypedList = TypedList()  # type: ignore[assignment]
+        blocks = []
         offsets_columns = []
         offsets_rows = []
         unit = None
         for index in np.ndindex(*shape_weights):
             indices_input, indices_output, values = array[index]
-            if cuda.is_cuda_array(values):
-                indices_input = indices_input.copy_to_host()
-                indices_output = indices_output.copy_to_host()
-                values = values.copy_to_host()
             unit_values = getattr(values, "unit", None)
             if unit_values is not None:
                 unit = unit_values
-            values = np.asarray(getattr(values, "value", values), dtype=np.float64)
-            list_input.append(indices_input)
-            list_output.append(indices_output)
-            list_values.append(values)
+                values = values.value
+            blocks.append((indices_input, indices_output, values))
             offsets_columns.append(
                 _offset(
                     index, orthogonal_input, shape_input, strides_columns, shape_weights
@@ -273,39 +279,33 @@ class Regridder:
             )
 
         num_rows, num_columns = result.shape_matrix
-
-        starts = np.zeros(len(list_values) + 1, dtype=np.int64)
-        starts[1:] = np.cumsum([v.shape[0] for v in list_values])
         offsets_rows = np.array(offsets_rows, dtype=np.int64)
         offsets_columns = np.array(offsets_columns, dtype=np.int64)
 
-        cursors = _assemble_count(
-            list_input,
-            list_output,
-            offsets_rows,
-            lookup_rows,
-            starts,
-            num_rows,
-            _num_chunks(num_rows),
-        )
-        indptr = _cursors(cursors)
+        if device is not None:
+            from . import _cuda as _cuda_regridder
 
-        num_entries = int(indptr[~0])
-        indices = np.empty(num_entries, dtype=_index_dtype(num_columns))
-        data = np.empty(num_entries)
-        _assemble_scatter(
-            list_input,
-            list_output,
-            list_values,
-            offsets_rows,
-            lookup_rows,
-            offsets_columns,
-            lookup_columns,
-            starts,
-            cursors,
-            indices,
-            data,
-        )
+            indptr, indices, data = _cuda_regridder.assemble(
+                blocks=blocks,
+                offsets_rows=offsets_rows,
+                offsets_columns=offsets_columns,
+                lookup_rows=lookup_rows,
+                lookup_columns=lookup_columns,
+                num_rows=num_rows,
+                dtype_indices=_index_dtype(num_columns),
+                dtype=dtype,
+            )
+        else:
+            indptr, indices, data = _assemble(
+                blocks=blocks,
+                offsets_rows=offsets_rows,
+                offsets_columns=offsets_columns,
+                lookup_rows=lookup_rows,
+                lookup_columns=lookup_columns,
+                num_rows=num_rows,
+                dtype_indices=_index_dtype(num_columns),
+                dtype=dtype,
+            )
 
         result.indptr = indptr
         result.indices = indices
@@ -374,14 +374,29 @@ class Regridder:
 
     def to(self, device: None | str) -> "Regridder":
         """
-        The same operator, applied on the host or on a device.
+        The same operator, stored and applied on the host or on a device.
 
         Parameters
         ----------
         device
-            Where to apply the operator, see :attr:`device`.
+            Where to store and apply the operator, see :attr:`device`.
         """
-        return dataclasses.replace(self, device=device)
+        if device == self.device:
+            return self
+        arrays = (self.indptr, self.indices, self.data)
+        if device is None:
+            arrays = tuple(a.cpu().numpy() for a in arrays)
+        else:
+            torch = _torch()
+            arrays = tuple(torch.as_tensor(a, device=device) for a in arrays)
+        indptr, indices, data = arrays
+        return dataclasses.replace(
+            self,
+            indptr=indptr,
+            indices=indices,
+            data=data,
+            device=device,
+        )
 
     @property
     def T(self) -> "Regridder":
@@ -391,6 +406,18 @@ class Regridder:
         It is computed once and kept, and its own transpose is this
         operator.
         """
+        if self._transposed is None and self.device is not None:
+            from . import _cuda as _cuda_regridder
+
+            num_rows, num_columns = self.shape_matrix
+            indptr, indices, data = _cuda_regridder.transpose(
+                indptr=self.indptr,
+                indices=self.indices,
+                data=self.data,
+                num_columns=num_columns,
+                dtype_indices=_index_dtype(num_rows),
+            )
+            self._transposed = self._transpose_from(indptr, indices, data)
         if self._transposed is None:
             num_rows, num_columns = self.shape_matrix
             num_chunks = _num_chunks(num_columns)
@@ -405,25 +432,29 @@ class Regridder:
             cursors = _transpose_count(self.indptr, self.indices, num_columns, bounds)
             indptr = _cursors(cursors)
             indices = np.empty(self.num_entries, dtype=_index_dtype(num_rows))
-            data = np.empty(self.num_entries)
+            data = np.empty(self.num_entries, dtype=self.data.dtype)
             _transpose_scatter(
                 self.indptr, self.indices, self.data, bounds, cursors, indices, data
             )
-            result = Regridder(
-                shape_input=self.shape_output,
-                shape_output=self.shape_input,
-                axis_input=self.axis_output,
-                axis_output=self.axis_input,
-                shape_weights=self.shape_weights,
-                indptr=indptr,
-                indices=indices,
-                data=data,
-                unit=self.unit,
-                device=self.device,
-            )
-            result._transposed = self
-            self._transposed = result
+            self._transposed = self._transpose_from(indptr, indices, data)
         return self._transposed
+
+    def _transpose_from(self, indptr: Any, indices: Any, data: Any) -> "Regridder":
+        """The transpose of this operator, given the arrays of its matrix."""
+        result = Regridder(
+            shape_input=self.shape_output,
+            shape_output=self.shape_input,
+            axis_input=self.axis_output,
+            axis_output=self.axis_input,
+            shape_weights=self.shape_weights,
+            indptr=indptr,
+            indices=indices,
+            data=data,
+            unit=self.unit,
+            device=self.device,
+        )
+        result._transposed = self
+        return result
 
     def transpose_conservative(
         self,
@@ -553,22 +584,44 @@ class Regridder:
                 )
 
         transposed = self.T
+        table_rows = np.array(table_rows, dtype=np.int64).reshape(-1, 4)
+        table_columns = np.array(table_columns, dtype=np.int64).reshape(-1, 4)
 
-        data = transposed.data
+        # a dimensionless unit, like a percentage, scales the weights by the
+        # number it stands for, and any other is dropped, as
+        # `regridding.transpose_weights_conservative` does
+        scale = 1.0
         if self.unit is not None:
-            data = _util._dimensionless(data << self.unit, strict=False)
+            scale = float(_util._dimensionless(1.0 << self.unit, strict=False))
 
-        result = np.empty_like(data)
-        _scale(
-            transposed.indptr,
-            transposed.indices,
-            data,
-            np.array(table_rows, dtype=np.int64).reshape(-1, 4),
-            np.array(table_columns, dtype=np.int64).reshape(-1, 4),
-            factor,
-            volume,
-            result,
-        )
+        if self.device is not None:
+            from . import _cuda as _cuda_regridder
+
+            result = _cuda_regridder.scale(
+                indptr=transposed.indptr,
+                indices=transposed.indices,
+                data=transposed.data,
+                scale=scale,
+                table_rows=table_rows,
+                table_columns=table_columns,
+                factor=factor,
+                volume=volume,
+            )
+        else:
+            data = transposed.data
+            if scale != 1:
+                data = data * scale
+            result = np.empty_like(data)
+            _scale(
+                transposed.indptr,
+                transposed.indices,
+                data,
+                table_rows,
+                table_columns,
+                factor,
+                volume,
+                result,
+            )
 
         return Regridder(
             shape_input=transposed.shape_input,
@@ -689,15 +742,7 @@ class Regridder:
 
     def _call_device(self, values: Any) -> Any:
         """Apply this operator on the device, see :meth:`__call__`."""
-        try:
-            # an optional dependency, so it is absent from the environment the
-            # type checker runs in
-            import torch  # type: ignore[import-not-found]
-        except ImportError as error:  # pragma: nocover
-            raise ImportError(
-                "applying a `Regridder` on a device needs `torch`, which lays "
-                "out the values; install `regridding[cuda]`"
-            ) from error
+        torch = _torch()
         from . import _cuda as _cuda_regridder
 
         is_tensor = isinstance(values, torch.Tensor)
@@ -720,9 +765,9 @@ class Regridder:
 
         if self._arrays_device is None:
             self._arrays_device = (
-                cuda.to_device(self.indptr),
-                cuda.to_device(self.indices),
-                cuda.to_device(self.data),
+                cuda.as_cuda_array(self.indptr),
+                cuda.as_cuda_array(self.indices),
+                cuda.as_cuda_array(self.data),
             )
         indptr, indices, data = self._arrays_device
 
@@ -763,6 +808,102 @@ class _Layout:
 
     num_columns: int
     """The number of columns of the matrix."""
+
+
+def _torch() -> Any:
+    """
+    Import :mod:`torch`, which an operator on a device needs.
+
+    It is an optional dependency, so it is absent from the environment the
+    type checker runs in.
+    """
+    try:
+        import torch  # type: ignore[import-not-found]
+    except ImportError as error:  # pragma: nocover
+        raise ImportError(
+            "a `Regridder` on a device needs `torch`; install `regridding[cuda]`"
+        ) from error
+    return torch
+
+
+def _assemble(
+    blocks: list[tuple[Any, Any, Any]],
+    offsets_rows: np.ndarray,
+    offsets_columns: np.ndarray,
+    lookup_rows: np.ndarray,
+    lookup_columns: np.ndarray,
+    num_rows: int,
+    dtype_indices: type,
+    dtype: type,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Assemble the matrix in CSR form on the host.
+
+    Parameters
+    ----------
+    blocks
+        The ``(indices_input, indices_output, values)`` of each element of
+        the weights, on the host or on a device, in order.
+    offsets_rows
+        Where the rows of each element start in the matrix.
+    offsets_columns
+        Where the columns of each element start in the matrix.
+    lookup_rows
+        Where each output index lands in the rows, after the offset.
+    lookup_columns
+        Where each input index lands in the columns, after the offset.
+    num_rows
+        The number of rows of the matrix.
+    dtype_indices
+        The type of the column indices.
+    dtype
+        The type of the entries.
+    """
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    list_input: TypedList = TypedList()  # type: ignore[assignment]
+    list_output: TypedList = TypedList()  # type: ignore[assignment]
+    list_values: TypedList = TypedList()  # type: ignore[assignment]
+    for indices_input, indices_output, values in blocks:
+        if cuda.is_cuda_array(values):
+            indices_input = indices_input.copy_to_host()
+            indices_output = indices_output.copy_to_host()
+            values = values.copy_to_host()
+        list_input.append(indices_input)
+        list_output.append(indices_output)
+        list_values.append(np.asarray(values, dtype=np.float64))
+
+    starts = np.zeros(len(list_values) + 1, dtype=np.int64)
+    starts[1:] = np.cumsum([v.shape[0] for v in list_values])
+
+    cursors = _assemble_count(
+        list_input,
+        list_output,
+        offsets_rows,
+        lookup_rows,
+        starts,
+        num_rows,
+        _num_chunks(num_rows),
+    )
+    indptr = _cursors(cursors)
+
+    num_entries = int(indptr[~0])
+    indices = np.empty(num_entries, dtype=dtype_indices)
+    data = np.empty(num_entries, dtype=dtype)
+    _assemble_scatter(
+        list_input,
+        list_output,
+        list_values,
+        offsets_rows,
+        lookup_rows,
+        offsets_columns,
+        lookup_columns,
+        starts,
+        cursors,
+        indices,
+        data,
+    )
+    return indptr, indices, data
 
 
 def _axes(

@@ -1043,7 +1043,9 @@ def _flat(
     """
     a = np.asarray(a, dtype=np.float64)
     a = a.reshape((1,) * (len(shape) - a.ndim) + a.shape)
-    if np.broadcast_shapes(a.shape, shape) != shape:
+    # compared axis by axis, since `numpy.broadcast_shapes()` raises its own
+    # error for shapes which cannot broadcast at all
+    if any(n not in (1, m) for n, m in zip(a.shape, shape)):
         raise ValueError(
             f"the {name} grid has cells of shape {a.shape}, which do not fit "
             f"the {shape} the weights were built for"

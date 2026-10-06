@@ -1,6 +1,7 @@
 from typing import Any
 import pytest
 import numpy as np
+import astropy.units as u
 from numba import cuda
 import regridding
 from regridding._regridder import _regridder_test
@@ -220,3 +221,59 @@ def test_to() -> None:
     for a, e in ((back.indptr, host.indptr), (back.indices, host.indices)):
         assert np.array_equal(a, e)
     assert np.array_equal(back.data, host.data)
+
+
+@requires_cuda
+@pytest.mark.parametrize(
+    argnames="unit",
+    argvalues=[u.percent, u.s],
+    ids=["percent", "seconds"],
+)
+def test_transpose_conservative_units(unit: Any) -> None:
+    """
+    The conservative transpose of weights with a unit is scaled on the
+    device exactly as on the host.
+    """
+    weights, grids = _regridder_test._weights_trailing()
+    grid_input, grid_output, axis_input, axis_output = grids
+    weights = _regridder_test._with_unit(weights, unit)
+
+    host = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    device = regridding.Regridder.from_weights(
+        weights, axis_input, axis_output, device="cuda"
+    )
+
+    _assert_same(
+        device.transpose_conservative(grid_input, grid_output),
+        host.transpose_conservative(grid_input, grid_output),
+    )
+
+
+@requires_cuda
+def test_assemble_empty_element() -> None:
+    """
+    Elements of the weights with no entries, from input grids which miss the
+    output grid entirely, are assembled on the device as on the host.
+    """
+    grid_input, grid_output, axis_input, axis_output = _regridder_test._grids(
+        "trailing"
+    )
+    x, y = grid_input
+    x = x.copy()
+    x[0] += 100
+    weights = regridding.weights(
+        (x, y),
+        grid_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        method="conservative",
+    )
+    assert min(e[2].size for e in weights[0].reshape(-1)) == 0
+
+    host = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    device = regridding.Regridder.from_weights(
+        weights, axis_input, axis_output, device="cuda"
+    )
+
+    _assert_same(device, host)
+    _assert_same(device.T, host.T)

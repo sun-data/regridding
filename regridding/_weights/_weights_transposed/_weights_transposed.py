@@ -1,8 +1,10 @@
 import numpy as np
 import numba
 from ... import _util
+from ..._cuda import on_device
 from .._weights_conservative_1d._grids import cell_length
-from .._weights_conservative_2d._grids import grid_volume as cell_area
+from ...geometry import area_triangle
+from ._cuda import transpose_weights_conservative_cuda
 
 __all__ = [
     "transpose_weights",
@@ -25,6 +27,11 @@ def transpose_weights(
     Note that this transpose is not conservative:
     use :func:`regridding.transpose_weights_conservative` if the reverse
     transform needs to conserve the total of the resampled array.
+
+    Weights in device memory are swapped the same way and stay there.  Their
+    empty slots, which carry an index of ``-1`` on the input side, carry it
+    on the output side once transposed, where
+    :func:`regridding.regrid_from_weights` skips them too.
 
     Parameters
     ----------
@@ -119,6 +126,16 @@ def transpose_weights_conservative(
     still conserved. Where `weights_input` varies, that mixing is amplified by
     the subsequent division, by an amount that grows with how sharply
     `weights_input` changes from cell to cell.
+
+    Weights built with ``device="cuda"`` are transposed on the device, and
+    the result is left there.  The volumes of the cells are computed on the
+    host from the grids, which are small next to the weights, and divided
+    there by the square of `weights_input`.  They are sent to the device
+    once, before they are broadcast along the orthogonal axes.  The index
+    arrays are reused rather than copied, as on the host, and the values are
+    stored as :class:`numpy.float64`, as on the host.  Empty slots keep their
+    index of ``-1``, now on the output side, where
+    :func:`regridding.regrid_from_weights` skips it as well.
 
     Examples
     --------
@@ -217,75 +234,171 @@ def transpose_weights_conservative(
     axis_input = tuple(sorted(axis_input))
     axis_output = tuple(sorted(axis_output))
 
+    # a grid which does not have the cells the weights were built for would
+    # be read at the wrong cells, or past its end, without anything failing
+    _check_grids(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        shape_input=shape_input,
+        shape_output=shape_output,
+    )
+
     # the weights can have more orthogonal elements than the grids do, when
     # `convolve_weights` folds in a kernel which varies along an orthogonal
     # axis the grids are broadcast along, so the grids are broadcast to the
     # weights rather than the other way around
-    shape_orthogonal_grids = tuple(shape_orthogonal)
-    shape_orthogonal = np.broadcast_shapes(
-        shape_orthogonal_grids,
-        weights_array.shape,
-    )
+    try:
+        shape_orthogonal = np.broadcast_shapes(shape_orthogonal, weights_array.shape)
+    except ValueError as error:
+        raise ValueError(
+            f"the orthogonal axes of the grids, {shape_orthogonal}, cannot be "
+            f"broadcast against those of the weights, {weights_array.shape}"
+        ) from error
     weights_array = np.broadcast_to(weights_array, shape_orthogonal)
 
+    # the volumes of each grid are computed only along the orthogonal axes it
+    # varies along, so a grid shared by every element of the other is
+    # computed once
+    volume_input = _cells(
+        _cell_volume(_util._unbroadcast(coordinates_input, axis_input), axis_input),
+        axis_input,
+    )
+    volume_output = _cells(
+        _cell_volume(_util._unbroadcast(coordinates_output, axis_output), axis_output),
+        axis_output,
+    )
+
+    # Divide by the input weight twice: once to remove the weight that the
+    # forward transform multiplied into the values, and again so the
+    # transpose *inverts* that weighting (retaining a factor of
+    # ``1 / weights_input``). This makes the round trip recover the original
+    # input values. Both apply to a whole input cell, so they are folded into
+    # its volume once rather than applied to every weight which touches it.
+    factor_input = volume_input
     if weights_input is not None:
-        weights_input = _flatten_cells(
-            np.broadcast_to(weights_input, shape_input),
-            axis=axis_input,
-            shape_orthogonal=shape_orthogonal,
+        weights_input = np.broadcast_to(weights_input, shape_input, subok=True)
+        (weights_input,) = _util._unbroadcast((weights_input,), axis_input)
+        weights_input = _util._dimensionless(weights_input, strict=False)
+        # the factor is computed for every cell, but read only for those which
+        # a weight touches, so a cell which none does may have a weight of
+        # zero without anything being wrong.  A cell which one does still
+        # warns, when its weights are scaled by the factor.
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            factor_input = factor_input / np.square(_cells(weights_input, axis_input))
+
+    if on_device(weights_array):
+        result, outside = transpose_weights_conservative_cuda(
+            weights=weights_array,
+            factor_input=factor_input,
+            volume_output=volume_output,
         )
+        if outside:
+            raise ValueError(
+                f"the weights address cells outside the input of "
+                f"{shape_input} and the output of {shape_output} they were "
+                f"built for"
+            )
+        return result, shape_output, shape_input
 
-    # `_cell_volume` flattens the orthogonal axes of the grids into one, so
-    # their shape is restored before broadcasting
-    volume_input = _flatten_cells(
-        _cell_volume(coordinates_input, axis_input),
-        axis=axis_input,
-        shape_orthogonal=shape_orthogonal,
-        shape_orthogonal_source=shape_orthogonal_grids,
+    factor_input = np.broadcast_to(
+        factor_input,
+        shape_orthogonal + factor_input.shape[~0:],
+    )
+    volume_output = np.broadcast_to(
+        volume_output,
+        shape_orthogonal + volume_output.shape[~0:],
     )
 
-    volume_output = _flatten_cells(
-        _cell_volume(coordinates_output, axis_output),
-        axis=axis_output,
-        shape_orthogonal=shape_orthogonal,
-        shape_orthogonal_source=shape_orthogonal_grids,
-    )
+    result = np.empty(shape_orthogonal, dtype=object)
+    for index in np.ndindex(*shape_orthogonal):
+        indices_input, indices_output, values = weights_array[index]
 
-    shape = weights_array.shape
-    flat = weights_array.reshape(-1)
-
-    result = np.empty(flat.size, dtype=object)
-    for d in range(flat.size):
-        indices_input, indices_output, values = flat[d]
-
-        values = np.array(values, dtype=np.float64)
-        if weights_input is not None:
-            # Divide by the input weight twice: once to remove the weight
-            # that the forward transform multiplied into the values, and again
-            # so the transpose *inverts* that weighting (retaining a factor
-            # of ``1 / weights_input``). This makes the round trip recover
-            # the original input values.
-            values = values / np.square(weights_input[d][indices_input])
+        values = _util._dimensionless(values, strict=False)
         values = (
-            values * volume_input[d][indices_input] / volume_output[d][indices_output]
+            values
+            * factor_input[index][indices_input]
+            / volume_output[index][indices_output]
         )
 
-        result[d] = (indices_output, indices_input, values)
+        result[index] = (indices_output, indices_input, values)
 
-    return result.reshape(shape), shape_output, shape_input
+    return result, shape_output, shape_input
 
 
-def _flatten_cells(
+def _check_grids(
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
+    axis_input: tuple[int, ...],
+    axis_output: tuple[int, ...],
+    shape_input: tuple[int, ...],
+    shape_output: tuple[int, ...],
+) -> None:
+    """
+    Check that the grids have the cells a set of weights was built for.
+
+    Parameters
+    ----------
+    coordinates_input
+        The vertices of the input grid.
+    coordinates_output
+        The vertices of the output grid.
+    axis_input
+        The resampled axes of the input grid.
+    axis_output
+        The resampled axes of the output grid.
+    shape_input
+        The shape of the input the weights were built for.
+    shape_output
+        The shape of the output the weights were built for.
+
+    Raises
+    ------
+    ValueError
+        If either grid has more resampled axes than the weights have axes,
+        or a different number of cells along any of its resampled axes than
+        the weights address, which is also the case for weights which
+        address the vertices of the grids rather than their cells, such as
+        multilinear ones.
+    """
+    hint = (
+        "`coordinates_input`, `coordinates_output`, `axis_input` and "
+        "`axis_output` should be the grids and axes which were given to "
+        '`regridding.weights()`, with `method="conservative"`, for these '
+        "weights, with input and output swapped if the weights have been "
+        "transposed since"
+    )
+
+    if len(axis_input) > len(shape_input) or len(axis_output) > len(shape_output):
+        raise ValueError(
+            f"the grids have {len(axis_input)} input and {len(axis_output)} "
+            f"output resampled axes, more than the input of {shape_input} and "
+            f"the output of {shape_output} the weights were built for have; "
+            f"{hint}"
+        )
+
+    cells_input = tuple(coordinates_input[0].shape[ax] - 1 for ax in axis_input)
+    cells_output = tuple(coordinates_output[0].shape[ax] - 1 for ax in axis_output)
+    expected_input = tuple(shape_input[ax] for ax in axis_input)
+    expected_output = tuple(shape_output[ax] for ax in axis_output)
+    if cells_input != expected_input or cells_output != expected_output:
+        raise ValueError(
+            f"the weights address {expected_input} input and {expected_output} "
+            f"output elements along their resampled axes, but the grids have "
+            f"{cells_input} and {cells_output} cells; {hint}"
+        )
+
+
+def _cells(
     a: np.ndarray,
     axis: tuple[int, ...],
-    shape_orthogonal: tuple[int, ...],
-    shape_orthogonal_source: None | tuple[int, ...] = None,
 ) -> np.ndarray:
     """
-    Arrange an array defined on the cells of a grid with one row for each
-    element of the orthogonal axes and one column for each cell.
+    Arrange an array defined on the cells of a grid with the orthogonal axes
+    first, followed by one axis of the cells.
 
-    The columns are in the order the flat cell indices of a set of weights
+    The cells are in the order the flat cell indices of a set of weights
     address them.
 
     Parameters
@@ -294,20 +407,12 @@ def _flatten_cells(
         An array defined on the cells of a grid.
     axis
         The resampled axes of the grid, in ascending order.
-    shape_orthogonal
-        The shape of the orthogonal axes to broadcast `a` to, matched from
-        the right.
-    shape_orthogonal_source
-        The shape of the orthogonal axes of `a`, if they have been flattened
-        into fewer.  If :obj:`None`, its own axes are used.
     """
     axis_numba = ~np.arange(len(axis))[::-1]
     a = np.moveaxis(a, axis, axis_numba)
-    shape_cells = a.shape[a.ndim - len(axis) :]
-    if shape_orthogonal_source is not None:
-        a = a.reshape(tuple(shape_orthogonal_source) + shape_cells)
-    a = np.broadcast_to(a, tuple(shape_orthogonal) + shape_cells)
-    return a.reshape(-1, int(np.prod(shape_cells)))
+    shape_orthogonal = a.shape[: a.ndim - len(axis)]
+    num_cells = int(np.prod(a.shape[a.ndim - len(axis) :], dtype=int))
+    return a.reshape(shape_orthogonal + (num_cells,))
 
 
 def _cell_volume(
@@ -321,6 +426,8 @@ def _cell_volume(
     ----------
     grid
         1- or 2-dimensional grid.
+    axis
+        The resampled axes of the grid.
     """
 
     shape = grid[0].shape
@@ -334,7 +441,7 @@ def _cell_volume(
         x = np.moveaxis(x, axis, axis_numba)
         x_ = np.reshape(x, (-1,) + shape_numba)
         result = _cell_volume_1d(grid=(x_,))
-        result = np.reshape(result, x_.shape[:-1] + result.shape[-1:])
+        result = np.reshape(result, x.shape[:-1] + result.shape[-1:])
         result = np.moveaxis(result, axis_numba, axis)
 
     elif len(grid) == 2:
@@ -344,7 +451,7 @@ def _cell_volume(
         x_ = np.reshape(x, (-1,) + shape_numba)
         y_ = np.reshape(y, (-1,) + shape_numba)
         result = _cell_volume_2d(grid=(x_, y_))
-        result = np.reshape(result, x_.shape[:-2] + result.shape[-2:])
+        result = np.reshape(result, x.shape[:-2] + result.shape[-2:])
         result = np.moveaxis(result, axis_numba, axis)
 
     else:  # pragma: nocover
@@ -375,17 +482,63 @@ def _cell_volume_1d(
 @numba.njit(
     cache=True,
     fastmath=True,
+    parallel=True,
 )
 def _cell_volume_2d(
     grid: tuple[np.ndarray, np.ndarray],
 ) -> np.ndarray:
+    """
+    Compute the area of each cell of a stack of 2D grids.
+
+    The area of a cell is the sum of the signed areas of the triangles which
+    its edges form with the origin, as
+    :func:`~regridding._weights._weights_conservative_2d._grids.grid_volume`
+    computes it for one grid, and in the same order.  The edges along each
+    axis are swept in turn, and a line of edges does not touch a cell of any
+    other line, in the same grid or another, so each sweep is one parallel
+    loop over every line of every grid.  Many small grids then cost no more
+    to start than one large one, and a few large grids still use every
+    thread.
+
+    Parameters
+    ----------
+    grid
+        The vertices of the grids, stacked along the first axis.
+    """
     x, y = grid
 
-    shape_t, shape_x, shape_y = x.shape
+    num_t, num_x, num_y = x.shape
 
-    result = np.empty((shape_t, shape_x - 1, shape_y - 1))
+    result = np.zeros((num_t, num_x - 1, num_y - 1))
 
-    for t in range(shape_t):
-        result[t] = cell_area(grid=(x[t], y[t]))
+    # the edges which run along the first axis, one line of them for each
+    # row of cells
+    for k in numba.prange(num_t * (num_x - 1)):
+        t = k // (num_x - 1)
+        i = k - t * (num_x - 1)
+        for j in range(num_y):
+            area = area_triangle(
+                (y[t, i, j], x[t, i, j]),
+                (y[t, i + 1, j], x[t, i + 1, j]),
+            )
+            if j >= 1:
+                result[t, i, j - 1] += area
+            if j < num_y - 1:
+                result[t, i, j] -= area
+
+    # the edges which run along the second axis, one line of them for each
+    # column of cells
+    for k in numba.prange(num_t * (num_y - 1)):
+        t = k // (num_y - 1)
+        j = k - t * (num_y - 1)
+        for i in range(num_x):
+            area = area_triangle(
+                (x[t, i, j], y[t, i, j]),
+                (x[t, i, j + 1], y[t, i, j + 1]),
+            )
+            if i >= 1:
+                result[t, i - 1, j] += area
+            if i < num_x - 1:
+                result[t, i, j] -= area
 
     return result

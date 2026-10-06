@@ -320,17 +320,17 @@ def weights(
     # reduced to the number it stands for and a real unit is refused.
     unit_weights = getattr(weights_input, "unit", None)
     if unit_weights is not None:
-        weights_input = getattr(weights_input, "value")
         if device is not None:
             try:
-                scale = unit_weights.to("")
-            except (TypeError, ValueError):
+                weights_input = _util._dimensionless(weights_input)
+            except ValueError as error:
                 raise ValueError(
                     "`weights_input` with a unit cannot be built on a device; "
                     "strip the unit and reapply it to the resampled values"
-                )
-            weights_input = weights_input * scale
+                ) from error
             unit_weights = None
+        else:
+            weights_input = getattr(weights_input, "value")
 
     if device is not None:
         if method != "conservative":

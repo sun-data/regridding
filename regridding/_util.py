@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Any, Sequence
 import numpy as np
 
 _seed_default = 42
@@ -7,6 +7,100 @@ The default seed used to perturb the output coordinates.
 
 Fixed so that repeated calls on the same grids return identical results.
 """
+
+
+def _unbroadcast(
+    arrays: tuple[np.ndarray, ...],
+    axis: tuple[int, ...] = (),
+) -> tuple[np.ndarray, ...]:
+    """
+    Undo broadcasting arrays.
+
+    An axis along which every array has been broadcast, which is to say has
+    a stride of zero, is reduced to a length of one, as a view.  The strides
+    rather than any shape the arrays were given with are what is looked at,
+    so arrays which a caller broadcast before passing them are found as well.
+
+    Parameters
+    ----------
+    arrays
+        Arrays of the same shape, such as the coordinates of a grid.
+    axis
+        Axes to leave whole even if they have been broadcast, such as the
+        resampled axes of an array defined on the cells of a grid, which is
+        needed on all of them.
+    """
+    ndim = arrays[0].ndim
+    whole = [ax % ndim for ax in axis]
+    index = tuple(
+        (
+            slice(0, 1)
+            if i not in whole and all(a.strides[i] == 0 for a in arrays)
+            else slice(None)
+        )
+        for i in range(ndim)
+    )
+    return tuple(a[index] for a in arrays)
+
+
+def _dimensionless(
+    a: Any,
+    strict: bool = True,
+    name: str = "the array",
+) -> np.ndarray:
+    """
+    Reduce an array to the plain numbers it stands for, in double precision.
+
+    `regridding` does not depend on `astropy`, so a
+    :class:`astropy.units.Quantity` is recognized by duck typing.  A
+    dimensionless one, such as a percentage, is scaled to the number it
+    stands for.  Its value is converted to double precision before it is
+    scaled, so that a single-precision percentage is scaled exactly as a
+    double-precision one is.
+
+    An array which has been broadcast is converted as it was before being
+    broadcast, and broadcast again, rather than copied out to its full
+    shape, so a caller need not undo the broadcasting first.
+
+    Parameters
+    ----------
+    a
+        An array, which may be a quantity.
+    strict
+        Whether a unit with dimensions raises.  If :obj:`False`, it is
+        dropped instead, leaving the value in that unit.
+    name
+        What to call `a` if it raises.
+
+    Raises
+    ------
+    ValueError
+        If `strict` is set and `a` has a unit with dimensions.
+    """
+    unit = getattr(a, "unit", None)
+    value = getattr(a, "value", a)
+
+    shape = None
+    if isinstance(value, np.ndarray):
+        shape = value.shape
+        (value,) = _unbroadcast((value,))
+
+    value = np.asarray(value, dtype=np.float64)
+
+    if unit is not None:
+        try:
+            scale = unit.to("")
+        except (TypeError, ValueError) as error:
+            if strict:
+                raise ValueError(f"{name} must be dimensionless, got {unit}") from error
+            scale = 1
+        if scale != 1:
+            value = value * scale
+
+    if shape is not None and value.shape != shape:
+        value = np.broadcast_to(value, shape)
+
+    return value
 
 
 def _normalize_axis(

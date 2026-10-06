@@ -1,6 +1,11 @@
+from typing import Any
+import warnings
 import pytest
 import numpy as np
+import astropy.units as u
 import regridding
+from regridding._weights._weights_transposed import _weights_transposed
+from regridding._weights._weights_conservative_2d._grids import grid_volume
 
 x = np.linspace(-1, 1, num=10)
 y = np.linspace(-1, 1, num=11)
@@ -321,3 +326,311 @@ def test_transpose_weights_conservative_inverts_weights_input_2d() -> None:
     )
 
     assert np.allclose(result, result_expected)
+
+
+def _grids_rotated(
+    num_grid: int,
+) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
+    """
+    A stack of input grids of 8 by 10 cells, rotated and scaled differently
+    so that their cells differ in area, and one output grid which they all
+    share.
+
+    Parameters
+    ----------
+    num_grid
+        The number of input grids.
+    """
+    x, y = np.meshgrid(
+        np.linspace(-1, 1, num=9),
+        np.linspace(-1.2, 1.2, num=11),
+        indexing="ij",
+    )
+    angle = np.linspace(0.1, 0.7, num=num_grid)[:, np.newaxis, np.newaxis]
+    scale = np.linspace(1, 0.8, num=num_grid)[:, np.newaxis, np.newaxis]
+    grid_input = (
+        scale * (x * np.cos(angle) - y * np.sin(angle)),
+        scale * (x * np.sin(angle) + y * np.cos(angle)),
+    )
+    grid_output = (1.6 * x[np.newaxis], 1.6 * y[np.newaxis])
+    return grid_input, grid_output
+
+
+axes: dict[str, Any] = dict(axis_input=(1, 2), axis_output=(1, 2))
+"""The resampled axes of `_grids_rotated`, which have one orthogonal axis first."""
+
+
+@pytest.mark.parametrize(
+    argnames="weights_input",
+    argvalues=[
+        np.full((8, 10), 50) * u.percent,
+        np.full((8, 10), 50, dtype=np.float32) * u.percent,
+        np.full((8, 10), 2) * u.cm**2,
+    ],
+)
+def test_transpose_weights_conservative_units(weights_input: u.Quantity) -> None:
+    """
+    A dimensionless `weights_input` with a scale, such as a percentage, is
+    the number it stands for, as it is when the weights are built, and a
+    unit with dimensions is dropped, as it always has been.
+    """
+    grid_input, grid_output = _grids_rotated(2)
+    kwargs: dict[str, Any] = dict(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        **axes,
+    )
+
+    try:
+        number = np.asarray(weights_input.to_value(u.dimensionless_unscaled))
+    except u.UnitConversionError:
+        number = np.asarray(weights_input.value)
+    number = number.astype(np.float64)
+
+    actual = regridding.transpose_weights_conservative(
+        regridding.weights(
+            **kwargs, weights_input=weights_input, method="conservative"
+        ),
+        weights_input=weights_input,
+        **kwargs,
+    )
+    expected = regridding.transpose_weights_conservative(
+        regridding.weights(**kwargs, weights_input=number, method="conservative"),
+        weights_input=number,
+        **kwargs,
+    )
+
+    for a, e in zip(actual[0], expected[0]):
+        assert np.array_equal(a[0], e[0])
+        assert np.array_equal(a[1], e[1])
+        assert np.allclose(a[2], e[2], rtol=1e-14, atol=0)
+
+
+@pytest.mark.parametrize(
+    argnames="grid",
+    argvalues=["swapped", "larger", "output"],
+)
+def test_transpose_weights_conservative_grids(grid: str) -> None:
+    """
+    Grids which do not have the cells the weights were built for raise,
+    even when they have as many cells or more, rather than being read at
+    the wrong cells.
+    """
+    grid_input, grid_output = _grids_rotated(2)
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+        **axes,
+    )
+
+    if grid == "swapped":
+        grid_input = tuple(np.swapaxes(c, 1, 2) for c in grid_input)
+    elif grid == "larger":
+        grid_input = tuple(
+            np.pad(c, ((0, 0), (0, 2), (0, 2)), mode="edge") for c in grid_input
+        )
+    else:
+        grid_output = tuple(c[:, :-1] for c in grid_output)
+
+    with pytest.raises(ValueError, match="the weights address"):
+        regridding.transpose_weights_conservative(
+            weights,
+            coordinates_input=grid_input,
+            coordinates_output=grid_output,
+            **axes,
+        )
+
+
+def test_transpose_weights_conservative_broadcast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Grids which the caller has already broadcast along the orthogonal axes,
+    as :mod:`named_arrays` broadcasts them, have their volumes computed once
+    for each distinct grid, as grids which have not been broadcast do, and
+    give the same result.
+    """
+    grid_input, grid_output = _grids_rotated(6)
+    shape = grid_input[0].shape
+    grid_output_broadcast = tuple(np.broadcast_to(c, shape) for c in grid_output)
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+        **axes,
+    )
+
+    computed = []
+    cell_volume_2d = _weights_transposed._cell_volume_2d
+
+    def _cell_volume_2d(grid: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+        computed.append(grid[0].shape[0])
+        return cell_volume_2d(grid)
+
+    monkeypatch.setattr(_weights_transposed, "_cell_volume_2d", _cell_volume_2d)
+
+    actual = regridding.transpose_weights_conservative(
+        weights,
+        coordinates_input=grid_input,
+        coordinates_output=grid_output_broadcast,
+        **axes,
+    )
+    assert computed == [6, 1]
+
+    expected = regridding.transpose_weights_conservative(
+        weights,
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        **axes,
+    )
+    for a, e in zip(actual[0], expected[0]):
+        assert np.array_equal(a[2], e[2])
+
+
+@pytest.mark.parametrize(
+    argnames="num_grid",
+    argvalues=[1, 2, 9],
+)
+def test_cell_volume(num_grid: int) -> None:
+    """
+    The areas of a stack of grids, computed in one parallel loop over every
+    line of edges of every grid, are exactly those of each grid computed
+    alone, and a transpose of the stack matches each grid transposed on its
+    own.
+    """
+    grid_input, grid_output = _grids_rotated(num_grid)
+
+    x, y = grid_input
+    actual = _weights_transposed._cell_volume_2d((x, y))
+    for t in range(num_grid):
+        assert np.array_equal(actual[t], grid_volume((x[t], y[t])))
+
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+        **axes,
+    )
+    transposed = regridding.transpose_weights_conservative(
+        weights,
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        **axes,
+    )
+
+    for t in range(num_grid):
+        grid_input_t = tuple(c[t] for c in grid_input)
+        grid_output_t = tuple(c[0] for c in grid_output)
+        expected = regridding.transpose_weights_conservative(
+            regridding.weights(grid_input_t, grid_output_t, method="conservative"),
+            coordinates_input=grid_input_t,
+            coordinates_output=grid_output_t,
+        )
+        assert np.array_equal(transposed[0][t][0], expected[0][()][0])
+        assert np.array_equal(transposed[0][t][1], expected[0][()][1])
+        assert np.allclose(transposed[0][t][2], expected[0][()][2], rtol=1e-14, atol=0)
+
+
+def test_transpose_weights_conservative_multilinear() -> None:
+    """
+    Weights which address the vertices of the grids rather than their
+    cells, as multilinear ones do, raise, and say the weights should be
+    conservative ones.
+    """
+    x_input = np.linspace(-1, 1, num=11)
+    x_output = np.linspace(-1, 1, num=7)
+    weights = regridding.weights((x_input,), (x_output,), method="multilinear")
+
+    with pytest.raises(ValueError, match='method="conservative"'):
+        regridding.transpose_weights_conservative(weights, x_input, x_output)
+
+
+def test_transpose_weights_conservative_orthogonal() -> None:
+    """
+    Grids whose orthogonal axes cannot be broadcast against those of the
+    weights raise, and say so.
+    """
+    grid_input, grid_output = _grids_rotated(2)
+    weights = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+        **axes,
+    )
+
+    with pytest.raises(ValueError, match="cannot be broadcast"):
+        regridding.transpose_weights_conservative(
+            weights,
+            coordinates_input=_grids_rotated(3)[0],
+            coordinates_output=grid_output,
+            **axes,
+        )
+
+
+def test_transpose_weights_conservative_empty() -> None:
+    """
+    Grids with an orthogonal axis of length zero have no weights, which
+    transpose into none.
+    """
+    grid_input, grid_output = _grids_rotated(2)
+    grid_input = tuple(c[:0] for c in grid_input)
+    kwargs: dict[str, Any] = dict(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        **axes,
+    )
+    weights = regridding.weights(method="conservative", **kwargs)
+
+    result = regridding.transpose_weights_conservative(weights, **kwargs)
+
+    assert result[0].shape == (0,)
+
+
+def test_transpose_weights_conservative_unused_zero_weight() -> None:
+    """
+    A `weights_input` of zero in a cell which no weight touches is allowed
+    without a warning, as it was before the weight of each cell was folded
+    into its volume.
+    """
+    x_input = np.linspace(-2, 2, num=21)
+    x_output = np.linspace(-1, 1, num=11)
+    weights_input = np.ones(x_input.size - 1)
+    weights_input[0] = 0
+
+    weights = regridding.weights(
+        (x_input,),
+        (x_output,),
+        weights_input=weights_input,
+        method="conservative",
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = regridding.transpose_weights_conservative(
+            weights,
+            (x_input,),
+            (x_output,),
+            weights_input=weights_input,
+        )
+
+    assert np.all(np.isfinite(result[0][()][2]))
+
+
+def test_transpose_weights_conservative_axes() -> None:
+    """
+    Grids with more resampled axes than the weights have axes raise, rather
+    than an `IndexError` from deep inside.
+    """
+    x_input = np.linspace(-1, 1, num=11)
+    x_output = np.linspace(-1, 1, num=7)
+    weights = regridding.weights((x_input,), (x_output,), method="conservative")
+
+    grid_input, grid_output = _grids_rotated(1)
+
+    with pytest.raises(ValueError, match="more than"):
+        regridding.transpose_weights_conservative(
+            weights,
+            coordinates_input=tuple(c[0] for c in grid_input),
+            coordinates_output=tuple(c[0] for c in grid_output),
+        )

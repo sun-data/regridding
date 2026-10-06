@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from numba import cuda
 from numba.cuda.cudadrv import driver
+from regridding import _util
 
 __all__ = [
     "threads",
@@ -18,6 +19,7 @@ __all__ = [
     "on_device",
     "allocate",
     "fill",
+    "rows",
     "zeros",
     "prefix_sum",
 ]
@@ -128,6 +130,45 @@ def fill(a: Any, value: Any, threads: int = threads) -> Any:
         _fill[(flat.size + threads - 1) // threads, threads](flat, value)  # type: ignore[index]
 
     return a
+
+
+def rows(
+    a: np.ndarray,
+    ndim: int,
+    shape_orthogonal: tuple[int, ...],
+) -> tuple[Any, np.ndarray]:
+    """
+    Send an array which is broadcast along the orthogonal axes of a set of
+    weights to the device, once for each distinct row of it.
+
+    Every orthogonal axis along which `a` has been broadcast, which is to
+    say has a stride of zero, is reduced to a length of one before it is
+    sent, so an array which the caller broadcast is sent no larger than it
+    was before.  The orthogonal axes are then flattened into one axis of
+    rows.
+
+    Parameters
+    ----------
+    a
+        The array, with its orthogonal axes first, matched to
+        `shape_orthogonal` from the right, followed by the axes of each row.
+    ndim
+        The number of axes of each row.
+    shape_orthogonal
+        The orthogonal shape of the weights which read the rows.
+
+    Returns
+    -------
+    The rows on the device, and the row which each element of the
+    orthogonal axes reads, as an array of `shape_orthogonal`.
+    """
+    num_orthogonal = a.ndim - ndim
+    (a,) = _util._unbroadcast((a,), axis=tuple(range(num_orthogonal, a.ndim)))
+    shape = a.shape[:num_orthogonal]
+    num_rows = int(np.prod(shape, dtype=int))
+    a = np.ascontiguousarray(a).reshape((num_rows,) + a.shape[num_orthogonal:])
+    lookup = np.arange(num_rows).reshape(shape)
+    return cuda.to_device(a), np.broadcast_to(lookup, shape_orthogonal)
 
 
 def zeros(shape: Any, dtype: np.typing.DTypeLike) -> Any:

@@ -1,7 +1,8 @@
 from typing import Any, Sequence
 import numpy as np
 from numba import cuda
-from regridding._cuda import on_device
+from regridding import _util
+from regridding._cuda import on_device, rows
 from ._shared import num_axis
 from ._host import convolve_weights_host
 from ._cuda import convolve_weights_cuda
@@ -234,14 +235,7 @@ def convolve_weights(
             f"the {ndim} axes of the output grid, {shape_output}"
         )
 
-    unit = getattr(kernel, "unit", None)
-    if unit is not None:
-        try:
-            kernel = getattr(kernel, "to_value")("")
-        except (TypeError, ValueError):
-            raise ValueError(f"the kernel must be dimensionless, got {unit}")
-
-    kernel = np.asarray(kernel, dtype=np.float64)
+    kernel = _util._dimensionless(kernel, name="the kernel")
 
     if kernel.ndim < ndim_kernel:
         raise ValueError(
@@ -330,7 +324,6 @@ def convolve_weights(
         )
 
     weights_array = np.broadcast_to(weights_array, shape_orthogonal)
-    kernel = np.broadcast_to(kernel, shape_orthogonal + kernel.shape[~1:])
 
     size_resampled = int(np.prod(shape_resampled))
 
@@ -353,33 +346,38 @@ def convolve_weights(
     # and read once all the elements are done
     outside = None
 
+    # the kernels on the device, which `numba` ships no type for, and the
+    # one each element reads, so that a kernel shared by every element is
+    # sent once
+    kernel_device: Any = None
+    kernel_row: Any = None
+
     if device:
         shape_grid_resampled = cuda.to_device(shape_grid_resampled)
         shape_resampled = cuda.to_device(shape_resampled)
         shape_kernel = cuda.to_device(shape_kernel)
         offsets = cuda.to_device(offsets)
         outside = cuda.to_device(np.zeros(1, dtype=np.int64))
-
-    # the kernel sent to the device for each distinct element, so that a
-    # kernel shared by every element is only sent once
-    kernels_device: dict[int, Any] = dict()
+        kernel_device, kernel_row = rows(
+            kernel,
+            ndim=2,
+            shape_orthogonal=shape_orthogonal,
+        )
+    else:
+        kernel = np.broadcast_to(kernel, shape_orthogonal + kernel.shape[~1:])
 
     result = np.empty(shape_orthogonal, dtype=object)
 
     for index in np.ndindex(*shape_orthogonal):
 
         indices_input, indices_output, values = weights_array[index]
-        kernel_index = kernel[index]
 
         if device:
-            key = kernel_index.__array_interface__["data"][0]
-            if key not in kernels_device:
-                kernels_device[key] = cuda.to_device(np.ascontiguousarray(kernel_index))
             result[index] = convolve_weights_cuda(
                 indices_input=indices_input,
                 indices_output=indices_output,
                 values=values,
-                kernel=kernels_device[key],
+                kernel=kernel_device[kernel_row[index]],
                 shape_grid=shape_grid_resampled,
                 shape_output=shape_resampled,
                 shape_kernel=shape_kernel,
@@ -409,7 +407,7 @@ def convolve_weights(
             indices_input=indices_input,
             indices_output=indices_output,
             values=np.asarray(values),
-            kernel=kernel_index,
+            kernel=kernel[index],
             shape_grid=shape_grid_resampled,
             shape_output=shape_resampled,
             shape_kernel=shape_kernel,

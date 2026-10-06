@@ -270,15 +270,20 @@ def test_broadcast() -> None:
     assert np.array_equal(result, regridder(1))
 
 
+def _with_unit(weights: Weights, unit: Any) -> Weights:
+    """`weights` with `unit` attached to the values of every element."""
+    array, shape_input, shape_output = weights
+    result = np.empty(array.shape, dtype=object)
+    for index in np.ndindex(*array.shape):
+        indices_input, indices_output, values = array[index]
+        result[index] = (indices_input, indices_output, values * unit)
+    return result, shape_input, shape_output
+
+
 def test_units() -> None:
     """The units of the values and of the weights multiply."""
     weights, (_, _, axis_input, axis_output) = _weights_trailing()
-    array, shape_input, shape_output = weights
-    array_unit = np.empty(array.shape, dtype=object)
-    for index in np.ndindex(*array.shape):
-        indices_input, indices_output, values = array[index]
-        array_unit[index] = (indices_input, indices_output, values * u.s)
-    weights_unit = (array_unit, shape_input, shape_output)
+    weights_unit = _with_unit(weights, u.s)
 
     regridder = regridding.Regridder.from_weights(weights_unit, axis_input, axis_output)
     assert regridder.unit == u.s
@@ -403,3 +408,48 @@ def test_transpose_conservative_grids_invalid() -> None:
             tuple(c[..., :-1] for c in grid_input),
             grid_output,
         )
+
+
+@pytest.mark.parametrize(
+    argnames="unit",
+    argvalues=[u.percent, u.s],
+    ids=["percent", "seconds"],
+)
+def test_transpose_conservative_units(unit: Any) -> None:
+    """
+    A unitless unit with a scale, such as a percentage, scales the
+    conservative transpose by the number it stands for, and any other unit
+    is dropped, as `transpose_weights_conservative()` does.
+    """
+    weights, (grid_input, grid_output, axis_input, axis_output) = _weights_trailing()
+    weights = _with_unit(weights, unit)
+
+    regridder = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    result = regridder.transpose_conservative(grid_input, grid_output)
+
+    weights_transposed = regridding.transpose_weights_conservative(
+        weights,
+        grid_input,
+        grid_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
+    values = np.random.default_rng(9).normal(size=result.shape_input)
+    expected = regridding.regrid_from_weights(
+        *weights_transposed,
+        values_input=values,
+        axis_input=axis_output,
+        axis_output=axis_input,
+    )
+
+    assert result.unit is None
+    assert np.array_equal(result(values), expected)
+
+
+def test_transpose_conservative_orthogonal_invalid() -> None:
+    """Grids whose orthogonal axes do not fit the weights raise."""
+    weights, (grid_input, grid_output, axis_input, axis_output) = _weights_trailing()
+    regridder = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    grid_input = tuple(np.concatenate([c, c[:, :1]], axis=1) for c in grid_input)
+    with pytest.raises(ValueError, match="do not fit"):
+        regridder.transpose_conservative(grid_input, grid_output)

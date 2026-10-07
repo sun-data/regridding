@@ -117,3 +117,72 @@ def test_fill_gauss_seidel_all_missing() -> None:
     assert np.all(np.isfinite(result))
     assert np.all(result[0] == 0)
     assert np.allclose(result[~where], a[~where])
+
+
+def test_fill_gauss_seidel_nan_neighbors():
+    """
+    NaN elements which are not being filled are left out as neighbors,
+    and are left as NaN.
+    """
+
+    y = np.linspace(-1, 1, num=24)
+    a = np.broadcast_to(y[:, np.newaxis], (24, 20)).copy()
+
+    # The unknown elements, left of the elements being filled
+    a[:, :5] = np.nan
+
+    where = np.zeros(a.shape, dtype=bool)
+    where[8:16, 5:10] = True
+
+    result = regridding.fill(a, where=where, num_iterations=1000)
+
+    assert np.all(np.isnan(result[:, :5]))
+    assert np.all(np.isfinite(result[:, 5:]))
+
+    # `a` is harmonic, and has zero gradient across the unknown elements,
+    # so the relaxation recovers it exactly
+    assert np.allclose(result[:, 5:], a[:, 5:], atol=1e-6)
+
+
+def test_fill_gauss_seidel_edges():
+    """The edges of the array are not periodic."""
+
+    x = np.linspace(-1, 1, num=20)
+    a = np.broadcast_to(x, (12, 20)).copy()
+
+    where = np.zeros(a.shape, dtype=bool)
+    where[:, :5] = True
+
+    result = regridding.fill(a, where=where, num_iterations=1000)
+
+    # The filled elements are only connected to the first valid column,
+    # so they relax to its value rather than toward the far edge of the array.
+    assert np.allclose(result[:, :5], a[:, 5:6], atol=1e-6)
+
+
+def test_fill_gauss_seidel_isotropic():
+    """Neighbors along each axis are weighted equally, whatever the shape."""
+
+    a = np.random.uniform(0, 1, size=(5, 9))
+
+    where = np.zeros(a.shape, dtype=bool)
+    where[2, 4] = True
+
+    result = regridding.fill(a, where=where, num_iterations=1)
+
+    mean = (a[1, 4] + a[3, 4] + a[2, 3] + a[2, 5]) / 4
+    assert np.isclose(result[2, 4], mean)
+
+
+def test_fill_gauss_seidel_no_valid_neighbors():
+    """An element with no valid neighbors is left at the guess."""
+
+    a = np.full((3, 3), np.nan)
+
+    where = np.zeros(a.shape, dtype=bool)
+    where[1, 1] = True
+
+    result = regridding.fill(a, where=where, guess=0.5, num_iterations=11)
+
+    assert result[1, 1] == 0.5
+    assert np.all(np.isnan(result[~where]))

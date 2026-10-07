@@ -17,14 +17,18 @@ def fill_gauss_seidel(
     num_iterations: int = 100,
 ) -> np.ndarray:
 
-    a = a.copy()
-
     a, where = np.broadcast_arrays(a, where, subok=True)
+
+    a = a.copy()
 
     axis = regridding._util._normalize_axis(axis=axis, ndim=a.ndim)
 
     if guess is None:
         guess = _guess_median(a=a, where=where, axis=axis)
+
+    # NaN elements which are not being filled are unknown,
+    # so they are not used as neighbors of the elements being filled.
+    valid = where | ~np.isnan(a)
 
     a[where] = np.broadcast_to(guess, a.shape)[where]
 
@@ -35,16 +39,19 @@ def fill_gauss_seidel(
 
     a = np.moveaxis(a, axis, axis_numba)
     where = np.moveaxis(where, axis, axis_numba)
+    valid = np.moveaxis(valid, axis, axis_numba)
 
     shape_moved = a.shape
 
     a = a.reshape(-1, *shape_numba)
     where = where.reshape(-1, *shape_numba)
+    valid = valid.reshape(-1, *shape_numba)
 
     if len(axis) == 2:
         result = _fill_gauss_seidel_2d(
             a=a,
             where=where,
+            valid=valid,
             num_iterations=num_iterations,
         )
     else:  # pragma: nocover
@@ -84,6 +91,7 @@ def _guess_median(
 def _fill_gauss_seidel_2d(
     a: np.ndarray,
     where: np.ndarray,
+    valid: np.ndarray,
     num_iterations: int,
 ) -> np.ndarray:
 
@@ -95,6 +103,7 @@ def _fill_gauss_seidel_2d(
                 _iteration_gauss_seidel_2d(
                     a=a,
                     where=where,
+                    valid=valid,
                     t=t,
                     num_x=num_x,
                     num_y=num_y,
@@ -108,32 +117,39 @@ def _fill_gauss_seidel_2d(
 def _iteration_gauss_seidel_2d(
     a: np.ndarray,
     where: np.ndarray,
+    valid: np.ndarray,
     t: int,
     num_x: int,
     num_y: int,
     is_odd: bool,
 ) -> None:
+    """
+    One half of a red-black Gauss-Seidel iteration.
 
-    xmin, xmax = -1, 1
-    ymin, ymax = -1, 1
-
-    dx = (xmax - xmin) / (num_x - 1)
-    dy = (ymax - ymin) / (num_y - 1)
-
-    dxxinv = 1 / (dx * dx)
-    dyyinv = 1 / (dy * dy)
-
-    dcent = 1 / (2 * (dxxinv + dyyinv))
+    Each element being filled is replaced by the mean of its valid nearest
+    neighbors.
+    The elements are assumed to be equally spaced along both axes,
+    and neighbors which are outside the array or not valid are left out,
+    which is a zero-gradient (Neumann) boundary condition.
+    """
 
     for j in range(num_y):
         for i in range(num_x):
             if (i + j) & 1 == is_odd:
                 if where[t, j, i]:
-                    i9 = (i - 1) % num_x
-                    i1 = (i + 1) % num_x
-                    j9 = (j - 1) % num_y
-                    j1 = (j + 1) % num_y
-
-                    xterm = dxxinv * (a[t, j, i9] + a[t, j, i1])
-                    yterm = dyyinv * (a[t, j9, i] + a[t, j1, i])
-                    a[t, j, i] = (xterm + yterm) * dcent
+                    total = 0.0
+                    num = 0
+                    if i > 0 and valid[t, j, i - 1]:
+                        total += a[t, j, i - 1]
+                        num += 1
+                    if i < num_x - 1 and valid[t, j, i + 1]:
+                        total += a[t, j, i + 1]
+                        num += 1
+                    if j > 0 and valid[t, j - 1, i]:
+                        total += a[t, j - 1, i]
+                        num += 1
+                    if j < num_y - 1 and valid[t, j + 1, i]:
+                        total += a[t, j + 1, i]
+                        num += 1
+                    if num > 0:
+                        a[t, j, i] = total / num

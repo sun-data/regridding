@@ -31,6 +31,12 @@ def fill(
         The interpolation method to use.
         The only option is "gauss_seidel", which uses the Gauss-Seidel relaxation
         technique to interpolate the valid data points.
+        Each missing element is relaxed toward the mean of its nearest neighbors
+        along `axis`, which are assumed to be equally spaced.
+        Neighbors outside the array, and NaN elements which are not in `where`,
+        are left out, so the filled elements have zero gradient across those
+        boundaries.
+        NaN elements which are not in `where` are left as NaN.
     kwargs
         Additional method-specific keyword arguments.
         For the Gauss-Seidel method, the valid keyword arguments are:

@@ -17,24 +17,34 @@ def fill_gauss_seidel(
     num_iterations: int = 100,
 ) -> np.ndarray:
 
-    a, where = np.broadcast_arrays(a, where, subok=True)
+    shape = np.broadcast_shapes(a.shape, where.shape)
 
-    a = a.copy()
+    axis = regridding._util._normalize_axis(axis=axis, ndim=len(shape))
 
-    axis = regridding._util._normalize_axis(axis=axis, ndim=a.ndim)
+    if len(axis) != 2:
+        raise ValueError(
+            f"The number of interpolation axes, {len(axis)}, is not supported."
+        )
+
+    # `a` is copied after it is broadcast, so that each slice has its own
+    # memory to be filled, and `where` is a read-only view, which, unlike the
+    # views made by `np.broadcast_arrays`, does not warn when numba inspects it.
+    a = np.broadcast_to(a, shape, subok=True).copy()
+    where = np.broadcast_to(where, shape)
 
     if guess is None:
         guess = _guess_median(a=a, where=where, axis=axis)
 
-    # NaN elements which are not being filled are unknown,
-    # so they are not used as neighbors of the elements being filled.
-    valid = where | ~np.isnan(a)
-
     a[where] = np.broadcast_to(guess, a.shape)[where]
+
+    # Non-finite elements are unknown, so they are not used as neighbors of
+    # the elements being filled.
+    # This includes the elements being filled whose guess is not finite,
+    # which become known once they are given a value by their neighbors.
+    valid = np.isfinite(a)
 
     axis_numba = ~np.arange(len(axis))[::-1]
 
-    shape = a.shape
     shape_numba = tuple(shape[ax] for ax in axis)
 
     a = np.moveaxis(a, axis, axis_numba)
@@ -47,17 +57,12 @@ def fill_gauss_seidel(
     where = where.reshape(-1, *shape_numba)
     valid = valid.reshape(-1, *shape_numba)
 
-    if len(axis) == 2:
-        result = _fill_gauss_seidel_2d(
-            a=a,
-            where=where,
-            valid=valid,
-            num_iterations=num_iterations,
-        )
-    else:  # pragma: nocover
-        raise ValueError(
-            f"The number of interpolation axes, {len(axis)}," f"is not supported"
-        )
+    result = _fill_gauss_seidel_2d(
+        a=a,
+        where=where,
+        valid=valid,
+        num_iterations=num_iterations,
+    )
 
     result = result.reshape(shape_moved)
     result = np.moveaxis(result, axis_numba, axis)
@@ -71,13 +76,14 @@ def _guess_median(
     axis: tuple[int, ...],
 ) -> np.ndarray:
     """
-    The median of the valid elements of `a` along `axis`.
+    The median of the known elements of `a` along `axis`,
+    the finite elements which are not being filled.
 
     Used as the default starting point of the relaxation.
-    Slices with no valid elements fall back to zero.
+    Slices with no known elements fall back to zero.
     """
 
-    a = np.where(where, np.nan, a)
+    a = np.where(where | ~np.isfinite(a), np.nan, a)
 
     with warnings.catch_warnings():
         # slices with no valid elements are expected, and handled below
@@ -127,7 +133,7 @@ def _iteration_gauss_seidel_2d(
     One half of a red-black Gauss-Seidel iteration.
 
     Each element being filled is replaced by the mean of its valid nearest
-    neighbors.
+    neighbors, and is then valid itself.
     The elements are assumed to be equally spaced along both axes,
     and neighbors which are outside the array or not valid are left out,
     which is a zero-gradient (Neumann) boundary condition.
@@ -153,3 +159,4 @@ def _iteration_gauss_seidel_2d(
                         num += 1
                     if num > 0:
                         a[t, j, i] = total / num
+                        valid[t, j, i] = True

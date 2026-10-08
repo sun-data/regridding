@@ -27,24 +27,36 @@ def fill(
     axis
         The axes to use for interpolation.
         If :obj:`None` (the default), interpolate along all the axes of `a`.
+        The Gauss-Seidel method interpolates along exactly two axes.
     method
         The interpolation method to use.
         The only option is "gauss_seidel", which uses the Gauss-Seidel relaxation
         technique to interpolate the valid data points.
         Each missing element is relaxed toward the mean of its nearest neighbors
         along `axis`, which are assumed to be equally spaced.
-        Neighbors outside the array, and NaN elements which are not in `where`,
-        are left out, so the filled elements have zero gradient across those
-        boundaries.
-        NaN elements which are not in `where` are left as NaN.
+        Neighbors outside the array, and non-finite elements which are not in
+        `where`, are left out, so the filled elements have zero gradient across
+        those boundaries.
+        Non-finite elements which are not in `where` are left as they are.
+        Missing elements which are cut off from every valid element,
+        by the edges of the array and by non-finite elements which are not in
+        `where`, are left at the guess.
     kwargs
         Additional method-specific keyword arguments.
         For the Gauss-Seidel method, the valid keyword arguments are:
 
         - ``guess=None``, the starting value of the missing elements,
           a scalar or an array broadcastable against `a`.
-          If :obj:`None`, the median of the valid elements along `axis` is used.
+          If :obj:`None`, the median of the finite elements along `axis`
+          which are not in `where` is used.
+          Missing elements whose guess is not finite start from their
+          neighbors instead,
+          so ``guess=np.nan`` leaves the missing elements which are cut off
+          from every valid element as NaN.
         - ``num_iterations=100``, the number of red-black Gauss-Seidel iterations to perform.
+          Large regions of missing elements need more iterations to converge,
+          especially those which touch the edges of the array or the non-finite
+          elements which are not in `where`.
 
     Examples
     --------
@@ -111,5 +123,5 @@ def fill(
             axis=axis,
             **kwargs,
         )
-    else:  # pragma: nocover
-        raise ValueError("Unrecognized method '{method}'")
+    else:
+        raise ValueError(f"Unrecognized method '{method}'")

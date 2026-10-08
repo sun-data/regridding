@@ -258,35 +258,16 @@ def transpose_weights_conservative(
         ) from error
     weights_array = np.broadcast_to(weights_array, shape_orthogonal)
 
-    # the volumes of each grid are computed only along the orthogonal axes it
-    # varies along, so a grid shared by every element of the other is
-    # computed once
-    volume_input = _cells(
-        _cell_volume(_util._unbroadcast(coordinates_input, axis_input), axis_input),
-        axis_input,
+    factor_input, volume_output = _factors(
+        coordinates_input=coordinates_input,
+        coordinates_output=coordinates_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        shape_input=shape_input,
+        weights_input=weights_input,
     )
-    volume_output = _cells(
-        _cell_volume(_util._unbroadcast(coordinates_output, axis_output), axis_output),
-        axis_output,
-    )
-
-    # Divide by the input weight twice: once to remove the weight that the
-    # forward transform multiplied into the values, and again so the
-    # transpose *inverts* that weighting (retaining a factor of
-    # ``1 / weights_input``). This makes the round trip recover the original
-    # input values. Both apply to a whole input cell, so they are folded into
-    # its volume once rather than applied to every weight which touches it.
-    factor_input = volume_input
-    if weights_input is not None:
-        weights_input = np.broadcast_to(weights_input, shape_input, subok=True)
-        (weights_input,) = _util._unbroadcast((weights_input,), axis_input)
-        weights_input = _util._dimensionless(weights_input, strict=False)
-        # the factor is computed for every cell, but read only for those which
-        # a weight touches, so a cell which none does may have a weight of
-        # zero without anything being wrong.  A cell which one does still
-        # warns, when its weights are scaled by the factor.
-        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
-            factor_input = factor_input / np.square(_cells(weights_input, axis_input))
+    factor_input = _cells(factor_input, axis_input)
+    volume_output = _cells(volume_output, axis_output)
 
     if on_device(weights_array):
         result, outside = transpose_weights_conservative_cuda(
@@ -325,6 +306,71 @@ def transpose_weights_conservative(
         result[index] = (indices_output, indices_input, values)
 
     return result, shape_output, shape_input
+
+
+def _factors(
+    coordinates_input: tuple[np.ndarray, ...],
+    coordinates_output: tuple[np.ndarray, ...],
+    axis_input: tuple[int, ...],
+    axis_output: tuple[int, ...],
+    shape_input: tuple[int, ...],
+    weights_input: None | np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute what the conservative transpose multiplies and divides each
+    weight by: the volume of its input cell over the square of that cell's
+    weight, and the volume of its output cell.
+
+    Both are computed only along the orthogonal axes their grid varies
+    along, so a grid shared by every element of the other is computed once,
+    and are returned laid out as the grids are, with a length of one along
+    the other orthogonal axes.
+
+    Parameters
+    ----------
+    coordinates_input
+        The vertices of the input grid, as normalized by
+        :func:`regridding._util._normalize_input_output_coordinates`.
+    coordinates_output
+        The vertices of the output grid, normalized the same way.
+    axis_input
+        The resampled axes of the input grid, in ascending order.
+    axis_output
+        The resampled axes of the output grid, in ascending order.
+    shape_input
+        The shape of the cells of the input grid, which `weights_input` is
+        broadcast to.
+    weights_input
+        The weights which were applied to the input values by
+        :func:`regridding.weights`, if any.
+    """
+    factor_input = _cell_volume(
+        _util._unbroadcast(coordinates_input, axis_input),
+        axis_input,
+    )
+    volume_output = _cell_volume(
+        _util._unbroadcast(coordinates_output, axis_output),
+        axis_output,
+    )
+
+    # Divide by the input weight twice: once to remove the weight that the
+    # forward transform multiplied into the values, and again so the
+    # transpose *inverts* that weighting (retaining a factor of
+    # ``1 / weights_input``). This makes the round trip recover the original
+    # input values. Both apply to a whole input cell, so they are folded into
+    # its volume once rather than applied to every weight which touches it.
+    if weights_input is not None:
+        weights_input = np.broadcast_to(weights_input, shape_input, subok=True)
+        (weights_input,) = _util._unbroadcast((weights_input,), axis_input)
+        weights_input = _util._dimensionless(weights_input, strict=False)
+        # the factor is computed for every cell, but read only for those which
+        # a weight touches, so a cell which none does may have a weight of
+        # zero without anything being wrong.  A cell which one does still
+        # warns, when its weights are scaled by the factor.
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            factor_input = factor_input / np.square(weights_input)
+
+    return factor_input, volume_output
 
 
 def _check_grids(

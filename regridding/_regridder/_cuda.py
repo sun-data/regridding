@@ -20,7 +20,7 @@ __all__ = [
 ]
 
 _warp = 32
-"""The number of threads in a warp, which sums one row of the matrix."""
+"""The number of threads in a warp, the most which sum one row of the matrix."""
 
 _chunk = 2**26
 """
@@ -297,6 +297,30 @@ def scale(
     return result
 
 
+def _width(num_entries: int, num_rows: int) -> int:
+    """
+    The number of threads which sum each row of a matrix: the number of
+    entries in an average row, rounded down to a power of two, up to a warp.
+
+    Fewer threads waste less of a warp on short rows, and more read long
+    rows faster.  On an RTX 4090, this was the fastest width, or close to
+    it, for the operators of MART: two threads for a backprojection, with
+    about three entries a row, and a warp for the forward operators, with
+    tens to thousands.
+
+    Parameters
+    ----------
+    num_entries
+        The number of entries of the matrix.
+    num_rows
+        The number of rows of the matrix.
+    """
+    width = 1
+    while width < _warp and 2 * width * num_rows <= num_entries:
+        width *= 2
+    return width
+
+
 def matmul(
     indptr: Any,
     indices: Any,
@@ -308,9 +332,12 @@ def matmul(
     Multiply a matrix in CSR form by a dense matrix on the device, writing
     the product to `y`.
 
-    Each row is summed by one warp: each thread of it sums every 32nd entry,
-    in order, and the 32 sums are then added in a fixed tree, so the result
-    is the same every time.
+    Each row is summed by a group of threads, as many as :func:`_width`
+    gives the matrix: each thread of a group sums every so many entries of
+    the row, in order, and the sums of the group are then added in a fixed
+    tree.  The size of the groups depends only on the matrix, so the result
+    is the same every time, and the same for each column of `x` however
+    many columns there are.
 
     Parameters
     ----------
@@ -326,10 +353,11 @@ def matmul(
         The product, with a row for each row of the sparse one.
     """
     num_rows = y.shape[0]
-    blocks = (num_rows * _warp + _cuda.threads - 1) // _cuda.threads
+    width = _width(indices.shape[0], num_rows)
+    blocks = (num_rows * width + _cuda.threads - 1) // _cuda.threads
     if blocks:
         _matmul[blocks, _cuda.threads](  # type: ignore[index]
-            indptr, indices, data, x, y
+            indptr, indices, data, x, y, width
         )
 
 
@@ -343,31 +371,36 @@ def _matmul(
     data: Any,
     x: Any,
     y: Any,
+    width: int,
 ) -> None:  # pragma: nocover
-    """Sum one row of the product for each warp, see :func:`matmul`."""
+    """
+    Sum one row of the product for each group of `width` threads, see
+    :func:`matmul`.
+    """
     thread: int = cuda.grid(1)  # type: ignore[call-arg, assignment]
-    row = thread // _warp
-    lane = thread % _warp
+    row = thread // width
+    lane = thread % width
 
     num_rows, num_batch = y.shape
 
-    # every thread of a warp has the same row, so a warp leaves together and
-    # the shuffles below always have all 32 threads
-    if row >= num_rows:
-        return
-
-    start = indptr[row]
-    stop = indptr[row + 1]
+    # every thread of a warp takes part in the shuffles below, so threads
+    # past the last row stay, with nothing to sum, rather than leave
+    valid = row < num_rows
+    start = indptr[row] if valid else 0
+    stop = indptr[row + 1] if valid else 0
 
     for t in range(num_batch):
         total = 0.0
-        for k in range(start + lane, stop, _warp):
+        for k in range(start + lane, stop, width):
             total += data[k] * x[indices[k], t]
-        offset = _warp // 2
+        # the first thread of each group gathers the sums of the others; the
+        # shuffles of the other threads may reach into the next group, but
+        # what they gather is not used
+        offset = width // 2
         while offset > 0:
             total += cuda.shfl_down_sync(0xFFFFFFFF, total, offset)
             offset //= 2
-        if lane == 0:
+        if valid and lane == 0:
             y[row, t] = total
 
 

@@ -288,8 +288,9 @@ def test_fill_gauss_seidel_cut_off() -> None:
 
     median = np.nanmedian(np.where(where, np.nan, a))
 
+    # The elements average each other, which can round the median
     result = regridding.fill(a, where=where, num_iterations=11)
-    assert np.all(result[where] == median)
+    assert np.allclose(result[where], median)
 
     result = regridding.fill(a, where=where, guess=np.nan, num_iterations=11)
     assert np.all(np.isnan(result[where]))

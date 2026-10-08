@@ -80,6 +80,51 @@ def test_call_invalid() -> None:
 
 
 @requires_cuda
+@pytest.mark.parametrize(
+    argnames="per_row,width",
+    argvalues=[(1, 1), (3, 2), (6, 4), (12, 8), (24, 16), (100, 32)],
+)
+def test_matmul(per_row: int, width: int) -> None:
+    """
+    Rows summed by groups of each size give the product of the dense matrix,
+    to within the rounding of a sum taken in a different order, and exactly
+    the same numbers every time and for each column alone.
+    """
+    from regridding._regridder import _cuda as _cuda_regridder
+
+    rng = np.random.default_rng(12)
+    num_rows = 1001
+    num_columns = 500
+    lengths = rng.integers(0, 2 * per_row + 1, size=num_rows)
+    indptr = np.zeros(num_rows + 1, dtype=np.int64)
+    np.cumsum(lengths, out=indptr[1:])
+    indices = rng.integers(0, num_columns, size=indptr[~0]).astype(np.int32)
+    data = rng.normal(size=indptr[~0])
+    x = rng.normal(size=(num_columns, 3))
+
+    assert _cuda_regridder._width(data.size, num_rows) == width
+
+    dense = np.zeros((num_rows, num_columns))
+    np.add.at(dense, (np.repeat(np.arange(num_rows), lengths), indices), data)
+    expected = dense @ x
+
+    matrix = tuple(cuda.to_device(a) for a in (indptr, indices, data))
+
+    def product(x: np.ndarray) -> np.ndarray:
+        """The product of the matrix with `x` on the device."""
+        y = cuda.device_array((num_rows, x.shape[1]))
+        _cuda_regridder.matmul(*matrix, cuda.to_device(x), y)
+        return y.copy_to_host()
+
+    result = product(x)
+    assert np.allclose(result, expected, rtol=1e-12, atol=1e-12)
+    assert np.array_equal(product(x), result)
+    for t in range(x.shape[1]):
+        column = np.ascontiguousarray(x[:, t : t + 1])
+        assert np.array_equal(product(column), result[:, t : t + 1])
+
+
+@requires_cuda
 def test_from_device_weights() -> None:
     """
     Weights built on the device are brought back to the host with their

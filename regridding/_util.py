@@ -186,8 +186,10 @@ def _normalize_input_output_coordinates(
 
     if match_axes and len(axis_output) != len(axis_input):
         raise ValueError(
-            f"The number of axes in `axis_output`, {axis_output}, "
-            f"must match the number of axes in `axis_input`, {axis_input}"
+            f"The number of axes in `axis_output`, "
+            f"{tuple(int(ax) for ax in axis_output)}, "
+            f"must match the number of axes in `axis_input`, "
+            f"{tuple(int(ax) for ax in axis_input)}"
         )
 
     if len(coordinates_input) != len(axis_input):

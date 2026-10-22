@@ -215,7 +215,7 @@ def _inside_brute(
                     lambda xi: _multilinear(corners, xi) - point,
                     x0=np.full(num_axis, 0.5),
                     method="hybr",
-                    options=dict(xtol=1e-14),
+                    options={"xtol": 1e-14},
                 )
                 # judged by the residual, since asked for this tolerance the
                 # solver reports failure once it cannot improve on a

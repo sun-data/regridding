@@ -100,6 +100,17 @@ def test_volume_grid(
             ),
             (sys.maxsize, sys.maxsize),
         ),
+        # the last vertex, whose fractional index floors to a cell past the
+        # end of the grid
+        (
+            (4, 5),
+            np.meshgrid(
+                np.arange(5),
+                np.arange(6),
+                indexing="ij",
+            ),
+            (3, 4),
+        ),
     ],
 )
 @pytest.mark.parametrize(

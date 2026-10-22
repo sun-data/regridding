@@ -299,3 +299,92 @@ def test_weights_conservative_2d(
     )
 
     assert np.allclose(result, result_expected, rtol=1e-3)
+
+
+def _dense(
+    grid_input: tuple[np.ndarray, np.ndarray],
+    grid_output: tuple[np.ndarray, np.ndarray],
+) -> np.ndarray:
+    """
+    The conservative weights between two grids as a dense matrix, output
+    cell by input cell, checking that every index addresses a cell.
+    """
+    weights, shape_input, shape_output = regridding.weights(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        method="conservative",
+    )
+    indices_input, indices_output, values = weights[()]
+    num_input = int(np.prod(shape_input))
+    num_output = int(np.prod(shape_output))
+    assert np.all((0 <= indices_input) & (indices_input < num_input))
+    assert np.all((0 <= indices_output) & (indices_output < num_output))
+    result = np.zeros((num_output, num_input))
+    np.add.at(result, (indices_output, indices_input), values)
+    return result
+
+
+def _area(
+    x: np.ndarray,
+    y: np.ndarray,
+) -> np.ndarray:
+    """The area of each cell of a grid, by the shoelace formula."""
+    x0, x1, x2, x3 = x[:-1, :-1], x[1:, :-1], x[1:, 1:], x[:-1, 1:]
+    y0, y1, y2, y3 = y[:-1, :-1], y[1:, :-1], y[1:, 1:], y[:-1, 1:]
+    return 0.5 * np.abs(
+        (x0 * y1 - x1 * y0)
+        + (x1 * y2 - x2 * y1)
+        + (x2 * y3 - x3 * y2)
+        + (x3 * y0 - x0 * y3)
+    )
+
+
+def _lattice(
+    lower: float,
+    upper: float,
+    num: int,
+) -> np.ndarray:
+    """Points from `lower` to `upper`, not quite evenly spaced, so that the sweep is used."""
+    result = np.linspace(lower, upper, num)
+    return result + 0.002 * (upper - lower) * np.sin(np.arange(num))
+
+
+def test_scale_invariant() -> None:
+    # the weights are fractions of areas, so they do not depend on the scale
+    # of the grids.  The locator which starts each row of the sweep used to
+    # compare positions to an absolute tolerance, which put every row of
+    # grids this small outside the input grid, and left indices which
+    # addressed no cell.
+    u = np.linspace(-1, 1, 9)
+    grid_input = tuple(np.meshgrid(u + 0.013, u - 0.007, indexing="ij"))
+    v = _lattice(-1.2, 1.2, 11)
+    grid_output = tuple(np.meshgrid(v, v, indexing="ij"))
+    expected = _dense(grid_input, grid_output)
+    scale = 1e-12
+    result = _dense(
+        tuple(scale * c for c in grid_input),
+        tuple(scale * c for c in grid_output),
+    )
+    np.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
+
+
+def test_annulus() -> None:
+    # every output cell is inside the annulus, so the area it takes from the
+    # input cells adds up to its own.  The locator which starts each row of
+    # the sweep used to follow a cell of the annulus across its hole, and
+    # left indices which addressed no cell.
+    r, t = np.meshgrid(
+        np.linspace(1, 2, 6),
+        np.linspace(0, 0.9 * 2 * np.pi, 37),
+        indexing="ij",
+    )
+    grid_input = (r * np.cos(t), r * np.sin(t))
+    grid_output = tuple(
+        np.meshgrid(_lattice(1.2, 1.8, 7), np.linspace(0.1, 0.5, 5), indexing="ij")
+    )
+    weights = _dense(grid_input, grid_output)
+    np.testing.assert_allclose(
+        weights @ _area(*grid_input).ravel(),
+        _area(*grid_output).ravel(),
+        rtol=1e-6,
+    )

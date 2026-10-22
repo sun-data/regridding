@@ -121,3 +121,54 @@ def test_index_of_point(
     )
 
     assert result == result_expected
+
+
+def _annulus(
+    radius_inner: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """An annulus which wraps most of the way around."""
+    r, t = np.meshgrid(
+        np.linspace(radius_inner, 2, 6),
+        np.linspace(0, 0.9 * 2 * np.pi, 37),
+        indexing="ij",
+    )
+    return r * np.cos(t), r * np.sin(t)
+
+
+def _alternating() -> tuple[np.ndarray, np.ndarray]:
+    """A grid whose cells alternate in width, on which Newton's method cycles."""
+    widths = np.tile([0.4, 1.0], 8)
+    return np.meshgrid(
+        np.concatenate([[0], np.cumsum(widths)]),
+        np.arange(6.0),
+        indexing="ij",
+    )
+
+
+@pytest.mark.parametrize(
+    argnames="grid",
+    argvalues=[
+        # an absolute tolerance on the position once returned every point of
+        # a grid this small as outside it
+        tuple(1e-12 * c for c in np.meshgrid(np.arange(9.0), np.arange(7.0))),
+        tuple(1e9 * c for c in np.meshgrid(np.arange(9.0), np.arange(7.0))),
+        # Newton's method followed the continuation of a cell across the hole
+        # and returned many points of an annulus as outside it
+        _annulus(radius_inner=1),
+        _annulus(radius_inner=0.05),
+        _alternating(),
+    ],
+)
+def test_index_of_point_secant_matches_brute(
+    grid: tuple[np.ndarray, np.ndarray],
+) -> None:
+    x, y = grid
+    rng = np.random.default_rng(0)
+    margin_x = 0.1 * np.ptp(x)
+    margin_y = 0.1 * np.ptp(y)
+    px = rng.uniform(x.min() - margin_x, x.max() + margin_x, 50)
+    py = rng.uniform(y.min() - margin_y, y.max() + margin_y, 50)
+    result = [_grids.index_of_point_secant((a, b), grid) for a, b in zip(px, py)]
+    expected = [_grids.index_of_point_brute((a, b), grid) for a, b in zip(px, py)]
+    assert result == expected
+    assert any(r != (sys.maxsize, sys.maxsize) for r in result)

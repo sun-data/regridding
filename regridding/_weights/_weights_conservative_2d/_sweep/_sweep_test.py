@@ -304,6 +304,7 @@ def test_weights_conservative_2d(
 def _dense(
     grid_input: tuple[np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray],
+    perturb: None | bool = None,
 ) -> np.ndarray:
     """
     The conservative weights between two grids as a dense matrix, output
@@ -313,6 +314,7 @@ def _dense(
         coordinates_input=grid_input,
         coordinates_output=grid_output,
         method="conservative",
+        perturb=perturb,
     )
     indices_input, indices_output, values = weights[()]
     num_input = int(np.prod(shape_input))
@@ -383,6 +385,37 @@ def test_annulus() -> None:
         np.meshgrid(_lattice(1.2, 1.8, 7), np.linspace(0.1, 0.5, 5), indexing="ij")
     )
     weights = _dense(grid_input, grid_output)
+    np.testing.assert_allclose(
+        weights @ _area(*grid_input).ravel(),
+        _area(*grid_output).ravel(),
+        rtol=1e-6,
+    )
+
+
+def test_row_starts_on_face() -> None:
+    # Without a perturbation, the first row of the output grid along each
+    # axis starts exactly on the face between two input cells.  Rounding
+    # used to put that point in neither cell, and the sweep went on from an
+    # index which addressed no cell.  Every output cell is inside the input
+    # grid, so the area it takes from the input cells adds up to its own.
+    r, t = np.meshgrid(
+        np.linspace(0.2, 2, 4),
+        np.linspace(0, 0.75 * 2 * np.pi, 10),
+        indexing="ij",
+    )
+    grid_input = (r * np.cos(t), r * np.sin(t))
+    x, y = grid_input
+    # the middle of the face between cells (0, 4) and (0, 5)
+    px = (x[0, 5] + x[1, 5]) / 2
+    py = (y[0, 5] + y[1, 5]) / 2
+    # a lattice which starts there and leaves the face at an angle
+    angle = np.arctan2(py, px) + np.pi / 6
+    a, b = np.meshgrid(np.linspace(0, 0.4, 5), np.linspace(0, 0.3, 4), indexing="ij")
+    grid_output = (
+        px + a * np.cos(angle) - b * np.sin(angle),
+        py + a * np.sin(angle) + b * np.cos(angle),
+    )
+    weights = _dense(grid_input, grid_output, perturb=False)
     np.testing.assert_allclose(
         weights @ _area(*grid_input).ravel(),
         _area(*grid_output).ravel(),

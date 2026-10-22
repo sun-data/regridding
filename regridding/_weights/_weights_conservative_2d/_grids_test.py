@@ -2,6 +2,7 @@ from typing import Callable
 import pytest
 import sys
 import numpy as np
+import numba
 from . import _grids
 
 
@@ -183,3 +184,78 @@ def test_index_of_point_secant_matches_brute(
     expected = [_grids.index_of_point_brute((a, b), grid) for a, b in zip(px, py)]
     assert result == expected
     assert any(r != (sys.maxsize, sys.maxsize) for r in result)
+
+
+def _c_shape() -> tuple[np.ndarray, np.ndarray]:
+    """Three quarters of an annulus, in a few large cells."""
+    r, t = np.meshgrid(
+        np.linspace(0.2, 2, 4),
+        np.linspace(0, 0.75 * 2 * np.pi, 10),
+        indexing="ij",
+    )
+    return r * np.cos(t), r * np.sin(t)
+
+
+def _skewed() -> tuple[np.ndarray, np.ndarray]:
+    """A grid of skewed cells, whose lines are not straight."""
+    u, v = np.meshgrid(np.linspace(0, 1, 8), np.linspace(0, 1, 7), indexing="ij")
+    return (
+        u + 0.31 * v + 0.05 * np.sin(5 * v),
+        v + 0.17 * u + 0.05 * np.sin(4 * u),
+    )
+
+
+def _on_faces(
+    grid: tuple[np.ndarray, np.ndarray],
+) -> list[tuple[float, float]]:
+    """The interior vertices of a grid, and points along the faces between its cells."""
+    x, y = grid
+    num_i, num_j = x.shape
+    result = [
+        (x[i, j], y[i, j]) for i in range(1, num_i - 1) for j in range(1, num_j - 1)
+    ]
+    faces = [
+        ((i, j), (i, j + 1)) for i in range(1, num_i - 1) for j in range(num_j - 1)
+    ] + [((i, j), (i + 1, j)) for i in range(num_i - 1) for j in range(1, num_j - 1)]
+    fraction = (np.arange(8) + 0.5) / 8
+    for start, end in faces:
+        px = x[start] + fraction * (x[end] - x[start])
+        py = y[start] + fraction * (y[end] - y[start])
+        result += list(zip(px, py))
+    return result
+
+
+@numba.njit(fastmath=True)
+def _index_of_point_fastmath(
+    point: tuple[float, float],
+    grid: tuple[np.ndarray, np.ndarray],
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Both locators, inlined into code compiled with fastmath, as in the sweep."""
+    return (
+        _grids.index_of_point_secant(point, grid),
+        _grids.index_of_point_brute(point, grid),
+    )
+
+
+@pytest.mark.parametrize(
+    argnames="grid",
+    argvalues=[
+        _c_shape(),
+        _skewed(),
+    ],
+)
+def test_index_of_point_on_faces(
+    grid: tuple[np.ndarray, np.ndarray],
+) -> None:
+    # Every point on a face between two cells, or on a vertex between four,
+    # is in a cell, which the secant locator and brute force agree on, both
+    # on their own and inlined into code compiled with fastmath, as the
+    # sweep calls them.  Rounding used to leave some points on faces in no
+    # cell, and which ones depended on how the code was compiled.
+    points = _on_faces(grid)
+    expected = [_grids.index_of_point_brute(p, grid) for p in points]
+    result = [_grids.index_of_point_secant(p, grid) for p in points]
+    result_fastmath = [_index_of_point_fastmath(p, grid) for p in points]
+    assert result == expected
+    assert result_fastmath == [(e, e) for e in expected]
+    assert (sys.maxsize, sys.maxsize) not in expected

@@ -495,6 +495,76 @@ def test_point_is_inside_red_cross(
     assert result_reversed == result_expected
 
 
+def _grid_skewed() -> tuple[np.ndarray, np.ndarray]:
+    """A grid of skewed cells, whose lines are not straight."""
+    u, v = np.meshgrid(np.linspace(0, 1, 8), np.linspace(0, 1, 7), indexing="ij")
+    return (
+        u + 0.31 * v + 0.05 * np.sin(5 * v),
+        v + 0.17 * u + 0.05 * np.sin(4 * u),
+    )
+
+
+def _grid_c_shape() -> tuple[np.ndarray, np.ndarray]:
+    """Three quarters of an annulus, in a few large cells."""
+    r, t = np.meshgrid(
+        np.linspace(0.2, 2, 4),
+        np.linspace(0, 0.75 * 2 * np.pi, 10),
+        indexing="ij",
+    )
+    return r * np.cos(t), r * np.sin(t)
+
+
+def _cell(
+    grid: tuple[np.ndarray, np.ndarray],
+    index: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """The vertices of a cell of a grid, in order around it."""
+    x, y = grid
+    i, j = index
+    vertices = [i, i + 1, i + 1, i], [j, j, j + 1, j + 1]
+    return x[vertices], y[vertices]
+
+
+@pytest.mark.parametrize(
+    argnames="grid",
+    argvalues=[
+        _grid_skewed(),
+        _grid_c_shape(),
+    ],
+)
+def test_point_is_inside_polygon_shared_edge(
+    grid: tuple[np.ndarray, np.ndarray],
+) -> None:
+    # A point on an edge which two cells of a grid share is inside at least
+    # one of them.  Each cell used to round where the edge crosses the
+    # horizontal line through the point in its own way, which left some
+    # points in neither.
+    x, y = grid
+    num_i, num_j = x.shape
+    edges = [
+        ((i, j), (i, j + 1), (i - 1, j), (i, j))
+        for i in range(1, num_i - 1)
+        for j in range(num_j - 1)
+    ] + [
+        ((i, j), (i + 1, j), (i, j - 1), (i, j))
+        for i in range(num_i - 1)
+        for j in range(1, num_j - 1)
+    ]
+    fraction = (np.arange(16) + 0.5) / 16
+    result = []
+    for start, end, cell_a, cell_b in edges:
+        px = x[start] + fraction * (x[end] - x[start])
+        py = y[start] + fraction * (y[end] - y[start])
+        result += [
+            any(
+                regridding.geometry.point_is_inside_polygon(*point, *_cell(grid, c))
+                for c in (cell_a, cell_b)
+            )
+            for point in zip(px, py)
+        ]
+    assert result == [True] * len(result)
+
+
 _triangle_octant = (
     (1, 0, 0),
     (0, 1, 0),

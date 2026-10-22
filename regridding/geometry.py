@@ -747,12 +747,18 @@ def point_is_inside_polygon(
     vertices_y: np.ndarray,
 ) -> bool:
     """
-    Check if a given point is inside or on the boundary of a polygon specified
-    by its vertices.
+    Check if a given point is inside a polygon specified by its vertices.
 
     This function uses the extended winding number algorithm described by
     :footcite:t:`Kumar2018`, which addresses boundary issues with the "classic"
     winding number algorithm in :footcite:t:`Alciatore1995`.
+
+    A point on an edge which is not horizontal is inside the polygon on one
+    side of the edge only.  Where the edge crosses the horizontal line through
+    the point is computed from its endpoint below that line, whichever way
+    the polygon runs along it, so two polygons which share an edge, such as
+    neighboring cells of a grid, round the crossing the same way and never
+    both leave out a point on it.
 
     Parameters
     ----------
@@ -784,7 +790,12 @@ def point_is_inside_polygon(
 
         if y0 * y1 < 0:
 
-            r = x0 + y0 * (x1 - x0) / (y0 - y1)
+            if y0 < 0:
+                xa, ya, xb, yb = x0, y0, x1, y1
+            else:
+                xa, ya, xb, yb = x1, y1, x0, y0
+
+            r = xa + ya * (xb - xa) / (ya - yb)
 
             if r > 0:
                 if y0 < 0:

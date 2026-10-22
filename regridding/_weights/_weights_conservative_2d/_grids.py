@@ -290,17 +290,19 @@ def _index_of_point_local(
     j0: int,
 ) -> tuple[int, int]:
     """
-    Find the lowest-index cell containing ``point`` among the cells adjacent to
-    ``(i0, j0)``.
+    Find the lowest-index cell containing ``point``, searching the cells
+    adjacent to ``(i0, j0)`` first.
 
     The secant iteration locates the cell ``(i0, j0)`` whose fractional index the
     converged iterate floors into. A point on a shared cell face or vertex also
     lies in a lower-index neighbour; this ascending search over the (at most)
     nine surrounding cells returns the same cell as
     :func:`index_of_point_brute`, which is required for the conservative
-    resampling to conserve mass. Returns ``sys.maxsize, sys.maxsize`` if no
-    adjacent cell contains the point, which :func:`index_of_point_secant`
-    then settles with :func:`index_of_point_brute`.
+    resampling to conserve mass. If no adjacent cell contains the point, as
+    when the iteration converged outside the grid, onto the continuation of
+    an edge cell, this falls back to :func:`index_of_point_brute`, which
+    searches every cell and returns ``sys.maxsize, sys.maxsize`` if none
+    contains the point.
 
     Parameters
     ----------
@@ -347,7 +349,7 @@ def _index_of_point_local(
             ):
                 return ii, jj
 
-    return sys.maxsize, sys.maxsize
+    return index_of_point_brute(point, grid)
 
 
 @numba.njit(
@@ -372,9 +374,9 @@ def index_of_point_secant(
     cell across the hole to a fractional index outside the grid, and between
     neighboring cells of very different sizes it can cycle.  Whenever it
     stops anywhere but in a cell which contains the point, this falls back
-    to :func:`index_of_point_brute`, so it always returns the same cell as
-    that does, including ``sys.maxsize, sys.maxsize`` for a point outside
-    the grid.
+    to :func:`index_of_point_brute`, which scans every cell, so it always
+    returns the same cell as that does, including ``sys.maxsize, sys.maxsize``
+    for a point outside the grid.
 
     Parameters
     ----------
@@ -466,10 +468,6 @@ def index_of_point_secant(
         di = (+dy_dj * error_x - dx_dj * error_y) / det
         dj = (-dy_di * error_x + dx_di * error_y) / det
 
-        # a step which is not finite cannot be taken
-        if not (abs(di) + abs(dj) < math.inf):  # pragma: no cover
-            return index_of_point_brute(point, grid)
-
         i -= di
         j -= dj
 
@@ -477,13 +475,11 @@ def index_of_point_secant(
         # landing in a cell which contains the point.  The point is then on a
         # face of the cell the iterate floors into, which the same local
         # ascending search resolves, or the iteration has converged outside
-        # the grid, onto the continuation of an edge cell, which only the
-        # exhaustive search can settle.
+        # the grid, onto the continuation of an edge cell, where the local
+        # search falls back to the exhaustive one.
         if (abs(di) < 1e-10) and (abs(dj) < 1e-10):
-            index = _index_of_point_local(point, grid, math.floor(i), math.floor(j))
-            if index[0] != sys.maxsize:
-                return index
-            return index_of_point_brute(point, grid)
+            return _index_of_point_local(point, grid, math.floor(i), math.floor(j))
 
-    # the iteration did not converge; fall back to the exhaustive search (rare).
-    return index_of_point_brute(point, grid)  # pragma: no cover
+    # the iteration did not converge, as when it cycles between neighboring
+    # cells of very different widths; fall back to the exhaustive search.
+    return index_of_point_brute(point, grid)

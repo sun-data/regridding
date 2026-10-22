@@ -364,7 +364,7 @@ def _move(
             shift = np.floor(xi[m])
             low = -float(cell[m])
             high = float(shape[m] - 2 - cell[m])
-            if shift != shift:
+            if shift != shift:  # pragma: nocover
                 shift = 0.0
             elif shift < low:
                 shift = low
@@ -541,16 +541,18 @@ def newton(
                 break
             fraction = fraction / 2
 
-        if not accepted:
+        if not accepted:  # pragma: nocover
             # no point along the step is closer, which happens once the step
-            # is down to the rounding error of the position
+            # is down to the rounding error of the position, if the test of
+            # the distance above has not already stopped the iteration, or
+            # where the continuation of a cell stops short of the point
             return size <= tolerance * scale
 
         cell[:] = cell_trial
         xi[:] = xi_trial
         base = base_trial
 
-        if fraction * size <= tolerance * scale:
+        if fraction * size <= tolerance * scale:  # pragma: nocover
             return True
 
         target(vertices, base, point, goal)

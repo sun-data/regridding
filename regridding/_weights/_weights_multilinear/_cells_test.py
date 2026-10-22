@@ -202,6 +202,24 @@ class TestNewton:
         np.testing.assert_allclose(xi, 2.5, rtol=0, atol=1e-12)
 
 
+def test_newton_halves_steps() -> None:
+    # crossing from a cell one wide, past one a thousandth wide, into one a
+    # hundred wide: the full step from the first cell lands far beyond the
+    # point in the continuation of the last, and has to be halved
+    x, y = np.meshgrid(
+        np.array([0.0, 1.0, 1.001, 100.0]),
+        np.array([0.0, 1.0]),
+        indexing="ij",
+    )
+    vertices = np.stack([x.ravel(), y.ravel()])
+    shape = np.array(x.shape, dtype=np.int64)
+    point = np.array([50.0, 0.5])
+    converged, cell, xi = _newton(vertices, shape, point, (0, 0), clamp=True)
+    assert converged
+    np.testing.assert_array_equal(cell, [2, 0])
+    np.testing.assert_allclose(xi, [(50 - 1.001) / 98.999, 0.5], rtol=1e-14)
+
+
 @pytest.mark.parametrize("num_axis", [2, 3])
 @pytest.mark.parametrize("aspect", [1e4, 1e6])
 def test_newton_thin_cell(num_axis: int, aspect: float) -> None:

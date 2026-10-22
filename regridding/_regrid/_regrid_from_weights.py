@@ -162,11 +162,14 @@ def regrid_from_weights(
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
 
-    _regrid_from_weights(
-        weights=weights_numba,
-        values_input=values_input,
-        values_output=values_output,
-    )
+    # an empty typed list has no type for the kernel to be compiled for, and
+    # with no elements there is nothing to add to the zeros of the output
+    if flat.size:
+        _regrid_from_weights(
+            weights=weights_numba,
+            values_input=values_input,
+            values_output=values_output,
+        )
 
     values_output = values_output.reshape(shape_output_tmp)
 

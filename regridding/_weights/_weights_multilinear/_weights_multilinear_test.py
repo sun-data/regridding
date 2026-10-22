@@ -476,6 +476,23 @@ class TestOrthogonal:
         np.testing.assert_array_equal(result, expected)
 
 
+def test_no_elements() -> None:
+    # an orthogonal axis of length zero gives no elements, and nothing to do
+    x = np.linspace(-1, 1, 5)
+    grid = tuple(
+        np.broadcast_to(c, (0, 5, 5)) for c in np.meshgrid(x, x, indexing="ij")
+    )
+    points = (np.zeros((0, 7)), np.zeros((0, 7)))
+    result = _regrid(
+        grid,
+        np.zeros((0, 5, 5)),
+        points,
+        axis_input=(1, 2),
+        axis_output=(1,),
+    )
+    assert result.shape == (0, 7)
+
+
 class TestWeightsInput:
 
     @pytest.mark.parametrize("name", list(grids_curvilinear))

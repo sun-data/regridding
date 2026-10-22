@@ -36,8 +36,7 @@ def _index(
 
 
 def _locator(
-    vertices: np.ndarray,
-    shape: np.ndarray,
+    coordinates: tuple[np.ndarray, ...],
     num_chunk: int,
 ) -> Callable[[np.ndarray, bool], tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
@@ -53,15 +52,13 @@ def _locator(
 
     Parameters
     ----------
-    vertices
-        The coordinates of every vertex of the grid, of shape
-        ``(N, number of vertices)``, in row-major order.
-    shape
-        The number of vertices along each axis.
+    coordinates
+        The coordinates of the vertices of the grid, each an array with an
+        axis for each axis of the grid.
     num_chunk
         The number of pieces to divide the work into.
     """
-    rectilinear = _rectilinear.profiles(vertices, shape)
+    rectilinear = _rectilinear.profiles(coordinates)
 
     if rectilinear is not None:
         profile, start, coordinate, descending = rectilinear
@@ -77,6 +74,8 @@ def _locator(
 
         return locate_rectilinear
 
+    shape = np.array(coordinates[0].shape, dtype=np.int64)
+    vertices = np.stack([np.ravel(c) for c in coordinates]).astype(np.float64)
     lower, upper, start, shapes = _curvilinear.tree(vertices, shape, num_chunk)
 
     def locate_curvilinear(
@@ -180,12 +179,12 @@ def weights_multilinear(
 
     # The input grid is usually broadcast across the orthogonal axes, so
     # every element shares it and the work of preparing to search it is done
-    # once.  A zero stride guarantees that.
+    # once.  A zero stride, or a single element, guarantees that.
     axis_input_orthogonal = tuple(
         ax for ax in range(-len(shape_input_broadcasted), 0) if ax not in axis_input_
     )
     shared = all(
-        coordinate.strides[ax] == 0
+        coordinate.strides[ax] == 0 or coordinate.shape[ax] == 1
         for coordinate in coordinates_input
         for ax in axis_input_orthogonal
     )
@@ -201,10 +200,10 @@ def weights_multilinear(
         index_output = _index(index, axis_output_)
 
         if locate is None or not shared:
-            vertices = np.stack(
-                [np.ravel(c[index_input]) for c in coordinates_input],
-            ).astype(np.float64)
-            locate = _locator(vertices, shape, num_chunk)
+            locate = _locator(
+                tuple(c[index_input] for c in coordinates_input),
+                num_chunk,
+            )
 
         points = np.stack(
             [np.ravel(c[index_output]) for c in coordinates_output],

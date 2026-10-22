@@ -136,6 +136,14 @@ class TestInverse:
         atol = 1e-12 + 1e-15 * shift / scale
         np.testing.assert_allclose(result, expected, rtol=0, atol=atol)
 
+    @pytest.mark.filterwarnings("ignore:overflow encountered:RuntimeWarning")
+    def test_step_overflows(self, num_axis: int) -> None:
+        # a cell far smaller than its distance to the point
+        vertices, shape, offset = _cell(num_axis, scale=1e-300)
+        point = np.full(num_axis, 1e10)
+        xi = np.full(num_axis, 0.5)
+        assert not _cells.inverse(vertices, 0, offset, point, xi, _work(num_axis))
+
     def test_unreachable(self, num_axis: int) -> None:
         # a cell squashed flat along its first axis cannot reach a point off
         # the plane it lies in

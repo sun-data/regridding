@@ -252,6 +252,42 @@ def test_extrapolate_clamps_parallelograms() -> None:
     assert not np.any(inside)
 
 
+def test_extrapolate_unreachable() -> None:
+    # the first cell has no length, so nothing to the left of the grid can
+    # be extrapolated to, while the right of the grid can
+    grid = (np.array([0.0, 0.0, 1.0, 2.0]),)
+    points = np.array([[-1.0, 3.0]])
+    cell, xi, inside = _locate(grid, points, extrapolate=True)
+    assert not np.any(inside)
+    assert np.isnan(xi[0, 0])
+    np.testing.assert_array_equal(cell[1], [2])
+    np.testing.assert_allclose(xi[1], [2.0], rtol=1e-14)
+
+
+@pytest.mark.filterwarnings("ignore:overflow encountered:RuntimeWarning")
+def test_extrapolate_step_overflows() -> None:
+    # cells far smaller than the distance to the point
+    grid = (np.array([0.0, 1e-300, 3e-300]),)
+    cell, xi, inside = _locate(grid, np.array([[1e10]]), extrapolate=True)
+    assert not inside[0]
+    assert np.isnan(xi[0, 0])
+
+
+def test_degenerate_cell() -> None:
+    # the first row of cells has no height, so Newton's method cannot find
+    # a point on it in them, but the point is on the edge of the cell above
+    x, y = np.meshgrid(
+        np.array([0.0, 0.5, 1.0]),
+        np.array([1.0, 1.0, 2.0]),
+        indexing="ij",
+    )
+    points = np.array([[0.1], [1.0]])
+    cell, xi, inside = _locate((x, y), points, extrapolate=False)
+    assert inside[0]
+    np.testing.assert_array_equal(cell[0], [0, 1])
+    np.testing.assert_allclose(xi[0], [0.2, 0.0], rtol=0, atol=1e-15)
+
+
 def test_not_finite() -> None:
     grid = _distorted()
     points = np.array([[0.1, np.nan, np.inf], [np.nan, 0.1, 0.2]])

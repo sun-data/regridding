@@ -756,7 +756,7 @@ def _walk(
     xi: np.ndarray,
     xi_trial: np.ndarray,
     work: np.ndarray,
-) -> None:
+) -> bool:
     """
     Extrapolate the grid to a point outside of it.
 
@@ -765,6 +765,10 @@ def _walk(
     beyond it.  Each step is halved until it brings the position closer to
     the point.  The first corner of the cell it stops in is left in `cell`,
     and the local coordinates of the point in that cell in `xi`.
+
+    Returns whether it reached the point.  It does not if the continuation
+    of the grid folds over before reaching it, as it can beyond a strongly
+    curved edge, in which case it stops where the continuation came closest.
 
     Parameters
     ----------
@@ -810,9 +814,12 @@ def _walk(
     _cells.evaluate(vertices, base, offset, xi, x, jacobian)
     error = _cells.distance_squared(x, goal)
 
+    reached = False
+
     for _ in range(num_iteration_walk):
 
         if not error > 0:
+            reached = error == 0
             break
 
         matrix[:, :] = jacobian
@@ -844,11 +851,15 @@ def _walk(
             fraction = fraction / 2
 
         if not accepted:
+            # no point along the step is closer, which happens once the step
+            # is down to the rounding error of the position
+            reached = size <= _cells.tolerance * scale
             break
 
         s[:] = s_trial
 
         if fraction * size <= _cells.tolerance * scale:
+            reached = True
             break
 
         base = _clamp(s, shape, stride, cell, xi)
@@ -857,6 +868,8 @@ def _walk(
         error = _cells.distance_squared(x, goal)
 
     _clamp(s, shape, stride, cell, xi)
+
+    return reached
 
 
 @numba.njit(cache=True, parallel=True)
@@ -877,8 +890,11 @@ def locate(
     Returns ``(cell, xi, inside)``: the first corner of the cell along each
     axis, the local coordinates of the point in the cell, and whether the
     point is inside the grid.  A point outside the grid, or with a
-    coordinate which is NaN, is given the first cell and local coordinates
-    of NaN, unless `extrapolate` is set and its coordinates are finite.
+    coordinate which is not finite, is given the first cell and local
+    coordinates of NaN, unless `extrapolate` is set and its coordinates are
+    finite.  An extrapolated point which the continuation of the grid does
+    not reach keeps the cell it was extrapolated from, with local
+    coordinates of NaN.
 
     Parameters
     ----------
@@ -978,7 +994,7 @@ def locate(
                 )
                 for m in range(num_axis):
                     s[m] = cell_i[m] + 0.5
-                _walk(
+                reached = _walk(
                     vertices,
                     shape,
                     stride,
@@ -992,6 +1008,8 @@ def locate(
                     xi_trial,
                     work,
                 )
+                if not reached:
+                    xi_i[:] = np.nan
             else:
                 cell_i[:] = 0
                 xi_i[:] = np.nan

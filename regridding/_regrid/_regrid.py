@@ -47,12 +47,17 @@ def regrid(
         of the input grid.
         If :obj:`None`, all the axes of the output grid correspond to resampled
         axes in the input grid.
-        The number of axes should be equal to the number of
-        coordinates in the output grid.
+        For the ``conservative`` method, the number of axes should be equal
+        to the number of coordinates in the output grid.
+        The ``multilinear`` method interpolates at points rather than
+        resampling cells, so the points may be arranged along any number of
+        axes, or none at all for a single point.
     method
         The type of regridding to use.
         The ``multilinear`` method interprets `coordinates_input` as the
-        points where `values_input` is sampled.
+        points where `values_input` is sampled, and interpolates between the
+        corners of the cell which contains each output point, on a grid of
+        any number of dimensions, rectilinear or curvilinear.
         The ``conservative`` method interprets `coordinates_input` as the edges
         of the cells containing `values_input`, so `values_input` has one fewer
         element along each resampled axis, and the sum of the result matches the
@@ -69,6 +74,12 @@ def regrid(
         ``extrapolate`` (the default) extrapolates linearly from the nearest
         cell of the input grid, ``nan`` sets those points to
         :obj:`numpy.nan`, and ``raise`` raises a :class:`ValueError`.
+        On a grid which is not rectilinear, the nearest cell is the one along
+        the edge of the grid whose continuation reaches the point, and a
+        point which no continuation reaches, as can happen beyond a strongly
+        curved edge, is set to :obj:`numpy.nan`.
+        A point with a coordinate which is not finite is set to
+        :obj:`numpy.nan`, or raises, whichever `bounds` is.
     perturb
         Whether to perturb `coordinates_output` by a small value to avoid degenerate
         grids. This is helpful for some methods, like ``conservative``, which
@@ -138,6 +149,42 @@ def regrid(
         ax.stairs(values_input, x_input, label="input");
         ax.stairs(values_output, x_output, label="output");
         ax.legend();
+
+    Interpolate an array sampled on a distorted 2D grid at scattered points.
+
+    .. jupyter-execute::
+
+        # Define the vertices of the input grid
+        u, v = np.meshgrid(
+            np.linspace(-1, 1, num=21),
+            np.linspace(-1, 1, num=21),
+            indexing="ij",
+        )
+        x_input = u + 0.2 * v * v
+        y_input = v - 0.2 * u * u
+
+        # Sample a function on the vertices
+        values_input = np.cos(3 * x_input) * np.sin(2 * y_input)
+
+        # Define a set of random points, some of them outside the grid
+        rng = np.random.default_rng(0)
+        x_output = rng.uniform(-1.3, 1.3, size=500)
+        y_output = rng.uniform(-1.3, 1.3, size=500)
+
+        # Interpolate the function at the points
+        values_output = regridding.regrid(
+            coordinates_input=(x_input, y_input),
+            coordinates_output=(x_output, y_output),
+            values_input=values_input,
+            method="multilinear",
+            bounds="nan",
+        )
+
+        # Plot the input grid and the interpolated points
+        fig, ax = plt.subplots(constrained_layout=True);
+        ax.pcolormesh(x_input, y_input, values_input, shading="gouraud", vmin=-1, vmax=1);
+        ax.scatter(x_output, y_output, c=values_output, vmin=-1, vmax=1, edgecolors="black");
+        ax.set_aspect("equal");
 
     References
     ----------

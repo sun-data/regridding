@@ -11,6 +11,7 @@ on its own.
 
 import numpy as np
 import numba
+from regridding import _util
 
 __all__ = [
     "profiles",
@@ -19,8 +20,7 @@ __all__ = [
 
 
 def profiles(
-    vertices: np.ndarray,
-    shape: np.ndarray,
+    coordinates: tuple[np.ndarray, ...],
 ) -> None | tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     The coordinate along each axis of a grid, if the grid is rectilinear.
@@ -34,21 +34,25 @@ def profiles(
 
     Parameters
     ----------
-    vertices
-        The coordinates of every vertex of the grid, of shape
-        ``(N, number of vertices)``, in row-major order.
-    shape
-        The number of vertices along each axis.
+    coordinates
+        The coordinates of the vertices of the grid, each an array with an
+        axis for each axis of the grid.  An array which has been broadcast
+        along an axis, and so has a stride of zero along it, is known not to
+        vary along it without its values being looked at, which makes the
+        grids that :func:`numpy.broadcast_to` or ``numpy.meshgrid(...,
+        sparse=True)`` give quick to recognize.
     """
-    num_axis = shape.size
-    grid = vertices.reshape(num_axis, *shape)
+    num_axis = len(coordinates)
+    shape = np.array(coordinates[0].shape, dtype=np.int64)
 
+    grid = []
     coordinate = np.full(num_axis, -1, dtype=np.int64)
     for k in range(num_axis):
+        (c,) = _util._unbroadcast((coordinates[k],))
         varies = [
             m
             for m in range(num_axis)
-            if np.any(grid[k] != grid[k].take([0], axis=m))
+            if c.shape[m] > 1 and np.any(c != c.take([0], axis=m))
         ]
         if len(varies) != 1:
             return None
@@ -56,6 +60,7 @@ def profiles(
         if coordinate[m] >= 0:
             return None
         coordinate[m] = k
+        grid.append(c)
 
     profile = []
     descending = np.zeros(num_axis, dtype=np.bool_)
@@ -98,8 +103,8 @@ def locate(
     point is inside the grid.  A point outside the grid is given the cell at
     the edge of the grid along each axis it is outside along, with local
     coordinates outside of the unit interval, which extrapolate from that
-    cell.  A point with a coordinate which is NaN is outside, and its local
-    coordinates are NaN.
+    cell.  A point with a coordinate which is not finite is outside, and its
+    local coordinate along that axis is NaN.
 
     Parameters
     ----------
@@ -134,6 +139,8 @@ def locate(
             elif j > num - 2:
                 j = num - 2
             fraction = (value - values[j]) / (values[j + 1] - values[j])
+            if not np.isfinite(value):
+                fraction = np.nan
             if descending[m]:
                 j = num - 2 - j
                 fraction = 1 - fraction

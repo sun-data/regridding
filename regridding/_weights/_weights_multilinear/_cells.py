@@ -178,9 +178,7 @@ def evaluate(
                     else:
                         derivative *= 1 - xi[j]
             for k in range(num_axis):
-                jacobian[k, m] += derivative * (
-                    vertices[k, index] - vertices[k, base]
-                )
+                jacobian[k, m] += derivative * (vertices[k, index] - vertices[k, base])
 
 
 @numba.njit(cache=True)
@@ -419,7 +417,7 @@ def inverse(
         evaluate(vertices, base, offset, xi, x, jacobian)
         error = distance_squared(x, goal)
 
-    return False
+    return False  # pragma: nocover
 
 
 @numba.njit(cache=True, parallel=True)

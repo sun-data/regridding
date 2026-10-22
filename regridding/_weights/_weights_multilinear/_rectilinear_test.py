@@ -3,10 +3,9 @@ import numpy as np
 from . import _rectilinear
 
 
-def _flat(grid: tuple[np.ndarray, ...]) -> tuple[np.ndarray, np.ndarray]:
-    """The vertices of a grid, flattened, and its shape."""
-    vertices = np.stack([np.ravel(c) for c in np.broadcast_arrays(*grid)])
-    return vertices.astype(float), np.array(np.broadcast(*grid).shape)
+def _grid(grid: tuple[np.ndarray, ...]) -> tuple[np.ndarray, ...]:
+    """The coordinates of a grid, broadcast against each other."""
+    return tuple(np.broadcast_arrays(*grid))
 
 
 x = np.array([0.0, 0.5, 2.0, 2.25])
@@ -17,8 +16,8 @@ z = np.array([-2.0, -1.0, 0.0, 1.0, 5.0])
 class TestProfiles:
 
     def test_meshgrid(self) -> None:
-        vertices, shape = _flat(np.meshgrid(x, y, z, indexing="ij"))
-        result = _rectilinear.profiles(vertices, shape)
+        coordinates = _grid(np.meshgrid(x, y, z, indexing="ij"))
+        result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
         np.testing.assert_array_equal(profile, np.concatenate([x, y, z]))
@@ -26,20 +25,31 @@ class TestProfiles:
         np.testing.assert_array_equal(coordinate, [0, 1, 2])
         np.testing.assert_array_equal(descending, [False, False, False])
 
+    def test_broadcast(self) -> None:
+        # a grid broadcast from one dimension along each axis is recognized
+        # from its strides, without its values being compared
+        coordinates = _grid(np.meshgrid(x, y, indexing="ij", sparse=True))
+        assert all(0 in c.strides for c in coordinates)
+        result = _rectilinear.profiles(coordinates)
+        assert result is not None
+        profile, start, coordinate, descending = result
+        np.testing.assert_array_equal(profile, np.concatenate([x, y]))
+        np.testing.assert_array_equal(coordinate, [0, 1])
+
     def test_coordinates_out_of_order(self) -> None:
         # the first coordinate varies along the second axis, and the second
         # along the first
         yy, xx = np.meshgrid(y, x, indexing="ij")
-        vertices, shape = _flat((xx, yy))
-        result = _rectilinear.profiles(vertices, shape)
+        coordinates = _grid((xx, yy))
+        result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
         np.testing.assert_array_equal(profile, np.concatenate([y, x]))
         np.testing.assert_array_equal(coordinate, [1, 0])
 
     def test_descending(self) -> None:
-        vertices, shape = _flat(np.meshgrid(x, y[::-1], indexing="ij"))
-        result = _rectilinear.profiles(vertices, shape)
+        coordinates = _grid(np.meshgrid(x, y[::-1], indexing="ij"))
+        result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
         np.testing.assert_array_equal(profile, np.concatenate([x, y]))
@@ -70,8 +80,8 @@ class TestProfiles:
         ],
     )
     def test_not_rectilinear(self, grid: tuple[np.ndarray, ...]) -> None:
-        vertices, shape = _flat(grid)
-        assert _rectilinear.profiles(vertices, shape) is None
+        coordinates = _grid(grid)
+        assert _rectilinear.profiles(coordinates) is None
 
 
 class TestLocate:
@@ -81,8 +91,8 @@ class TestLocate:
         # the second axis may run backwards, which has to give the same
         # cells counted from the other end
         y_ = y[::-1] if reverse else y
-        vertices, shape = _flat(np.meshgrid(x, y_, indexing="ij"))
-        result = _rectilinear.profiles(vertices, shape)
+        coordinates = _grid(np.meshgrid(x, y_, indexing="ij"))
+        result = _rectilinear.profiles(coordinates)
         assert result is not None
         points = np.array(
             [

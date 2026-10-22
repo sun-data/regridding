@@ -142,10 +142,11 @@ def weights(
         If :obj:`None`, all the axes of the output grid correspond to resampled
         axes in the input grid.
         For the ``conservative`` method, the number of axes should be equal
-        to the number of coordinates in the output grid.
+        to the number of coordinates in the output grid, as it should be for
+        the ``multilinear`` method if `axis_output` is :obj:`None`.
         The ``multilinear`` method interpolates at points rather than
-        resampling cells, so the points may be arranged along any number of
-        axes, or none at all for a single point.
+        resampling cells, so if `axis_output` is given, the points may be
+        arranged along any number of axes, or none at all for a single point.
     weights_input
         Weights applied to the values of the input grid before resampling.
     method

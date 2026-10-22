@@ -48,10 +48,11 @@ def regrid(
         If :obj:`None`, all the axes of the output grid correspond to resampled
         axes in the input grid.
         For the ``conservative`` method, the number of axes should be equal
-        to the number of coordinates in the output grid.
+        to the number of coordinates in the output grid, as it should be for
+        the ``multilinear`` method if `axis_output` is :obj:`None`.
         The ``multilinear`` method interpolates at points rather than
-        resampling cells, so the points may be arranged along any number of
-        axes, or none at all for a single point.
+        resampling cells, so if `axis_output` is given, the points may be
+        arranged along any number of axes, or none at all for a single point.
     method
         The type of regridding to use.
         The ``multilinear`` method interprets `coordinates_input` as the
@@ -176,6 +177,7 @@ def regrid(
             coordinates_input=(x_input, y_input),
             coordinates_output=(x_output, y_output),
             values_input=values_input,
+            axis_output=0,
             method="multilinear",
             bounds="nan",
         )

@@ -50,13 +50,13 @@ __all__ = [
     "target",
     "distance_squared",
     "solve",
-    "inverse",
+    "newton",
     "weights",
 ]
 
-num_work = 6
+num_work = 7
 """
-The number of rows of a workspace for :func:`inverse`, beyond the
+The number of rows of a workspace for :func:`newton`, beyond the
 :math:`2N` rows of the two matrices.
 
 A workspace has the shape ``(2 * N + num_work, N)``.
@@ -64,11 +64,19 @@ A workspace has the shape ``(2 * N + num_work, N)``.
 
 tolerance = 1e-13
 """
-The size of the last step, in units of the local coordinates, below which
+The size of a step, in units of the local coordinates, below which
 Newton's method has converged.
 """
 
-num_iteration = 32
+rounding = 64 * np.finfo(np.float64).eps
+"""
+The rounding error of a position, for each corner of a cell, as a fraction
+of the largest of the terms it is the sum of.
+
+See :func:`newton`.
+"""
+
+num_iteration = 64
 """The most steps Newton's method takes before it gives up."""
 
 num_halving = 30
@@ -319,42 +327,165 @@ def distance_squared(
 
 
 @numba.njit(cache=True)
-def inverse(
+def _move(
+    shape: np.ndarray,
+    stride: np.ndarray,
+    clamp: bool,
+    cell: np.ndarray,
+    xi: np.ndarray,
+) -> int:
+    """
+    Move a point given by a cell and its local coordinates in that cell to
+    the cell its local coordinates fall in, if `clamp` is set.
+
+    The cell is clamped to the grid, so a point beyond the grid stays in the
+    cell along its edge, with local coordinates outside the unit cube.  The
+    local coordinates shift by whole cells, which is exact.  Returns the flat
+    index of the first corner of the cell, moved or not.
+
+    Parameters
+    ----------
+    shape
+        The number of vertices along each axis.
+    stride
+        The number of vertices between neighbors along each axis.
+    clamp
+        Whether to move the point to the cell its local coordinates fall in.
+    cell
+        The first corner of the cell, which is replaced by that of the cell
+        the point is moved to.
+    xi
+        The local coordinates of the point, which are replaced by those in
+        the cell it is moved to.
+    """
+    base = 0
+    for m in range(cell.shape[0]):
+        if clamp:
+            shift = np.floor(xi[m])
+            low = -float(cell[m])
+            high = float(shape[m] - 2 - cell[m])
+            if shift != shift:
+                shift = 0.0
+            elif shift < low:
+                shift = low
+            elif shift > high:
+                shift = high
+            cell[m] += int(shift)
+            xi[m] -= shift
+        base += cell[m] * stride[m]
+    return base
+
+
+@numba.njit(cache=True)
+def _floor(
     vertices: np.ndarray,
     base: int,
     offset: np.ndarray,
-    point: np.ndarray,
     xi: np.ndarray,
+    goal: np.ndarray,
+) -> float:
+    """
+    The square of the distance between the position of a point of a cell
+    and the point it should be at, below which the difference is no more
+    than rounding error.
+
+    Each coordinate of the position, measured from the first corner of the
+    cell, is a sum over the corners of their weights times their distances
+    from the first corner, and the point is measured from the first corner
+    too.  Each rounds to a multiple of :data:`rounding` of the largest of
+    its terms: the sum of the magnitudes of the weights times the extent of
+    the cell along that coordinate, and the distance of the point from the
+    first corner.
+
+    Parameters
+    ----------
+    vertices
+        The coordinates of every vertex of the grid.
+    base
+        The flat index of the first corner of the cell.
+    offset
+        The offset of each corner from the first.
+    xi
+        The local coordinates of the point.
+    goal
+        The point, measured from the first corner of the cell.
+    """
+    num_axis = xi.shape[0]
+    total = 1.0
+    for m in range(num_axis):
+        total *= abs(xi[m]) + abs(1 - xi[m])
+    factor = (1 << num_axis) * rounding
+    result = 0.0
+    for k in range(num_axis):
+        extent = 0.0
+        for b in range(offset.shape[0]):
+            extent = max(extent, abs(vertices[k, base + offset[b]] - vertices[k, base]))
+        error = factor * (total * extent + abs(goal[k]))
+        result += error * error
+    return result
+
+
+@numba.njit(cache=True)
+def newton(
+    vertices: np.ndarray,
+    shape: np.ndarray,
+    stride: np.ndarray,
+    offset: np.ndarray,
+    point: np.ndarray,
+    clamp: bool,
+    cell: np.ndarray,
+    xi: np.ndarray,
+    cell_trial: np.ndarray,
     work: np.ndarray,
 ) -> bool:
     """
-    Find the local coordinates of a point in a cell, which may be outside
-    the unit cube if the point is outside the cell.
+    Find the local coordinates of a point by Newton's method.
 
-    This uses Newton's method, starting from the value of `xi` it is given.
-    Each step is halved until it brings the cell's position closer to the
-    point, so that the method does not run away on a strongly curved cell.
-    It has converged once a step is shorter than :data:`tolerance`, which is
-    in units of the local coordinates and so does not depend on the units
-    or the size of the grid.
+    The iterate is a cell and local coordinates in it, starting from those
+    given.  Without `clamp`, it stays in its cell, whose continuation is
+    searched beyond it, so the local coordinates come out outside the unit
+    cube if the point is outside the cell.  With `clamp`, it moves after
+    every step to the cell its local coordinates fall in, clamped to the
+    grid, so it can cross the grid and continue past its edges, which is how
+    a point outside the grid is extrapolated.
 
-    Returns whether it converged.  If it did not, `xi` is left wherever the
-    method stopped.
+    Each step is halved until it brings the position closer to the point, so
+    that the method does not run away on a strongly curved cell.  It has
+    converged once a step is shorter than :data:`tolerance`, in units of the
+    local coordinates, or once the distance from the position to the point
+    is down to the rounding error of the position (see :func:`_floor`).  The
+    second is needed for a cell much longer than it is wide, if it is not
+    aligned with the axes: rounding along its length moves the local
+    coordinate across its width by much more than the first allows, and no
+    step then brings the position any closer.  Neither depends on the units,
+    the size, or the position of the grid.
+
+    Returns whether it converged.  The cell and local coordinates are left
+    wherever it stopped.
 
     Parameters
     ----------
     vertices
         The coordinates of every vertex of the grid, of shape
         ``(N, number of vertices)``.
-    base
-        The flat index of the first corner of the cell.
+    shape
+        The number of vertices along each axis.
+    stride
+        The number of vertices between neighbors along each axis.
     offset
         The offset of each corner from the first, from :func:`offsets`.
     point
         The point to find.
+    clamp
+        Whether the iterate moves between cells.
+    cell
+        The first corner of the cell to start in, which is replaced by that
+        of the cell it stops in.
     xi
-        The local coordinates to start from, which are replaced by the
-        result.
+        The local coordinates to start from, which are replaced by those
+        where it stops.
+    cell_trial
+        Room for the first corner of the cell of a trial step.
     work
         A workspace of shape ``(2 * N + num_work, N)``.
     """
@@ -365,17 +496,19 @@ def inverse(
     x = work[2 * num_axis]
     residual = work[2 * num_axis + 1]
     step = work[2 * num_axis + 2]
-    trial = work[2 * num_axis + 3]
-    x_trial = work[2 * num_axis + 4]
-    goal = work[2 * num_axis + 5]
+    goal = work[2 * num_axis + 3]
+    xi_trial = work[2 * num_axis + 4]
+    x_trial = work[2 * num_axis + 5]
+    goal_trial = work[2 * num_axis + 6]
 
+    base = _move(shape, stride, clamp, cell, xi)
     target(vertices, base, point, goal)
     evaluate(vertices, base, offset, xi, x, jacobian)
     error = distance_squared(x, goal)
 
     for _ in range(num_iteration):
 
-        if error == 0:
+        if error <= _floor(vertices, base, offset, xi, goal):
             return True
 
         matrix[:, :] = jacobian
@@ -394,11 +527,15 @@ def inverse(
 
         fraction = 1.0
         accepted = False
+        base_trial = base
         for _ in range(num_halving):
+            cell_trial[:] = cell
             for m in range(num_axis):
-                trial[m] = xi[m] - fraction * step[m]
-            position(vertices, base, offset, trial, x_trial)
-            error_trial = distance_squared(x_trial, goal)
+                xi_trial[m] = xi[m] - fraction * step[m]
+            base_trial = _move(shape, stride, clamp, cell_trial, xi_trial)
+            target(vertices, base_trial, point, goal_trial)
+            position(vertices, base_trial, offset, xi_trial, x_trial)
+            error_trial = distance_squared(x_trial, goal_trial)
             if error_trial < error:
                 accepted = True
                 break
@@ -409,11 +546,14 @@ def inverse(
             # is down to the rounding error of the position
             return size <= tolerance * scale
 
-        xi[:] = trial
+        cell[:] = cell_trial
+        xi[:] = xi_trial
+        base = base_trial
 
         if fraction * size <= tolerance * scale:
             return True
 
+        target(vertices, base, point, goal)
         evaluate(vertices, base, offset, xi, x, jacobian)
         error = distance_squared(x, goal)
 
@@ -430,59 +570,66 @@ def weights(
     nan_outside: bool,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    The weight of each corner of the cell containing each point.
+    The weight of each corner of the cell containing each point, for each
+    of a number of elements.
 
-    Returns the flat arrays ``(indices_input, indices_output, values)``,
-    with :math:`2^N` consecutive weights for each point, one for each corner
-    of its cell, in the order the corners are numbered.
+    Returns the arrays ``(indices_input, indices_output, values)``, each with
+    a row for each element, which holds :math:`2^N` consecutive weights for
+    each point, one for each corner of its cell, in the order the corners
+    are numbered.
 
     Parameters
     ----------
     cell
         The first corner of the cell of each point, of shape
-        ``(number of points, N)``.
+        ``(number of elements, number of points, N)``.
     xi
         The local coordinates of each point in its cell, of the same shape.
     inside
-        Whether each point is inside the grid.
+        Whether each point is inside the grid, of shape
+        ``(number of elements, number of points)``.
     shape
         The number of vertices along each axis.
     weights_input
-        Weights to multiply the weight of each vertex by, as a flat array, or
-        an empty array for none.
+        Weights to multiply the weight of each vertex by, flattened, of shape
+        ``(number of elements, number of vertices)``, or with a single row
+        which every element shares, or with none for no weights.
     nan_outside
         Whether to set the weights of a point outside the grid to NaN rather
         than extrapolate.
     """
-    num_point, num_axis = cell.shape
+    num_element, num_point, num_axis = cell.shape
     stride = strides(shape)
     offset = offsets(shape)
     num_corner = offset.shape[0]
-    weighted = weights_input.shape[0] > 0
+    num_weighted = weights_input.shape[0]
 
-    indices_input = np.empty(num_point * num_corner, dtype=np.int64)
-    indices_output = np.empty(num_point * num_corner, dtype=np.int64)
-    values = np.empty(num_point * num_corner, dtype=np.float64)
+    size = num_point * num_corner
+    indices_input = np.empty((num_element, size), dtype=np.int64)
+    indices_output = np.empty((num_element, size), dtype=np.int64)
+    values = np.empty((num_element, size), dtype=np.float64)
 
-    for i in numba.prange(num_point):
+    for t in numba.prange(num_element * num_point):
+        e = t // num_point
+        i = t - e * num_point
         base = 0
         for m in range(num_axis):
-            base += cell[i, m] * stride[m]
+            base += cell[e, i, m] * stride[m]
         for b in range(num_corner):
             index = base + offset[b]
             weight = 1.0
             for m in range(num_axis):
                 if (b >> m) & 1:
-                    weight *= xi[i, m]
+                    weight *= xi[e, i, m]
                 else:
-                    weight *= 1 - xi[i, m]
-            if weighted:
-                weight *= weights_input[index]
-            if nan_outside and not inside[i]:
+                    weight *= 1 - xi[e, i, m]
+            if num_weighted > 0:
+                weight *= weights_input[min(e, num_weighted - 1), index]
+            if nan_outside and not inside[e, i]:
                 weight = np.nan
             w = i * num_corner + b
-            indices_input[w] = index
-            indices_output[w] = i
-            values[w] = weight
+            indices_input[e, w] = index
+            indices_output[e, w] = i
+            values[e, w] = weight
 
     return indices_input, indices_output, values

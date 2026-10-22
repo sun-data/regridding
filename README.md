@@ -89,8 +89,8 @@ repeated independently for every position along them.
 This is how a stack of images, or a spectrum for each pixel, is resampled in one
 call.
 The `multilinear` method interpolates at points rather than resampling cells,
-so `axis_output` may select any number of axes, such as a single axis of
-scattered points to interpolate a 2D grid at.
+so an explicit `axis_output` may select any number of axes, such as a single
+axis of scattered points to interpolate a 2D grid at.
 
 **Degenerate grids are perturbed.**
 Where a vertex of the output grid lands exactly on an edge of the input grid,

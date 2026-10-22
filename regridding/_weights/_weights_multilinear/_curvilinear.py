@@ -50,11 +50,6 @@ numerically leaves them off it by a rounding error.  Without some margin,
 such a point could be outside every cell.
 """
 
-num_iteration_walk = 64
-"""
-The most steps of Newton's method across the whole grid when extrapolating.
-"""
-
 
 @numba.njit(cache=True)
 def _unravel(
@@ -325,10 +320,13 @@ def _in_box(
 @numba.njit(cache=True)
 def _in_cell(
     vertices: np.ndarray,
-    base: int,
+    shape: np.ndarray,
+    stride: np.ndarray,
     offset: np.ndarray,
     point: np.ndarray,
+    cell: np.ndarray,
     xi: np.ndarray,
+    cell_trial: np.ndarray,
     work: np.ndarray,
 ) -> bool:
     """
@@ -338,18 +336,28 @@ def _in_cell(
     ----------
     vertices
         The coordinates of every vertex of the grid.
-    base
-        The flat index of the first corner of the cell.
+    shape
+        The number of vertices along each axis.
+    stride
+        The number of vertices between neighbors along each axis.
     offset
         The offset of each corner from the first.
     point
         The point.
+    cell
+        The first corner of the cell.
     xi
         Where to put the local coordinates of the point.
+    cell_trial
+        Room for :func:`~._cells.newton`.
     work
-        A workspace for :func:`~._cells.inverse`.
+        A workspace for :func:`~._cells.newton`.
     """
     num_axis = point.shape[0]
+
+    base = 0
+    for m in range(num_axis):
+        base += cell[m] * stride[m]
 
     for c in range(num_axis):
         low = np.inf
@@ -364,7 +372,9 @@ def _in_cell(
             return False
 
     xi[:] = 0.5
-    if not _cells.inverse(vertices, base, offset, point, xi, work):
+    if not _cells.newton(
+        vertices, shape, stride, offset, point, False, cell, xi, cell_trial, work
+    ):
         return False
 
     for m in range(num_axis):
@@ -377,6 +387,7 @@ def _in_cell(
 @numba.njit(cache=True)
 def _search(
     vertices: np.ndarray,
+    shape: np.ndarray,
     stride: np.ndarray,
     offset: np.ndarray,
     lower: np.ndarray,
@@ -389,6 +400,7 @@ def _search(
     block: np.ndarray,
     cell: np.ndarray,
     xi: np.ndarray,
+    cell_trial: np.ndarray,
     work: np.ndarray,
 ) -> bool:
     """
@@ -403,6 +415,8 @@ def _search(
     ----------
     vertices
         The coordinates of every vertex of the grid.
+    shape
+        The number of vertices along each axis.
     stride
         The number of vertices between neighbors along each axis.
     offset
@@ -427,8 +441,10 @@ def _search(
         Where to put the first corner of the cell.
     xi
         Where to put the local coordinates of the point.
+    cell_trial
+        Room for :func:`~._cells.newton`.
     work
-        A workspace for :func:`~._cells.inverse`.
+        A workspace for :func:`~._cells.newton`.
     """
     num_axis = point.shape[0]
     num_level = shapes.shape[0] - 1
@@ -436,7 +452,9 @@ def _search(
 
     if num_level == 0:
         cell[:] = 0
-        return _in_cell(vertices, 0, offset, point, xi, work)
+        return _in_cell(
+            vertices, shape, stride, offset, point, cell, xi, cell_trial, work
+        )
 
     if not _in_box(lower, upper, int(start[num_level]), point):
         return False
@@ -455,13 +473,13 @@ def _search(
             # the children are cells, which are tried in order
             for b in range(num_corner):
                 valid = True
-                base = 0
                 for m in range(num_axis):
                     cell[m] = 2 * block[m] + ((b >> m) & 1)
                     if cell[m] >= below[m]:
                         valid = False
-                    base += cell[m] * stride[m]
-                if valid and _in_cell(vertices, base, offset, point, xi, work):
+                if valid and _in_cell(
+                    vertices, shape, stride, offset, point, cell, xi, cell_trial, work
+                ):
                     return True
 
         else:
@@ -701,177 +719,6 @@ def _nearest(
                 size += 1
 
 
-@numba.njit(cache=True)
-def _clamp(
-    s: np.ndarray,
-    shape: np.ndarray,
-    stride: np.ndarray,
-    cell: np.ndarray,
-    xi: np.ndarray,
-) -> int:
-    """
-    Split a fractional index into the cell nearest to it and its local
-    coordinates in that cell, which are outside the unit cube if the index
-    is outside the grid.
-
-    Returns the flat index of the first corner of the cell.
-
-    Parameters
-    ----------
-    s
-        The fractional index of a point, along each axis of the vertices.
-    shape
-        The number of vertices along each axis.
-    stride
-        The number of vertices between neighbors along each axis.
-    cell
-        Where to put the first corner of the cell.
-    xi
-        Where to put the local coordinates.
-    """
-    base = 0
-    for m in range(s.shape[0]):
-        value = s[m]
-        if not value >= 0:
-            value = 0.0
-        elif value > shape[m] - 2:
-            value = shape[m] - 2.0
-        cell[m] = int(np.floor(value))
-        xi[m] = s[m] - cell[m]
-        base += cell[m] * stride[m]
-    return base
-
-
-@numba.njit(cache=True)
-def _walk(
-    vertices: np.ndarray,
-    shape: np.ndarray,
-    stride: np.ndarray,
-    offset: np.ndarray,
-    point: np.ndarray,
-    s: np.ndarray,
-    s_trial: np.ndarray,
-    cell: np.ndarray,
-    cell_trial: np.ndarray,
-    xi: np.ndarray,
-    xi_trial: np.ndarray,
-    work: np.ndarray,
-) -> bool:
-    """
-    Extrapolate the grid to a point outside of it.
-
-    This runs Newton's method across the whole grid in index space, from the
-    fractional index in `s`, continuing the cells along the edges of the grid
-    beyond it.  Each step is halved until it brings the position closer to
-    the point.  The first corner of the cell it stops in is left in `cell`,
-    and the local coordinates of the point in that cell in `xi`.
-
-    Returns whether it reached the point.  It does not if the continuation
-    of the grid folds over before reaching it, as it can beyond a strongly
-    curved edge, in which case it stops where the continuation came closest.
-
-    Parameters
-    ----------
-    vertices
-        The coordinates of every vertex of the grid.
-    shape
-        The number of vertices along each axis.
-    stride
-        The number of vertices between neighbors along each axis.
-    offset
-        The offset of each corner of a cell from the first.
-    point
-        The point.
-    s
-        The fractional index to start from, which is replaced by that of the
-        point.
-    s_trial
-        Room for a trial fractional index.
-    cell
-        Where to put the first corner of the cell.
-    cell_trial
-        Room for the first corner of a trial cell.
-    xi
-        Where to put the local coordinates of the point in the cell.
-    xi_trial
-        Room for the local coordinates in a trial cell.
-    work
-        A workspace of the same shape as one for :func:`~._cells.inverse`.
-    """
-    num_axis = point.shape[0]
-
-    jacobian = work[:num_axis]
-    matrix = work[num_axis : 2 * num_axis]
-    x = work[2 * num_axis]
-    residual = work[2 * num_axis + 1]
-    step = work[2 * num_axis + 2]
-    x_trial = work[2 * num_axis + 3]
-    goal = work[2 * num_axis + 4]
-    goal_trial = work[2 * num_axis + 5]
-
-    base = _clamp(s, shape, stride, cell, xi)
-    _cells.target(vertices, base, point, goal)
-    _cells.evaluate(vertices, base, offset, xi, x, jacobian)
-    error = _cells.distance_squared(x, goal)
-
-    reached = False
-
-    for _ in range(num_iteration_walk):
-
-        if not error > 0:
-            reached = error == 0
-            break
-
-        matrix[:, :] = jacobian
-        for k in range(num_axis):
-            residual[k] = x[k] - goal[k]
-        if not _cells.solve(matrix, residual, step):
-            break
-
-        size = 0.0
-        scale = 1.0
-        for m in range(num_axis):
-            size = max(size, abs(step[m]))
-            scale = max(scale, abs(s[m]))
-        if not size < np.inf:
-            break
-
-        fraction = 1.0
-        accepted = False
-        for _ in range(_cells.num_halving):
-            for m in range(num_axis):
-                s_trial[m] = s[m] - fraction * step[m]
-            base = _clamp(s_trial, shape, stride, cell_trial, xi_trial)
-            _cells.target(vertices, base, point, goal_trial)
-            _cells.position(vertices, base, offset, xi_trial, x_trial)
-            error_trial = _cells.distance_squared(x_trial, goal_trial)
-            if error_trial < error:
-                accepted = True
-                break
-            fraction = fraction / 2
-
-        if not accepted:
-            # no point along the step is closer, which happens once the step
-            # is down to the rounding error of the position
-            reached = size <= _cells.tolerance * scale
-            break
-
-        s[:] = s_trial
-
-        if fraction * size <= _cells.tolerance * scale:
-            reached = True
-            break
-
-        base = _clamp(s, shape, stride, cell, xi)
-        _cells.target(vertices, base, point, goal)
-        _cells.evaluate(vertices, base, offset, xi, x, jacobian)
-        error = _cells.distance_squared(x, goal)
-
-    _clamp(s, shape, stride, cell, xi)
-
-    return reached
-
-
 @numba.njit(cache=True, parallel=True)
 def locate(
     vertices: np.ndarray,
@@ -939,9 +786,6 @@ def locate(
         cell_trial = np.empty(num_axis, dtype=np.int64)
         point = np.empty(num_axis, dtype=np.float64)
         xi_i = np.empty(num_axis, dtype=np.float64)
-        xi_trial = np.empty(num_axis, dtype=np.float64)
-        s = np.empty(num_axis, dtype=np.float64)
-        s_trial = np.empty(num_axis, dtype=np.float64)
         child_index = np.empty(num_corner, dtype=np.int64)
         child_distance = np.empty(num_corner, dtype=np.float64)
         work = np.empty((2 * num_axis + _cells.num_work, num_axis))
@@ -957,6 +801,7 @@ def locate(
             if finite:
                 found = _search(
                     vertices,
+                    shape,
                     stride,
                     offset,
                     lower,
@@ -969,6 +814,7 @@ def locate(
                     block,
                     cell_i,
                     xi_i,
+                    cell_trial,
                     work,
                 )
 
@@ -992,20 +838,20 @@ def locate(
                     cell_trial,
                     cell_i,
                 )
-                for m in range(num_axis):
-                    s[m] = cell_i[m] + 0.5
-                reached = _walk(
+                # Newton's method across the whole grid, with the cells
+                # along its edges continued beyond it, from the middle of
+                # the nearest cell
+                xi_i[:] = 0.5
+                reached = _cells.newton(
                     vertices,
                     shape,
                     stride,
                     offset,
                     point,
-                    s,
-                    s_trial,
+                    True,
                     cell_i,
-                    cell_trial,
                     xi_i,
-                    xi_trial,
+                    cell_trial,
                     work,
                 )
                 if not reached:

@@ -238,7 +238,7 @@ class TestRectilinear:
         grid = tuple(np.meshgrid(*axes, indexing="ij"))
         values = rng.normal(size=grid[0].shape)
         points = rng.uniform(-1.3, 1.3, (num_axis, 30))
-        result = _regrid(grid, values, tuple(points), bounds=bounds)
+        result = _regrid(grid, values, tuple(points), axis_output=0, bounds=bounds)
         expected = scipy.interpolate.RegularGridInterpolator(
             points=axes,
             values=values,
@@ -254,6 +254,50 @@ class TestRectilinear:
         result = _regrid((x,), x**2, (np.array([0.25, 1.0, 2.5, 4.0]),))
         np.testing.assert_allclose(result, [0.125, 1.5, 6.5, 14.0])
 
+    @pytest.mark.parametrize("bounds", ["extrapolate", "nan"])
+    def test_descending_unsigned(self, bounds: str) -> None:
+        # the difference of two unsigned integers wraps around instead of
+        # going negative, which once took this grid for an ascending one
+        x = np.array([5, 4, 3, 2, 1], dtype=np.uint8)
+        result = _regrid(
+            (x,),
+            x.astype(float) ** 2,
+            (np.array([4.5, 2.5, 1.5]),),
+            bounds=bounds,
+        )
+        np.testing.assert_allclose(result, [20.5, 6.5, 2.5])
+
+    @pytest.mark.parametrize("bounds", ["extrapolate", "nan"])
+    def test_grid_per_element(self, bounds: str) -> None:
+        # a spectrum for each of many pixels, each on its own grid, some
+        # running backwards, which are all searched in one call
+        rng = np.random.default_rng(5)
+        num = 50
+        x = np.sort(rng.uniform(0, 1, (num, 8)), axis=~0)
+        x[::3] = x[::3, ::-1]
+        values = rng.normal(size=(num, 8))
+        points = rng.uniform(-0.1, 1.1, 20)
+        result = _regrid(
+            (x,),
+            values,
+            (points,),
+            axis_input=~0,
+            axis_output=~0,
+            bounds=bounds,
+        )
+        expected = np.stack(
+            [
+                scipy.interpolate.RegularGridInterpolator(
+                    points=(x[i],),
+                    values=values[i],
+                    bounds_error=False,
+                    fill_value=None if bounds == "extrapolate" else np.nan,
+                )(points[:, np.newaxis])
+                for i in range(num)
+            ]
+        )
+        np.testing.assert_allclose(result, expected, rtol=0, atol=1e-13)
+
 
 @pytest.mark.parametrize("name", list(grids_curvilinear))
 class TestCurvilinear:
@@ -261,13 +305,13 @@ class TestCurvilinear:
     def test_affine(self, name: str) -> None:
         grid = grids_curvilinear[name]
         points = _points(grid)
-        result = _regrid(grid, _affine(grid), points)
+        result = _regrid(grid, _affine(grid), points, axis_output=0)
         np.testing.assert_allclose(result, _affine(points), rtol=0, atol=1e-12)
 
     def test_nan(self, name: str) -> None:
         grid = grids_curvilinear[name]
         points = _points(grid)
-        result = _regrid(grid, _affine(grid), points, bounds="nan")
+        result = _regrid(grid, _affine(grid), points, axis_output=0, bounds="nan")
         inside = np.isfinite(result)
         assert 0 < inside.sum() < inside.size
         np.testing.assert_allclose(
@@ -280,19 +324,47 @@ class TestCurvilinear:
     def test_raise(self, name: str) -> None:
         grid = grids_curvilinear[name]
         with pytest.raises(ValueError, match="fall outside the input grid"):
-            _regrid(grid, _affine(grid), _points(grid), bounds="raise")
+            _regrid(grid, _affine(grid), _points(grid), axis_output=0, bounds="raise")
 
-    def test_raise_inside_grid(self, name: str) -> None:
+    def test_raise_vertices(self, name: str) -> None:
+        # every vertex of the grid, including those on its boundary, is
+        # inside it
         grid = grids_curvilinear[name]
-        points = tuple(c[1:-1, 1:-1] for c in grid)
-        result = _regrid(grid, _affine(grid), points, bounds="raise")
-        np.testing.assert_allclose(result, _affine(points), rtol=0, atol=1e-12)
+        result = _regrid(grid, _affine(grid), grid, bounds="raise")
+        np.testing.assert_allclose(result, _affine(grid), rtol=0, atol=1e-12)
+
+
+def test_thin_cells() -> None:
+    # rotated cells much longer than they are wide, in which rounding along
+    # the length of a cell once left points well inside it outside the grid.
+    # The grid is not curved, so that the points made by the same map as its
+    # vertices are inside its cells.
+    aspect = 1e4
+    a, b = np.meshgrid(
+        np.linspace(0, 1, 6),
+        np.linspace(0, 1 / aspect, 6),
+        indexing="ij",
+    )
+    angle = 0.6
+    grid = (
+        a * np.cos(angle) - b * np.sin(angle),
+        a * np.sin(angle) + b * np.cos(angle),
+    )
+    rng = np.random.default_rng(0)
+    pa = rng.uniform(0.05, 0.95, 200)
+    pb = rng.uniform(0.05, 0.95, 200) / aspect
+    points = (
+        pa * np.cos(angle) - pb * np.sin(angle),
+        pa * np.sin(angle) + pb * np.cos(angle),
+    )
+    result = _regrid(grid, _affine(grid), points, axis_output=0, bounds="raise")
+    np.testing.assert_allclose(result, _affine(points), rtol=0, atol=1e-12)
 
 
 class TestPoints:
     """
-    Multilinear interpolation weights points, rather than cells, so the
-    points may be arranged in any number of axes.
+    Multilinear interpolation weights points, rather than cells, so given
+    explicitly, `axis_output` may have any number of axes.
     """
 
     def test_grid_2d_points_1d(self) -> None:
@@ -305,16 +377,54 @@ class TestPoints:
     def test_grid_3d_points_2d(self) -> None:
         grid = _distorted_3d()
         points = tuple(c.reshape(10, 10) for c in _points(grid))
-        result = _regrid(grid, _affine(grid), points)
+        result = _regrid(grid, _affine(grid), points, axis_output=(0, 1))
         assert result.shape == (10, 10)
         np.testing.assert_allclose(result, _affine(points), rtol=0, atol=1e-12)
 
     def test_single_point(self) -> None:
         grid = _distorted()
         point = (np.array(0.1), np.array(-0.2))
-        result = _regrid(grid, _affine(grid), point)
+        result = _regrid(grid, _affine(grid), point, axis_output=())
         assert result.shape == ()
         np.testing.assert_allclose(result, _affine(point), rtol=0, atol=1e-12)
+
+    @pytest.mark.parametrize("name", ["distorted", "rectilinear"])
+    def test_no_points(self, name: str) -> None:
+        grid = _distorted()
+        if name == "rectilinear":
+            x = np.linspace(-1, 1, 5)
+            grid = tuple(np.meshgrid(x, x, indexing="ij"))
+        empty = (np.zeros(0), np.zeros(0))
+        result = _regrid(grid, _affine(grid), empty, axis_output=0)
+        assert result.shape == (0,)
+
+    def test_axis_output_must_match_if_not_given(self) -> None:
+        # without `axis_output`, every axis of the points is taken to be
+        # resampled, and there must be as many as the grid has, so that a
+        # forgotten `axis_output` is not taken for points arranged in fewer
+        # axes
+        grid = _distorted()
+        with pytest.raises(ValueError, match="number of axes in `axis_output`"):
+            _regrid(grid, _affine(grid), _points(grid))
+
+    def test_forgotten_axis_output(self) -> None:
+        # a batch of five grids along the second axis, with points for each,
+        # but no `axis_output`, which would otherwise interpolate every
+        # element at the points of every other one
+        x = np.linspace(-1, 1, 10)
+        y = np.linspace(-1, 1, 5)
+        values = x[:, np.newaxis] + y
+        points = np.linspace(-1, 1, 6)[:, np.newaxis] + 0 * y
+        with pytest.raises(ValueError, match="number of axes in `axis_output`"):
+            _regrid((x[:, np.newaxis],), values, (points,), axis_input=0)
+        result = _regrid(
+            (x[:, np.newaxis],),
+            values,
+            (points,),
+            axis_input=0,
+            axis_output=0,
+        )
+        np.testing.assert_allclose(result, points + y, rtol=0, atol=1e-14)
 
     def test_conservative_axes_must_match(self) -> None:
         grid = _distorted()
@@ -346,6 +456,7 @@ class TestOrthogonal:
                     tuple(c[i] for c in grid),
                     values[i],
                     tuple(c[i] for c in points),
+                    axis_output=0,
                 )
                 for i in range(2)
             ]
@@ -376,22 +487,62 @@ class TestWeightsInput:
         weights = regridding.weights(
             coordinates_input=grid,
             coordinates_output=points,
+            axis_output=0,
             weights_input=weights_input,
             method="multilinear",
         )
-        result = regridding.regrid_from_weights(*weights, values_input=values)
-        expected = _regrid(grid, values * weights_input, points)
+        result = regridding.regrid_from_weights(
+            *weights,
+            values_input=values,
+            axis_output=0,
+        )
+        expected = _regrid(grid, values * weights_input, points, axis_output=0)
+        np.testing.assert_allclose(result, expected, rtol=1e-14, atol=1e-14)
+
+    def test_weights_input_per_element(self) -> None:
+        # weights which differ from one element to the next, on a grid which
+        # every element shares
+        grid = tuple(np.broadcast_to(c, (3, *c.shape)) for c in _distorted())
+        points = tuple(c[np.newaxis] for c in _points(_distorted()))
+        values = np.stack([_affine(_distorted())] * 3)
+        weights_input = np.random.default_rng(2).uniform(0.5, 1.5, values.shape)
+        weights = regridding.weights(
+            coordinates_input=grid,
+            coordinates_output=points,
+            axis_input=(1, 2),
+            axis_output=(1,),
+            weights_input=weights_input,
+            method="multilinear",
+        )
+        result = regridding.regrid_from_weights(
+            *weights,
+            values_input=values,
+            axis_input=(1, 2),
+            axis_output=(1,),
+        )
+        expected = np.stack(
+            [
+                _regrid(
+                    _distorted(),
+                    values[i] * weights_input[i],
+                    tuple(c[0] for c in points),
+                    axis_output=0,
+                )
+                for i in range(3)
+            ]
+        )
         np.testing.assert_allclose(result, expected, rtol=1e-14, atol=1e-14)
 
 
 def test_units() -> None:
     grid = tuple(c * u.mm for c in _distorted())
     points = tuple(c * u.m for c in _points(_distorted()))
-    result = _regrid(grid, _affine(_distorted()), points, bounds="nan")
+    result = _regrid(grid, _affine(_distorted()), points, axis_output=0, bounds="nan")
     expected = _regrid(
         _distorted(),
         _affine(_distorted()),
         tuple(1000 * c.value for c in points),
+        axis_output=0,
         bounds="nan",
     )
     np.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
@@ -406,14 +557,19 @@ def test_units() -> None:
 )
 def test_points_not_finite(grid: tuple[np.ndarray, ...]) -> None:
     points = (np.array([0.1, np.nan, np.inf]), np.array([np.nan, 0.2, -0.3]))
-    result = _regrid(grid, _affine(grid), points)
+    result = _regrid(grid, _affine(grid), points, axis_output=0)
     assert np.all(np.isnan(result))
     with pytest.raises(ValueError, match="fall outside the input grid"):
-        _regrid(grid, _affine(grid), points, bounds="raise")
+        _regrid(grid, _affine(grid), points, axis_output=0, bounds="raise")
 
 
 def test_too_few_vertices() -> None:
     x = np.linspace(0, 1, 4)
     grid = np.meshgrid(x, x[:1], indexing="ij")
     with pytest.raises(ValueError, match="at least two vertices"):
-        _regrid(tuple(grid), np.zeros((4, 1)), (np.array([0.5]), np.array([0.0])))
+        _regrid(
+            tuple(grid),
+            np.zeros((4, 1)),
+            (np.array([0.5]), np.array([0.0])),
+            axis_output=0,
+        )

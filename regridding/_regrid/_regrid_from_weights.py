@@ -51,8 +51,9 @@ def regrid_from_weights(
         of the input array.
         If :obj:`None`, all the axes of the output array correspond to resampled
         axes in the input grid.
-        The number of axes should be equal to the original number of
-        coordinates in the output grid passed to :func:`regridding.weights`.
+        These should be the axes passed as `axis_output` to
+        :func:`regridding.weights`, which for the ``multilinear`` method may
+        be any number of axes, or none for a single point.
 
     Notes
     -----
@@ -139,9 +140,15 @@ def regrid_from_weights(
 
     # The weights address each element by a flat index, so its resampled
     # axes are flattened together.  That also covers a single point, which
-    # has no resampled axes at all.
-    values_input = values_input.reshape(-1, np.prod(shape_input_numba, dtype=int))
-    values_output = values_output.reshape(-1, np.prod(shape_output_numba, dtype=int))
+    # has no resampled axes at all.  The number of elements is given rather
+    # than inferred, since it cannot be when there are no points.
+    num_orthogonal = int(np.prod(shape_orthogonal, dtype=int))
+    values_input = values_input.reshape(
+        num_orthogonal, np.prod(shape_input_numba, dtype=int)
+    )
+    values_output = values_output.reshape(
+        num_orthogonal, np.prod(shape_output_numba, dtype=int)
+    )
 
     flat = weights.reshape(-1)
     unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None

@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import scipy.optimize
 import regridding
 from . import _cells, _curvilinear
 
@@ -69,6 +70,40 @@ def _distorted_3d() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     )
 
 
+def _thin(aspect: float) -> tuple[np.ndarray, np.ndarray]:
+    """
+    A grid of cells much longer than they are wide, rotated and slightly
+    curved, in which rounding along the length of a cell once kept Newton's
+    method from converging on points well inside it.
+    """
+    a, b = np.meshgrid(
+        np.linspace(0, 1, 6),
+        np.linspace(0, 1 / aspect, 6),
+        indexing="ij",
+    )
+    angle = 0.6
+    return (
+        a * np.cos(angle) - b * np.sin(angle) + 0.001 * a * a,
+        a * np.sin(angle) + b * np.cos(angle),
+    )
+
+
+def _thin_3d(aspect: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """A three-dimensional grid of cells much longer than they are wide."""
+    a, b, c = np.meshgrid(
+        np.linspace(0, 1, 4),
+        np.linspace(0, 1 / aspect, 4),
+        np.linspace(0, 1 / aspect, 3),
+        indexing="ij",
+    )
+    angle = 0.6
+    return (
+        a * np.cos(angle) - b * np.sin(angle) + 0.001 * a * a,
+        a * np.sin(angle) + b * np.cos(angle),
+        c + 0.3 * a,
+    )
+
+
 def _folded_1d() -> tuple[np.ndarray]:
     """A one-dimensional grid which turns back on itself."""
     return (np.array([0.0, 1.0, 3.0, 2.0, 4.0]),)
@@ -82,6 +117,9 @@ grids = {
     "distorted, scale 1e9": _distorted(scale=1e9),
     "alternating": _alternating(),
     "distorted 3D": _distorted_3d(),
+    "thin, aspect 1e4": _thin(1e4),
+    "thin, aspect 1e6": _thin(1e6),
+    "thin 3D, aspect 1e4": _thin_3d(1e4),
     "folded 1D": _folded_1d(),
     "single cell": tuple(c[:2, :2] for c in _distorted()),
 }
@@ -100,42 +138,93 @@ def _points(
     return rng.uniform(lower - margin, upper + margin, (num, len(grid))).T
 
 
+def _multilinear(
+    corners: np.ndarray,
+    xi: np.ndarray,
+) -> np.ndarray:
+    """
+    The position of a point of a cell, by interpolating between its corners
+    along one axis after another.
+
+    Parameters
+    ----------
+    corners
+        The position of each corner, of shape ``(2,) * N + (N,)``.
+    xi
+        The local coordinates of the point.
+    """
+    result = corners
+    for m in range(xi.size):
+        result = (1 - xi[m]) * result[0] + xi[m] * result[1]
+    return result
+
+
+def _interior(
+    grid: tuple[np.ndarray, ...],
+    num: int = 100,
+    seed: int = 1,
+) -> np.ndarray:
+    """Random points well inside random cells of a grid."""
+    rng = np.random.default_rng(seed)
+    stacked = np.stack(grid, axis=~0)
+    num_axis = len(grid)
+    result = np.empty((num_axis, num))
+    for i in range(num):
+        cell = [rng.integers(0, n - 1) for n in grid[0].shape]
+        corners = stacked[tuple(slice(j, j + 2) for j in cell)]
+        result[:, i] = _multilinear(corners, rng.uniform(0.05, 0.95, num_axis))
+    return result
+
+
 def _inside_brute(
     grid: tuple[np.ndarray, ...],
     points: np.ndarray,
 ) -> np.ndarray:
     """
-    Whether each point is inside the grid, by trying every cell.
+    Whether each point is inside the grid, by trying every cell, in ways
+    which share nothing with the code under test.
 
     In two dimensions a cell is the quadrilateral between its corners, since
-    its edges are straight, so this tests each quadrilateral with
-    :func:`regridding.geometry.point_is_inside_polygon`, which shares nothing
-    with the code under test.  In other dimensions it finds the local
-    coordinates of the point in every cell.
+    its edges are straight, so each quadrilateral is tested with
+    :func:`regridding.geometry.point_is_inside_polygon`.  In other
+    dimensions :func:`scipy.optimize.root` finds the local coordinates of the
+    point in each cell whose bounding box holds it.
     """
-    vertices, shape = _flat(grid)
     num_axis = len(grid)
-    offset = _cells.offsets(shape)
-    stride = _cells.strides(shape)
-    work = np.empty((2 * num_axis + _cells.num_work, num_axis))
-    xi = np.empty(num_axis)
+    shape = grid[0].shape
+    stacked = np.stack(grid, axis=~0)
     result = np.zeros(points.shape[1], dtype=bool)
     for i in range(points.shape[1]):
-        for index in np.ndindex(*(shape - 1)):
-            base = int(np.dot(index, stride))
+        point = points[:, i]
+        for cell in np.ndindex(*(n - 1 for n in shape)):
+            corners = stacked[tuple(slice(j, j + 2) for j in cell)]
             if num_axis == 2:
-                corners = base + offset[[0, 1, 3, 2]]
+                x = corners[..., 0][[0, 1, 1, 0], [0, 0, 1, 1]]
+                y = corners[..., 1][[0, 1, 1, 0], [0, 0, 1, 1]]
                 inside = regridding.geometry.point_is_inside_polygon(
-                    x=points[0, i],
-                    y=points[1, i],
-                    vertices_x=vertices[0, corners],
-                    vertices_y=vertices[1, corners],
+                    x=point[0],
+                    y=point[1],
+                    vertices_x=x,
+                    vertices_y=y,
                 )
             else:
-                xi[:] = 0.5
-                inside = _cells.inverse(
-                    vertices, base, offset, points[:, i], xi, work
-                ) and np.all((-1e-9 <= xi) & (xi <= 1 + 1e-9))
+                flat = corners.reshape(-1, num_axis)
+                if np.any(point < flat.min(0)) or np.any(point > flat.max(0)):
+                    continue
+                solution = scipy.optimize.root(
+                    lambda xi: _multilinear(corners, xi) - point,
+                    x0=np.full(num_axis, 0.5),
+                    method="hybr",
+                    options=dict(xtol=1e-14),
+                )
+                # judged by the residual, since asked for this tolerance the
+                # solver reports failure once it cannot improve on a
+                # solution, however good
+                xi = solution.x
+                residual = np.abs(_multilinear(corners, xi) - point).max()
+                inside = bool(residual <= 1e-12) and bool(
+                    np.all((-1e-9 <= xi) & (xi <= 1 + 1e-9))
+                )
             if inside:
                 result[i] = True
                 break
@@ -200,9 +289,10 @@ class TestLocate:
 
     def test_inside(self, name: str) -> None:
         grid = grids[name]
-        points = _points(grid)
+        points = np.concatenate([_points(grid), _interior(grid)], axis=~0)
         cell, xi, inside = _locate(grid, points, extrapolate=False)
         np.testing.assert_array_equal(inside, _inside_brute(grid, points))
+        assert np.all(inside[-100:])
 
     def test_local_coordinates(self, name: str) -> None:
         grid = grids[name]
@@ -221,17 +311,15 @@ class TestLocate:
 
     def test_extrapolate(self, name: str) -> None:
         # every point the cells along the edge of the grid continue to is
-        # reached, so the position of each point is recovered exactly
+        # reached, so the position of each point is recovered, to the
+        # rounding error of a position that many cells along the continuation
         grid = grids[name]
         points = _points(grid)
         cell, xi, inside = _locate(grid, points, extrapolate=True)
         scale = float(np.max([np.ptp(c) for c in grid]))
-        np.testing.assert_allclose(
-            _position(grid, cell, xi),
-            points,
-            rtol=0,
-            atol=1e-12 * scale,
-        )
+        reach = np.prod(np.abs(xi) + np.abs(1 - xi), axis=~0)
+        error = np.abs(_position(grid, cell, xi) - points).max(axis=0)
+        np.testing.assert_array_less(error, 1e-12 * scale * reach)
         assert not np.all(inside)
 
 

@@ -49,6 +49,7 @@ def time_weights_multilinear_2d(
     regridding.weights(
         coordinates_input=coordinates_input,
         coordinates_output=coordinates_output,
+        axis_output=0,
         method="multilinear",
         coalesce=False,
     )

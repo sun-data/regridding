@@ -4,8 +4,11 @@ from . import _rectilinear
 
 
 def _grid(grid: tuple[np.ndarray, ...]) -> tuple[np.ndarray, ...]:
-    """The coordinates of a grid, broadcast against each other."""
-    return tuple(np.broadcast_arrays(*grid))
+    """
+    The coordinates of one grid, broadcast against each other, with an axis
+    for a single element in front.
+    """
+    return tuple(c[np.newaxis] for c in np.broadcast_arrays(*grid))
 
 
 x = np.array([0.0, 0.5, 2.0, 2.25])
@@ -20,10 +23,10 @@ class TestProfiles:
         result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
-        np.testing.assert_array_equal(profile, np.concatenate([x, y, z]))
+        np.testing.assert_array_equal(profile, [np.concatenate([x, y, z])])
         np.testing.assert_array_equal(start, [0, 4, 7, 12])
         np.testing.assert_array_equal(coordinate, [0, 1, 2])
-        np.testing.assert_array_equal(descending, [False, False, False])
+        np.testing.assert_array_equal(descending, [[False, False, False]])
 
     def test_broadcast(self) -> None:
         # a grid broadcast from one dimension along each axis is recognized
@@ -33,7 +36,7 @@ class TestProfiles:
         result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
-        np.testing.assert_array_equal(profile, np.concatenate([x, y]))
+        np.testing.assert_array_equal(profile, [np.concatenate([x, y])])
         np.testing.assert_array_equal(coordinate, [0, 1])
 
     def test_coordinates_out_of_order(self) -> None:
@@ -44,7 +47,7 @@ class TestProfiles:
         result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
-        np.testing.assert_array_equal(profile, np.concatenate([y, x]))
+        np.testing.assert_array_equal(profile, [np.concatenate([y, x])])
         np.testing.assert_array_equal(coordinate, [1, 0])
 
     def test_descending(self) -> None:
@@ -52,8 +55,38 @@ class TestProfiles:
         result = _rectilinear.profiles(coordinates)
         assert result is not None
         profile, start, coordinate, descending = result
-        np.testing.assert_array_equal(profile, np.concatenate([x, y]))
-        np.testing.assert_array_equal(descending, [False, True])
+        np.testing.assert_array_equal(profile, [np.concatenate([x, y])])
+        np.testing.assert_array_equal(descending, [[False, True]])
+
+    def test_descending_unsigned(self) -> None:
+        # the difference of two unsigned integers wraps around instead of
+        # going negative, which once passed this for an ascending grid
+        coordinates = (np.array([[5, 4, 3, 2, 1]], dtype=np.uint8),)
+        result = _rectilinear.profiles(coordinates)
+        assert result is not None
+        profile, start, coordinate, descending = result
+        np.testing.assert_array_equal(profile, [[1.0, 2.0, 3.0, 4.0, 5.0]])
+        np.testing.assert_array_equal(descending, [[True]])
+
+    def test_elements(self) -> None:
+        # a grid for each of three elements, the second running backwards
+        # along its second axis, and every one sharing its first coordinate
+        xx = np.broadcast_to(x[np.newaxis, :, np.newaxis], (3, 4, 3))
+        yy = np.stack([y, 10 - y, 2 * y])[:, np.newaxis, :]
+        yy = np.broadcast_to(yy, (3, 4, 3))
+        result = _rectilinear.profiles((xx, yy))
+        assert result is not None
+        profile, start, coordinate, descending = result
+        expected = [
+            np.concatenate([x, y]),
+            np.concatenate([x, 10 - y[::-1]]),
+            np.concatenate([x, 2 * y]),
+        ]
+        np.testing.assert_array_equal(profile, expected)
+        np.testing.assert_array_equal(
+            descending,
+            [[False, False], [False, True], [False, False]],
+        )
 
     @pytest.mark.parametrize(
         argnames="grid",
@@ -83,6 +116,11 @@ class TestProfiles:
         coordinates = _grid(grid)
         assert _rectilinear.profiles(coordinates) is None
 
+    def test_elements_disagree(self) -> None:
+        # rectilinear for one element but not monotonic for the other
+        xx = np.stack([x, np.array([0.0, 1.0, 0.5, 2.0])])
+        assert _rectilinear.profiles((xx,)) is None
+
 
 class TestLocate:
 
@@ -101,7 +139,7 @@ class TestLocate:
                 [2.0, 3.0, 1.0, 4.0, 2.0, 5.0, np.nan],
             ]
         )
-        cell, xi, inside = _rectilinear.locate(*result, points)
+        cell, xi, inside = _rectilinear.locate(*result, points[np.newaxis])
 
         expected_cell_x = [0, 1, 0, 2, 0, 2, 1]
         expected_xi_x = [0.5, 1.0, 0.0, 1.0, -2.0, 4.0, 1 / 3]
@@ -111,10 +149,26 @@ class TestLocate:
             expected_cell_y = 1 - expected_cell_y
             expected_xi_y = 1 - expected_xi_y
 
-        np.testing.assert_array_equal(cell[:, 0], expected_cell_x)
-        np.testing.assert_array_equal(cell[:, 1], expected_cell_y)
-        np.testing.assert_allclose(xi[:, 0], expected_xi_x, rtol=1e-15)
-        np.testing.assert_allclose(xi[:, 1], expected_xi_y, rtol=1e-15)
+        np.testing.assert_array_equal(cell[0, :, 0], expected_cell_x)
+        np.testing.assert_array_equal(cell[0, :, 1], expected_cell_y)
+        np.testing.assert_allclose(xi[0, :, 0], expected_xi_x, rtol=1e-15)
+        np.testing.assert_allclose(xi[0, :, 1], expected_xi_y, rtol=1e-15)
         np.testing.assert_array_equal(
-            inside, [True, True, True, True, False, False, False]
+            inside, [[True, True, True, True, False, False, False]]
         )
+
+    def test_elements(self) -> None:
+        # each element is searched in its own grid, the second of which is
+        # [4.5, 4, 1, 0], running backwards
+        xx = np.stack([x, 2 * x[::-1]])
+        result = _rectilinear.profiles((xx,))
+        assert result is not None
+        points = np.array([[[0.25, 3.0]], [[0.5, 4.25]]])
+        cell, xi, inside = _rectilinear.locate(*result, points)
+        np.testing.assert_array_equal(cell[..., 0], [[0, 2], [2, 0]])
+        np.testing.assert_allclose(
+            xi[..., 0],
+            [[0.5, 4.0], [0.5, 0.5]],
+            rtol=1e-15,
+        )
+        np.testing.assert_array_equal(inside, [[True, False], [True, True]])

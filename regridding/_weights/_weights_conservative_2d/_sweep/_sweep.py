@@ -319,7 +319,12 @@ def _sweep_along_axis(
                     point=point_1,
                     grid=grid_static,
                 )
-                sweep_is_outside_static = False
+                # The boundary test and the search of the cells round
+                # separately, so a point within rounding error of the
+                # boundary can pass the first and lie in no cell.  The row
+                # then starts outside the static grid, as it would just
+                # beyond the boundary.
+                sweep_is_outside_static = index_static_x == sys.maxsize
 
         while index_sweep_y < (shape_sweep_y - 1):
 

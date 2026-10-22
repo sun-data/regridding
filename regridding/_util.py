@@ -110,7 +110,7 @@ def _normalize_axis(
     if axis is None:
         axis = tuple(range(ndim))
     axis = np.lib.array_utils.normalize_axis_tuple(axis, ndim=ndim)
-    axis = tuple(~(~np.array(axis) % ndim))
+    axis = tuple(~(~np.array(axis, dtype=int) % ndim))
     return axis
 
 
@@ -121,6 +121,7 @@ def _normalize_input_output_coordinates(
     axis_output: None | int | Sequence[int] = None,
     perturb: bool = False,
     seed: "None | int | np.random.Generator" = _seed_default,
+    match_axes: bool = True,
 ) -> tuple[
     tuple[np.ndarray, ...],
     tuple[np.ndarray, ...],
@@ -130,6 +131,30 @@ def _normalize_input_output_coordinates(
     tuple[int, ...],
     tuple[int, ...],
 ]:
+    """
+    Broadcast the coordinates of an input and an output grid against each
+    other, apart from the axes which are resampled.
+
+    Parameters
+    ----------
+    coordinates_input
+        The coordinates of the input grid.
+    coordinates_output
+        The coordinates of the output grid.
+    axis_input
+        The resampled axes of the input grid.
+    axis_output
+        The resampled axes of the output grid.
+    perturb
+        Whether to perturb the output coordinates by a small random amount.
+    seed
+        The seed of the random perturbation.
+    match_axes
+        Whether `axis_output` must have as many axes as `axis_input`.
+        Multilinear interpolation does not need it, since its outputs are
+        points rather than cells, and they can be arranged in any number of
+        axes.
+    """
     if isinstance(coordinates_input, np.ndarray):
         coordinates_input = (coordinates_input,)
 
@@ -159,7 +184,7 @@ def _normalize_input_output_coordinates(
     axis_input = tuple(sorted(axis_input, reverse=True))
     axis_output = tuple(sorted(axis_output, reverse=True))
 
-    if len(axis_output) != len(axis_input):
+    if match_axes and len(axis_output) != len(axis_input):
         raise ValueError(
             f"The number of axes in `axis_output`, {axis_output}, "
             f"must match the number of axes in `axis_input`, {axis_input}"

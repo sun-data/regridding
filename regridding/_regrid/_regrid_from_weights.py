@@ -137,8 +137,11 @@ def regrid_from_weights(
 
     shape_output_tmp = values_output.shape
 
-    values_input = values_input.reshape(-1, *shape_input_numba)
-    values_output = values_output.reshape(-1, *shape_output_numba)
+    # The weights address each element by a flat index, so its resampled
+    # axes are flattened together.  That also covers a single point, which
+    # has no resampled axes at all.
+    values_input = values_input.reshape(-1, np.prod(shape_input_numba, dtype=int))
+    values_output = values_output.reshape(-1, np.prod(shape_output_numba, dtype=int))
 
     flat = weights.reshape(-1)
     unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None
@@ -158,7 +161,7 @@ def regrid_from_weights(
         values_output=values_output,
     )
 
-    values_output = values_output.reshape(*shape_output_tmp)
+    values_output = values_output.reshape(shape_output_tmp)
 
     values_output = np.moveaxis(values_output, axis_output_numba, axis_output)
 

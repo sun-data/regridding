@@ -1,7 +1,7 @@
 from typing import Sequence, Literal
 import numpy as np
 from regridding import _util
-from ._weights_multilinear import _weights_multilinear
+from ._weights_multilinear import weights_multilinear
 from ._weights_conservative import _weights_conservative
 from ._weights_arrays import _weights_to_arrays
 
@@ -339,7 +339,7 @@ def weights(
     clipped = False
 
     if method == "multilinear":
-        result = _weights_multilinear(
+        result = weights_multilinear(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,

@@ -39,7 +39,9 @@ pip install regridding
 
 * [`regrid()`](https://regridding.readthedocs.io/en/latest/_autosummary/regridding.regrid.html),
   which resamples an array onto a new grid using either of two methods:
-  * `"multilinear"`, linear interpolation along one axis;
+  * `"multilinear"`, linear interpolation on logically-rectangular grids of
+    any number of dimensions, rectilinear or curvilinear, at points which may
+    be arranged along any number of axes;
   * `"conservative"`, first-order conservative resampling of 1D grids and of 2D
     logically-rectangular curvilinear grids, using the algorithm described in
     [Ramshaw (1985)](https://doi.org/10.1016/0021-9991(85)90141-X).
@@ -86,6 +88,9 @@ The remaining axes are orthogonal to the operation, and the resampling is
 repeated independently for every position along them.
 This is how a stack of images, or a spectrum for each pixel, is resampled in one
 call.
+The `multilinear` method interpolates at points rather than resampling cells,
+so an explicit `axis_output` may select any number of axes, such as a single
+axis of scattered points to interpolate a 2D grid at.
 
 **Degenerate grids are perturbed.**
 Where a vertex of the output grid lands exactly on an edge of the input grid,

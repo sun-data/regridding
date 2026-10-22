@@ -51,8 +51,9 @@ def regrid_from_weights(
         of the input array.
         If :obj:`None`, all the axes of the output array correspond to resampled
         axes in the input grid.
-        The number of axes should be equal to the original number of
-        coordinates in the output grid passed to :func:`regridding.weights`.
+        These should be the axes passed as `axis_output` to
+        :func:`regridding.weights`, which for the ``multilinear`` method may
+        be any number of axes, or none for a single point.
 
     Notes
     -----
@@ -137,8 +138,17 @@ def regrid_from_weights(
 
     shape_output_tmp = values_output.shape
 
-    values_input = values_input.reshape(-1, *shape_input_numba)
-    values_output = values_output.reshape(-1, *shape_output_numba)
+    # The weights address each element by a flat index, so its resampled
+    # axes are flattened together.  That also covers a single point, which
+    # has no resampled axes at all.  The number of elements is given rather
+    # than inferred, since it cannot be when there are no points.
+    num_orthogonal = int(np.prod(shape_orthogonal, dtype=int))
+    values_input = values_input.reshape(
+        num_orthogonal, np.prod(shape_input_numba, dtype=int)
+    )
+    values_output = values_output.reshape(
+        num_orthogonal, np.prod(shape_output_numba, dtype=int)
+    )
 
     flat = weights.reshape(-1)
     unit_weights = getattr(flat[0][2], "unit", None) if flat.size else None
@@ -152,13 +162,16 @@ def regrid_from_weights(
     values_input = np.ascontiguousarray(values_input)
     values_output = np.ascontiguousarray(values_output)
 
-    _regrid_from_weights(
-        weights=weights_numba,
-        values_input=values_input,
-        values_output=values_output,
-    )
+    # an empty typed list has no type for the kernel to be compiled for, and
+    # with no elements there is nothing to add to the zeros of the output
+    if flat.size:
+        _regrid_from_weights(
+            weights=weights_numba,
+            values_input=values_input,
+            values_output=values_output,
+        )
 
-    values_output = values_output.reshape(*shape_output_tmp)
+    values_output = values_output.reshape(shape_output_tmp)
 
     values_output = np.moveaxis(values_output, axis_output_numba, axis_output)
 

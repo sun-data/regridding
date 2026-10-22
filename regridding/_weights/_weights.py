@@ -1,7 +1,7 @@
 from typing import Sequence, Literal
 import numpy as np
 from regridding import _util
-from ._weights_multilinear import _weights_multilinear
+from ._weights_multilinear import weights_multilinear
 from ._weights_conservative import _weights_conservative
 from ._weights_arrays import _weights_to_arrays
 
@@ -141,12 +141,21 @@ def weights(
         of the input grid.
         If :obj:`None`, all the axes of the output grid correspond to resampled
         axes in the input grid.
-        The number of axes should be equal to the number of
-        coordinates in the output grid.
+        For the ``conservative`` method, the number of axes should be equal
+        to the number of coordinates in the output grid, as it should be for
+        the ``multilinear`` method if `axis_output` is :obj:`None`.
+        The ``multilinear`` method interpolates at points rather than
+        resampling cells, so if `axis_output` is given, the points may be
+        arranged along any number of axes, or none at all for a single point.
     weights_input
         Weights applied to the values of the input grid before resampling.
     method
         The type of regridding to use.
+        The ``multilinear`` method interpolates between the corners of the
+        cell of the input grid which contains each output point, on a grid of
+        any number of dimensions, rectilinear or curvilinear.
+        The ``conservative`` method resamples the cells of the input grid
+        onto the cells of the output grid, in one or two dimensions.
     bounds
         How to treat output points that fall outside the input grid.
         Only applies when `method` is ``multilinear``; the ``conservative``
@@ -154,6 +163,12 @@ def weights(
         ``extrapolate`` (the default) extrapolates linearly from the nearest
         cell of the input grid, ``nan`` sets those points to
         :obj:`numpy.nan`, and ``raise`` raises a :class:`ValueError`.
+        On a grid which is not rectilinear, the nearest cell is the one along
+        the edge of the grid whose continuation reaches the point, and a
+        point which no continuation reaches, as can happen beyond a strongly
+        curved edge, is set to :obj:`numpy.nan`.
+        A point with a coordinate which is not finite is set to
+        :obj:`numpy.nan`, or raises, whichever `bounds` is.
     perturb
         Whether to perturb `coordinates_output` by a small value to avoid degenerate
         grids. This is helpful for some methods, like ``conservative``, which
@@ -339,7 +354,7 @@ def weights(
     clipped = False
 
     if method == "multilinear":
-        result = _weights_multilinear(
+        result = weights_multilinear(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
             axis_input=axis_input,

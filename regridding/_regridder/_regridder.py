@@ -155,7 +155,8 @@ class Regridder:
         dtype
             The type of the entries of the matrix.  :obj:`numpy.float32`
             halves the memory the values take, for operators which would not
-            otherwise fit on a device.
+            otherwise fit, and gives products in single precision of values
+            in single precision, see :meth:`__call__`.
         """
         array, shape_grid_input, shape_grid_output = weights
 
@@ -662,6 +663,16 @@ class Regridder:
             along.  On a device, a :mod:`torch` tensor or another array which
             :func:`torch.as_tensor` accepts, and the result is of the same
             kind.
+
+        Notes
+        -----
+        The result is in single precision if both `values` and the matrix
+        are, and in double precision otherwise.  Either way, each row is
+        summed in double precision and rounded once, so a product in single
+        precision is the product of the same numbers in double precision,
+        rounded.  The rule is the same on the host and on a device, where
+        :mod:`torch` would otherwise promote integers differently from
+        :mod:`numpy`.
         """
         if self.device is not None:
             return self._call_device(values)
@@ -678,9 +689,12 @@ class Regridder:
                 f"input of this operator, {self.shape_input}"
             ) from error
 
-        x = np.ascontiguousarray(values.transpose(layout.order_input), dtype=float)
+        single = values.dtype == np.float32 and self.data.dtype == np.float32
+        dtype = np.float32 if single else np.float64
+
+        x = np.ascontiguousarray(values.transpose(layout.order_input), dtype=dtype)
         x = x.reshape(layout.num_columns, -1)
-        y = np.zeros((layout.num_rows, x.shape[1]))
+        y = np.empty((layout.num_rows, x.shape[1]), dtype=dtype)
 
         _matmul(self.indptr, self.indices, self.data, x, y, numba.get_num_threads())
 
@@ -757,11 +771,12 @@ class Regridder:
                 f"the input of this operator, {self.shape_input}"
             ) from error
 
-        x = values.permute(layout.order_input).to(torch.float64).contiguous()
+        single = values.dtype == torch.float32 and self.data.dtype == torch.float32
+        dtype = torch.float32 if single else torch.float64
+
+        x = values.permute(layout.order_input).to(dtype).contiguous()
         x = x.reshape(layout.num_columns, -1)
-        y = torch.empty(
-            (layout.num_rows, x.shape[1]), dtype=torch.float64, device="cuda"
-        )
+        y = torch.empty((layout.num_rows, x.shape[1]), dtype=dtype, device="cuda")
 
         if self._arrays_device is None:
             self._arrays_device = (
@@ -1267,12 +1282,13 @@ def _matmul(
     num_threads: int,
 ) -> None:
     """
-    Multiply a matrix in CSR form by a dense matrix, adding the product to
+    Multiply a matrix in CSR form by a dense matrix, writing the product to
     `y`.
 
-    Each row is summed in the order its entries are stored, by one thread,
-    so the result does not depend on how many threads there are.  The number
-    of threads is passed in rather than asked for here, which would keep
+    Each row is summed in double precision, in the order its entries are
+    stored, by one thread, so the result does not depend on how many threads
+    there are.  The sum is rounded once, to the type of `y`.  The number of
+    threads is passed in rather than asked for here, which would keep
     :mod:`numba` from caching the compiled function.
     """
     num_rows, num_batch = y.shape
@@ -1282,11 +1298,11 @@ def _matmul(
         for b in range(c, num_blocks, num_chunks):
             stop = min((b + 1) * _rows_per_block, num_rows)
             for r in range(b * _rows_per_block, stop):
-                for k in range(indptr[r], indptr[r + 1]):
-                    j = indices[k]
-                    v = data[k]
-                    for t in range(num_batch):
-                        y[r, t] += v * x[j, t]
+                for t in range(num_batch):
+                    total = 0.0
+                    for k in range(indptr[r], indptr[r + 1]):
+                        total += np.float64(data[k]) * np.float64(x[indices[k], t])
+                    y[r, t] = total
 
 
 @numba.njit(cache=True, parallel=True)

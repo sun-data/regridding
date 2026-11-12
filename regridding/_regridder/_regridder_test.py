@@ -1,4 +1,5 @@
 from typing import Any
+import dataclasses
 import pytest
 import numpy as np
 import astropy.units as u
@@ -268,6 +269,72 @@ def test_broadcast() -> None:
 
     assert np.array_equal(result, regridder(np.ones(regridder.shape_input)))
     assert np.array_equal(result, regridder(1))
+
+
+dtypes = [
+    (np.float64, np.float64, np.float64),
+    (np.float32, np.float64, np.float64),
+    (np.float64, np.float32, np.float64),
+    (np.float32, np.float32, np.float32),
+    (np.int32, np.float32, np.float64),
+]
+"""
+The types of the values and of the matrix, and of the product they give, to
+test the precision of the products.
+"""
+
+
+def _ctis(dtype: type) -> regridding.Regridder:
+    """
+    The ``"ctis"`` operator of :class:`TestRoles`, which shares its input
+    and sums its output, with a matrix of type `dtype`.
+    """
+    operator, weights, (_, _, axis_input, axis_output) = TestRoles()._regridder(
+        "interleaved", "ctis"
+    )
+    return regridding.Regridder.from_weights(
+        weights,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        shape_input=operator.shape_input,
+        shape_output=operator.shape_output,
+        dtype=dtype,
+    )
+
+
+def _double(regridder: regridding.Regridder) -> regridding.Regridder:
+    """`regridder` with the same entries, held in double precision."""
+    return dataclasses.replace(regridder, data=regridder.data.astype(np.float64))
+
+
+@pytest.mark.parametrize(
+    argnames="dtype_values,dtype_matrix,dtype_result",
+    argvalues=dtypes,
+)
+def test_call_dtype(
+    dtype_values: type,
+    dtype_matrix: type,
+    dtype_result: type,
+) -> None:
+    """
+    The product is in single precision if both the values and the matrix
+    are, and in double precision otherwise.  Each row is summed in double
+    precision, where the product of two numbers in single precision is
+    exact, so the result is the product of the same numbers in double
+    precision, rounded once.
+    """
+    regridder = _ctis(dtype_matrix)
+    rng = np.random.default_rng(8)
+
+    for operator in (regridder, regridder.T):
+        values = 10 * rng.normal(size=(3,) + operator.shape_input)
+        values = values.astype(dtype_values)
+
+        result = operator(values)
+        expected = _double(operator)(values.astype(np.float64))
+
+        assert result.dtype == dtype_result
+        assert np.array_equal(result, expected.astype(dtype_result))
 
 
 def _with_unit(weights: Weights, unit: Any) -> Weights:

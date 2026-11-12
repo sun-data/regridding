@@ -69,6 +69,42 @@ def test_device_array() -> None:
 
 
 @requires_cuda
+@pytest.mark.parametrize(
+    argnames="dtype_values,dtype_matrix,dtype_result",
+    argvalues=_regridder_test.dtypes,
+)
+def test_call_dtype(
+    dtype_values: type,
+    dtype_matrix: type,
+    dtype_result: type,
+) -> None:
+    """
+    The product has the type it has on the host, and is the product of the
+    same numbers in double precision on the device, rounded once, since the
+    rows are summed in the same order whatever the type.
+    """
+    import torch
+
+    regridder = _regridder_test._ctis(dtype_matrix)
+    rng = np.random.default_rng(13)
+
+    for operator in (regridder, regridder.T):
+        values = 10 * rng.normal(size=(3,) + operator.shape_input)
+        values = values.astype(dtype_values)
+
+        on_device = operator.to("cuda")
+        double = _regridder_test._double(operator).to("cuda")
+
+        result = on_device(torch.as_tensor(values, device="cuda")).cpu().numpy()
+        expected = double(torch.as_tensor(values, device="cuda", dtype=torch.float64))
+        expected = expected.cpu().numpy()
+
+        assert result.dtype == dtype_result
+        assert result.dtype == operator(values).dtype
+        assert np.array_equal(result, expected.astype(dtype_result))
+
+
+@requires_cuda
 def test_call_invalid() -> None:
     """Values which do not broadcast to the input raise, as on the host."""
     import torch

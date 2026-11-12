@@ -337,7 +337,8 @@ def matmul(
     the row, in order, and the sums of the group are then added in a fixed
     tree.  The size of the groups depends only on the matrix, so the result
     is the same every time, and the same for each column of `x` however
-    many columns there are.
+    many columns there are.  Each row is summed in double precision and
+    rounded once, to the type of `y`.
 
     Parameters
     ----------
@@ -389,10 +390,12 @@ def _matmul(
     start = indptr[row] if valid else 0
     stop = indptr[row + 1] if valid else 0
 
+    # each product is taken in double precision, where the product of two
+    # numbers in single precision is exact, so the sum is rounded only once
     for t in range(num_batch):
         total = 0.0
         for k in range(start + lane, stop, width):
-            total += data[k] * x[indices[k], t]
+            total += np.float64(data[k]) * np.float64(x[indices[k], t])
         # the first thread of each group gathers the sums of the others; the
         # shuffles of the other threads may reach into the next group, but
         # what they gather is not used

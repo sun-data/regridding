@@ -1,5 +1,7 @@
 from typing import Any
 import dataclasses
+import gc
+import weakref
 import pytest
 import numpy as np
 import astropy.units as u
@@ -421,11 +423,11 @@ def test_transpose_conservative_weights_input(weights_input: np.ndarray) -> None
         (dict(shape_output=(2, 2, 12, 11)), "either 1 or 3"),
         (dict(shape_input=(2, 3, 8, 7)), "resampled axis 3"),
         (dict(shape_output=(2, 3, 12, 11, 1)), "should have 4 axes"),
-        (dict(axis_output=(1, 2, 3)), "same number of axes"),
+        (dict(device="cpu"), "not 'cpu'"),
     ],
 )
 def test_from_weights_invalid(kwargs: dict[str, Any], match: str) -> None:
-    """Shapes which do not fit the weights raise."""
+    """Shapes which do not fit the weights, and unknown devices, raise."""
     weights, (_, _, axis_input, axis_output) = _weights_trailing()
     kwargs = dict(axis_input=axis_input, axis_output=axis_output) | kwargs
     with pytest.raises(ValueError, match=match):
@@ -451,6 +453,136 @@ def test_from_weights_batch_invalid() -> None:
             shape_input=(2, 4, 8, 8),
             shape_output=(2, 1, 12, 11),
         )
+
+
+def test_to_invalid() -> None:
+    """An unknown device raises, rather than being taken for the GPU."""
+    weights, (_, _, axis_input, axis_output) = _weights_trailing()
+    regridder = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    with pytest.raises(ValueError, match="not 'cuda:1'"):
+        regridder.to("cuda:1")
+
+
+@pytest.mark.parametrize(
+    argnames="shape_points",
+    argvalues=[(7,), (2, 3, 4)],
+)
+def test_multilinear(shape_points: tuple[int, ...]) -> None:
+    """
+    Multilinear weights onto scattered points, whose output has a different
+    number of resampled axes from the input, give what
+    :func:`regridding.regrid_from_weights` does, and transpose.
+    """
+    x, y = np.meshgrid(np.linspace(0, 1, 5), np.linspace(0, 2, 6), indexing="ij")
+    rng = np.random.default_rng(14)
+    points = (
+        rng.uniform(0, 1, size=shape_points),
+        rng.uniform(0, 2, size=shape_points),
+    )
+    axis_input = (0, 1)
+    axis_output = tuple(range(len(shape_points)))
+    weights = regridding.weights(
+        (x, y),
+        points,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        method="multilinear",
+    )
+    regridder = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+
+    values = x**2 + y
+    expected = regridding.regrid_from_weights(
+        *weights,
+        values_input=values,
+        axis_input=axis_input,
+        axis_output=axis_output,
+    )
+    assert np.array_equal(regridder(values), expected)
+
+    output = rng.normal(size=shape_points)
+    assert np.isclose(
+        np.vdot(regridder(values), output),
+        np.vdot(values, regridder.T(output)),
+    )
+
+
+def _weights_empty() -> Weights:
+    """Weights with no elements, from a grid with an orthogonal axis of length 0."""
+    grid_input = np.broadcast_to(np.linspace(0, 10, 11), (0, 11))
+    grid_output = np.linspace(-1, 11, 7)
+    return regridding.weights(
+        (grid_input,),
+        (grid_output,),
+        axis_input=-1,
+        axis_output=-1,
+        method="conservative",
+    )
+
+
+def test_empty() -> None:
+    """
+    Weights with no elements give an operator with no entries, which can
+    still be applied.
+    """
+    regridder = regridding.Regridder.from_weights(_weights_empty(), -1, -1)
+
+    assert regridder.shape_matrix == (0, 0)
+    assert regridder(np.ones(regridder.shape_input)).shape == (0, 6)
+    assert regridder.T(np.ones(regridder.shape_output)).shape == (0, 10)
+
+
+def test_transpose_freed() -> None:
+    """
+    An operator and its transpose do not keep each other alive, so dropping
+    the operator frees it without waiting for a collection of cycles, and
+    its transpose computes the operator again if it is asked for.
+    """
+    weights, (_, _, axis_input, axis_output) = _weights_trailing()
+    regridder = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    transposed = regridder.T
+    assert transposed.T is regridder
+
+    reference = weakref.ref(regridder)
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        del regridder
+        assert reference() is None
+    finally:
+        if enabled:
+            gc.enable()
+
+    # transposed twice, each row holds its entries in the order of the
+    # columns rather than of the elements, so it sums them in another order
+    again = transposed.T
+    assert again.T is transposed
+    values = np.random.default_rng(15).normal(size=again.shape_input)
+    expected = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    assert np.allclose(again(values), expected(values), rtol=1e-13, atol=1e-15)
+
+
+def test_from_weights_single() -> None:
+    """
+    Weights in single precision give a matrix of their own values, in either
+    precision.
+    """
+    grid_input, grid_output, axis_input, axis_output = _grids("trailing")
+    weights = regridding.weights(
+        grid_input,
+        grid_output,
+        axis_input=axis_input,
+        axis_output=axis_output,
+        method="conservative",
+        dtype_values=np.float32,
+    )
+    double = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    single = regridding.Regridder.from_weights(
+        weights, axis_input, axis_output, dtype=np.float32
+    )
+
+    assert double.data.dtype == np.float64
+    assert single.data.dtype == np.float32
+    assert np.array_equal(single.data.astype(np.float64), double.data)
 
 
 def test_call_invalid() -> None:

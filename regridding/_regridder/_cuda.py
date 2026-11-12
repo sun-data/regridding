@@ -17,6 +17,9 @@ __all__ = [
     "transpose",
     "scale",
     "matmul",
+    "stream",
+    "after_numba",
+    "before_numba",
 ]
 
 _warp = 32
@@ -29,16 +32,57 @@ memory the sort takes beyond the matrix and its transpose.
 """
 
 
-def _torch() -> Any:
-    """Import :mod:`torch`, see :func:`regridding._regridder._regridder._torch`."""
-    from ._regridder import _torch
+def stream() -> Any:
+    """
+    The :mod:`numba` stream which stands for the current stream of
+    :mod:`torch`.
 
-    return _torch()
+    The kernels here are launched on it, so that they run after the work
+    :mod:`torch` queued to lay out their arguments and before the work it
+    queues to read their results, and so that :mod:`torch` does not hand
+    the memory of an argument it has dropped to other work before a kernel
+    is done reading it, whichever stream :mod:`torch` has been told to use.
+    """
+    torch = _cuda.import_torch()
+    current = torch.cuda.current_stream()
+    if current == torch.cuda.default_stream():
+        return cuda.default_stream()
+    return cuda.external_stream(current.cuda_stream)
+
+
+def after_numba() -> None:
+    """
+    Order the work :mod:`torch` queues next after the work :mod:`numba` has
+    queued on the default stream, before reading an array which :mod:`numba`
+    wrote, such as weights built on the device.
+
+    The default stream does not wait for the other streams of :mod:`torch`,
+    nor they for it, so this matters only when :mod:`torch` has been told to
+    use one of them.
+    """
+    torch = _cuda.import_torch()
+    current = torch.cuda.current_stream()
+    default = torch.cuda.default_stream()
+    if current != default:
+        current.wait_stream(default)
+
+
+def before_numba() -> None:
+    """
+    Order the work :mod:`numba` queues next on the default stream after the
+    work :mod:`torch` has queued, before handing it an array, as
+    :func:`after_numba` does the other way around.
+    """
+    torch = _cuda.import_torch()
+    current = torch.cuda.current_stream()
+    default = torch.cuda.default_stream()
+    if current != default:
+        default.wait_stream(current)
 
 
 def _dtype(dtype: type) -> Any:
     """The :mod:`torch` type which stands for a :mod:`numpy` one."""
-    torch = _torch()
+    torch = _cuda.import_torch()
     return torch.from_numpy(np.empty(0, dtype=dtype)).dtype
 
 
@@ -72,7 +116,7 @@ def _place(
     data_result
         The values of the matrix.
     """
-    torch = _torch()
+    torch = _cuda.import_torch()
 
     num = keys.shape[0]
     if num == 0:
@@ -138,8 +182,11 @@ def assemble(
     Where each row starts, the column of each entry and its value, as
     :mod:`torch` tensors on the device.
     """
-    torch = _torch()
+    torch = _cuda.import_torch()
     device = "cuda"
+
+    # weights built on the device were written by `numba`
+    after_numba()
 
     lookup_rows = torch.as_tensor(lookup_rows, device=device)
     lookup_columns = torch.as_tensor(lookup_columns, device=device)
@@ -204,7 +251,7 @@ def transpose(
     dtype_indices
         The type of the column indices of the transpose.
     """
-    torch = _torch()
+    torch = _cuda.import_torch()
     device = indptr.device
 
     num_entries = indices.shape[0]
@@ -264,8 +311,8 @@ def scale(
     data
         The value of each entry.
     scale
-        What a unit of the values stands for, which they are multiplied by
-        first.
+        What a unit of the values stands for, which each entry is multiplied
+        by first.
     table_rows
         The axes of the rows, see :func:`regridding._regridder._regridder._scale`.
     table_columns
@@ -275,23 +322,23 @@ def scale(
     volume
         The flat volume of each output cell, on the host.
     """
-    torch = _torch()
+    torch = _cuda.import_torch()
 
-    if scale != 1:
-        data = data * scale
     result = torch.empty_like(data)
 
     num_rows = indptr.shape[0] - 1
     blocks = (num_rows + _cuda.threads - 1) // _cuda.threads
     if blocks:
-        _scale[blocks, _cuda.threads](  # type: ignore[index]
+        s = stream()
+        _scale[blocks, _cuda.threads, s](  # type: ignore[index]
             cuda.as_cuda_array(indptr),
             cuda.as_cuda_array(indices),
             cuda.as_cuda_array(data),
-            cuda.to_device(table_rows),
-            cuda.to_device(table_columns),
-            cuda.to_device(factor),
-            cuda.to_device(volume),
+            scale,
+            cuda.to_device(table_rows, stream=s),
+            cuda.to_device(table_columns, stream=s),
+            cuda.to_device(factor, stream=s),
+            cuda.to_device(volume, stream=s),
             cuda.as_cuda_array(result),
         )
     return result
@@ -338,7 +385,8 @@ def matmul(
     tree.  The size of the groups depends only on the matrix, so the result
     is the same every time, and the same for each column of `x` however
     many columns there are.  Each row is summed in double precision and
-    rounded once, to the type of `y`.
+    rounded once, to the type of `y`.  The kernel is queued on the current
+    stream of :mod:`torch`, see :func:`stream`.
 
     Parameters
     ----------
@@ -357,7 +405,7 @@ def matmul(
     width = _width(indices.shape[0], num_rows)
     blocks = (num_rows * width + _cuda.threads - 1) // _cuda.threads
     if blocks:
-        _matmul[blocks, _cuda.threads](  # type: ignore[index]
+        _matmul[blocks, _cuda.threads, stream()](  # type: ignore[index]
             indptr, indices, data, x, y, width
         )
 
@@ -412,6 +460,7 @@ def _scale(
     indptr: Any,
     indices: Any,
     data: Any,
+    scale: float,
     table_rows: Any,
     table_columns: Any,
     factor: Any,
@@ -438,4 +487,4 @@ def _scale(
             i = (c // table_columns[a, 0]) % table_columns[a, 1]
             f += i * table_columns[a, 2]
             v += i * table_columns[a, 3]
-        result[k] = data[k] * factor[f] / volume[v]
+        result[k] = data[k] * scale * factor[f] / volume[v]

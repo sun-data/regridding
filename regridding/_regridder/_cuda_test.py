@@ -358,3 +358,163 @@ def test_assemble_empty_element() -> None:
 
     _assert_same(device, host)
     _assert_same(device.T, host.T)
+
+
+@requires_cuda
+def test_empty() -> None:
+    """
+    Weights with no elements give an operator with no entries on the device,
+    as on the host, which can still be applied.
+    """
+    import torch
+
+    weights = _regridder_test._weights_empty()
+    host = regridding.Regridder.from_weights(weights, -1, -1)
+    device = regridding.Regridder.from_weights(weights, -1, -1, device="cuda")
+
+    _assert_same(device, host)
+    values = torch.ones(device.shape_input, device="cuda", dtype=torch.float64)
+    assert tuple(device(values).shape) == host.shape_output
+
+
+def _operator_slow() -> regridding.Regridder:
+    """An operator on the device with enough entries to be worth racing."""
+    x_input = np.linspace(0, 1, 1_000_001)
+    x_output = np.linspace(-0.01, 1.01, 300_001)
+    weights = regridding.weights((x_input,), (x_output,), method="conservative")
+    return regridding.Regridder.from_weights(weights, device="cuda")
+
+
+def _delay() -> None:
+    """Queue some tens of milliseconds of work on the current stream."""
+    import torch
+
+    a = torch.rand(4096, 4096, device="cuda")
+    for _ in range(4):
+        a = a @ a
+        a = a / a.norm()
+
+
+@requires_cuda
+def test_stream() -> None:
+    """
+    On a stream of :mod:`torch` other than the default, a product waits for
+    the values :mod:`torch` is still computing there, and is done before
+    :mod:`torch` reads it there.
+    """
+    import torch
+
+    regridder = _operator_slow()
+    values = torch.rand(regridder.shape_input, device="cuda", dtype=torch.float64)
+    expected = regridder(values).cpu()
+
+    with torch.cuda.stream(torch.cuda.Stream()):
+        for _ in range(5):
+            _delay()
+            late = values * 1
+            assert torch.equal(regridder(late).cpu(), expected)
+
+
+# this runs on the device, where `coverage` cannot follow it
+@cuda.jit
+def _copy_late(source: Any, target: Any) -> None:  # pragma: nocover
+    """Copy `source` to `target`, a few tens of milliseconds late."""
+    i = cuda.grid(1)  # type: ignore[call-arg]
+    if i < source.size:
+        for _ in range(20):
+            cuda.nanosleep(1_000_000)
+        target[i] = source[i]
+
+
+@requires_cuda
+def test_stream_numba() -> None:
+    """
+    On a stream of :mod:`torch` other than the default, an array of
+    :mod:`numba` is read once :mod:`numba` has written it, and the result is
+    done before :mod:`numba` reads it, both on its default stream.
+    """
+    import torch
+
+    regridder = _operator_slow()
+    values = np.random.default_rng(16).normal(size=regridder.shape_input)
+    expected = regridder(torch.as_tensor(values, device="cuda")).cpu().numpy()
+
+    source = cuda.to_device(values)
+    with torch.cuda.stream(torch.cuda.Stream()):
+        for _ in range(3):
+            # values which `numba` is still writing, with the result read
+            # where `torch` computed it
+            target = cuda.device_array_like(source)
+            blocks = (source.size + 255) // 256
+            _copy_late[blocks, 256](source, target)  # type: ignore[index]
+            result = regridder(target)
+            result = torch.as_tensor(result, device="cuda").cpu().numpy()
+            assert np.array_equal(result, expected)
+
+            # a result which `torch` is still computing, read by `numba`
+            _delay()
+            result = regridder(source)
+            assert np.array_equal(result.copy_to_host(), expected)
+
+
+@requires_cuda
+def test_call_host() -> None:
+    """
+    Values on the host give a result on the host, read as :mod:`numpy` reads
+    them, so that a list is not rounded to single precision on its way and
+    the result has the type it has on the host.
+    """
+    regridder = _regridder("ctis")
+    device = regridder.to("cuda")
+    values = np.random.default_rng(17).normal(size=regridder.shape_input) + 1e-9
+
+    for v in (values, values.tolist()):
+        result = device(v)
+        expected = regridder(v)
+        assert isinstance(result, np.ndarray)
+        assert result.dtype == expected.dtype == np.float64
+        assert np.allclose(result, expected, rtol=1e-13, atol=1e-15)
+
+    single = _regridder_test._ctis(np.float32)
+    assert single.to("cuda")(1.0).dtype == single(1.0).dtype == np.float64
+
+
+@requires_cuda
+def test_call_units() -> None:
+    """
+    Values on the host get the units they get on the host, while values on
+    the device raise rather than lose the unit of the operator.
+    """
+    import torch
+
+    weights, (_, _, axis_input, axis_output) = _regridder_test._weights_trailing()
+    weights = _regridder_test._with_unit(weights, u.percent)
+    host = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    device = host.to("cuda")
+
+    values = np.random.default_rng(18).normal(size=host.shape_input) << u.ph
+    result = device(values)
+    expected = host(values)
+    assert result.unit == expected.unit
+    assert np.allclose(result.value, expected.value, rtol=1e-13, atol=1e-15)
+
+    for on_device in (
+        torch.as_tensor(values.value, device="cuda"),
+        cuda.to_device(values.value),
+    ):
+        with pytest.raises(TypeError, match="unit"):
+            device(on_device)
+
+
+@requires_cuda
+def test_call_reassigned() -> None:
+    """The arrays assigned to an operator on the device are the ones applied."""
+    import torch
+
+    device = _regridder("ctis").to("cuda")
+    values = np.random.default_rng(19).normal(size=device.shape_input)
+    values = torch.as_tensor(values, device="cuda")
+
+    before = device(values)
+    device.data = device.data * 2
+    assert torch.equal(device(values), 2 * before)

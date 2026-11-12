@@ -1,11 +1,12 @@
 from typing import Any, Sequence
 import dataclasses
 import math
+import weakref
 import numpy as np
 import numba
 from numba import cuda
 from numba.typed.typedlist import List as TypedList
-from regridding import _util
+from regridding import _cuda, _util
 from regridding._weights._weights_transposed._weights_transposed import (
     _check_grids,
     _factors,
@@ -97,12 +98,27 @@ class Regridder:
         init=False,
         repr=False,
     )
+    """The transpose of this operator, once :attr:`T` has computed it."""
 
-    _arrays_device: None | tuple[Any, Any, Any] = dataclasses.field(
+    _original: "None | weakref.ReferenceType[Regridder]" = dataclasses.field(
         default=None,
         init=False,
         repr=False,
     )
+    """
+    The operator this one is the transpose of, if :attr:`T` computed it.
+
+    The reference is weak, so that an operator and its transpose do not keep
+    each other alive, and dropping the operator frees both matrices at once
+    rather than at the next collection of cycles.
+    """
+
+    _arrays_device: None | tuple[tuple[Any, ...], tuple[Any, ...]] = dataclasses.field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    """The arrays of the matrix and their views, see :meth:`_arrays_numba`."""
 
     _layouts: dict[tuple[int, ...], "_Layout"] = dataclasses.field(
         default_factory=dict,
@@ -151,13 +167,17 @@ class Regridder:
             The shape of the arrays the operator returns.  If :obj:`None`,
             the shape of the output grid.
         device
-            Where to store and apply the operator, see :attr:`device`.
+            Where to store and apply the operator, see :attr:`device`.  An
+            operator on a device is assembled on the current stream of
+            :mod:`torch`.
         dtype
             The type of the entries of the matrix.  :obj:`numpy.float32`
             halves the memory the values take, for operators which would not
             otherwise fit, and gives products in single precision of values
             in single precision, see :meth:`__call__`.
         """
+        _check_device(device)
+
         array, shape_grid_input, shape_grid_output = weights
 
         array = np.asarray(array)
@@ -166,15 +186,11 @@ class Regridder:
 
         # the resampled axes are counted from the end, as
         # `regridding.regrid_from_weights` counts them, since the grids can
-        # have fewer orthogonal axes than the weights, which broadcast them
+        # have fewer orthogonal axes than the weights, which broadcast them.
+        # The input and the output can have different numbers of them, as
+        # multilinear weights onto scattered points do
         axis_input = _util._normalize_axis(axis_input, len(shape_grid_input))
         axis_output = _util._normalize_axis(axis_output, len(shape_grid_output))
-
-        if len(axis_input) != len(axis_output):
-            raise ValueError(
-                f"{axis_input=} and {axis_output=} should have the same number "
-                f"of axes"
-            )
 
         ndim_input = num_orthogonal + len(axis_input)
         ndim_output = num_orthogonal + len(axis_output)
@@ -382,13 +398,14 @@ class Regridder:
         device
             Where to store and apply the operator, see :attr:`device`.
         """
+        _check_device(device)
         if device == self.device:
             return self
         arrays = (self.indptr, self.indices, self.data)
         if device is None:
             arrays = tuple(a.cpu().numpy() for a in arrays)
         else:
-            torch = _torch()
+            torch = _cuda.import_torch()
             arrays = tuple(torch.as_tensor(a, device=device) for a in arrays)
         indptr, indices, data = arrays
         return dataclasses.replace(
@@ -405,12 +422,19 @@ class Regridder:
         The exact transpose of this operator.
 
         It is computed once and kept, and its own transpose is this
-        operator.
+        operator, for as long as anything else keeps this one: the transpose
+        refers back to it only weakly.
         """
-        if self._transposed is None and self.device is not None:
+        if self._transposed is not None:
+            return self._transposed
+        original = None if self._original is None else self._original()
+        if original is not None:
+            return original
+
+        num_rows, num_columns = self.shape_matrix
+        if self.device is not None:
             from . import _cuda as _cuda_regridder
 
-            num_rows, num_columns = self.shape_matrix
             indptr, indices, data = _cuda_regridder.transpose(
                 indptr=self.indptr,
                 indices=self.indices,
@@ -418,9 +442,7 @@ class Regridder:
                 num_columns=num_columns,
                 dtype_indices=_index_dtype(num_rows),
             )
-            self._transposed = self._transpose_from(indptr, indices, data)
-        if self._transposed is None:
-            num_rows, num_columns = self.shape_matrix
+        else:
             num_chunks = _num_chunks(num_columns)
             # each chunk of rows has about as many entries as the others
             bounds = np.searchsorted(
@@ -437,8 +459,10 @@ class Regridder:
             _transpose_scatter(
                 self.indptr, self.indices, self.data, bounds, cursors, indices, data
             )
-            self._transposed = self._transpose_from(indptr, indices, data)
-        return self._transposed
+
+        transposed = self._transpose_from(indptr, indices, data)
+        self._transposed = transposed
+        return transposed
 
     def _transpose_from(self, indptr: Any, indices: Any, data: Any) -> "Regridder":
         """The transpose of this operator, given the arrays of its matrix."""
@@ -454,7 +478,8 @@ class Regridder:
             unit=self.unit,
             device=self.device,
         )
-        result._transposed = self
+        original: Regridder = self
+        result._original = weakref.ref(original)
         return result
 
     def transpose_conservative(
@@ -609,14 +634,12 @@ class Regridder:
                 volume=volume,
             )
         else:
-            data = transposed.data
-            if scale != 1:
-                data = data * scale
-            result = np.empty_like(data)
+            result = np.empty_like(transposed.data)
             _scale(
                 transposed.indptr,
                 transposed.indices,
-                data,
+                transposed.data,
+                scale,
                 table_rows,
                 table_columns,
                 factor,
@@ -624,17 +647,9 @@ class Regridder:
                 result,
             )
 
-        return Regridder(
-            shape_input=transposed.shape_input,
-            shape_output=transposed.shape_output,
-            axis_input=transposed.axis_input,
-            axis_output=transposed.axis_output,
-            shape_weights=self.shape_weights,
-            indptr=transposed.indptr,
-            indices=transposed.indices,
-            data=result,
-            device=self.device,
-        )
+        # the copy starts without the caches of the exact transpose, whose
+        # values it does not share
+        return dataclasses.replace(transposed, data=result, unit=None)
 
     def _cells(
         self,
@@ -660,9 +675,18 @@ class Regridder:
         values
             An array which broadcasts to :attr:`shape_input`, after any
             leading axes it has beyond it, which the operator is applied
-            along.  On a device, a :mod:`torch` tensor or another array which
-            :func:`torch.as_tensor` accepts, and the result is of the same
-            kind.
+            along.  An operator on a device takes anything an operator on
+            the host does, sends it to the device, and returns the result on
+            the host.  It also takes values already on the device, which it
+            applies there, on the current stream of :mod:`torch`: a
+            :mod:`torch` tensor gives a tensor, and any other array on the
+            device gives a :mod:`numba` array.
+
+        Raises
+        ------
+        TypeError
+            If the operator has a unit and the values are on a device, where
+            there is nothing to carry it.
 
         Notes
         -----
@@ -673,13 +697,53 @@ class Regridder:
         rounded.  The rule is the same on the host and on a device, where
         :mod:`torch` would otherwise promote integers differently from
         :mod:`numpy`.
+
+        The units of the values on the host and of the weights multiply.
         """
         if self.device is not None:
-            return self._call_device(values)
+            from . import _cuda as _cuda_regridder
+
+            torch = _cuda.import_torch()
+            if isinstance(values, torch.Tensor):
+                self._check_unitless()
+                return self._call_device(values)
+            if cuda.is_cuda_array(values):
+                self._check_unitless()
+                # an array of `numba` is written and read on its default stream
+                _cuda_regridder.after_numba()
+                result = self._call_device(torch.as_tensor(values, device="cuda"))
+                result = result.contiguous()
+                _cuda_regridder.before_numba()
+                return cuda.as_cuda_array(result)
 
         unit = getattr(values, "unit", None)
         values = np.asarray(getattr(values, "value", values))
 
+        if self.device is not None:
+            torch = _cuda.import_torch()
+            values = torch.as_tensor(values, device="cuda")
+            result = self._call_device(values).cpu().numpy()
+        else:
+            result = self._call_host(values)
+
+        if self.unit is not None:
+            unit = self.unit if unit is None else unit * self.unit
+        if unit is not None:
+            result = result << unit
+
+        return result
+
+    def _check_unitless(self) -> None:
+        """Raise if this operator has a unit, for values on a device."""
+        if self.unit is not None:
+            raise TypeError(
+                f"this operator has a unit, {self.unit}, which values on a "
+                f"device have nowhere to carry; give it values on the host, "
+                f"or weights without a unit"
+            )
+
+    def _call_host(self, values: np.ndarray) -> np.ndarray:
+        """Apply this operator on the host, see :meth:`__call__`."""
         layout = self._layout(self._shape_lead(values.shape))
         try:
             values = np.broadcast_to(values, layout.shape_input)
@@ -693,19 +757,12 @@ class Regridder:
         dtype = np.float32 if single else np.float64
 
         x = np.ascontiguousarray(values.transpose(layout.order_input), dtype=dtype)
-        x = x.reshape(layout.num_columns, -1)
-        y = np.empty((layout.num_rows, x.shape[1]), dtype=dtype)
+        x = x.reshape(layout.num_columns, layout.num_batch)
+        y = np.empty((layout.num_rows, layout.num_batch), dtype=dtype)
 
         _matmul(self.indptr, self.indices, self.data, x, y, numba.get_num_threads())
 
-        result = y.reshape(layout.shape_result).transpose(layout.order_result)
-
-        if self.unit is not None:
-            unit = self.unit if unit is None else unit * self.unit
-        if unit is not None:
-            result = result << unit
-
-        return result
+        return y.reshape(layout.shape_result).transpose(layout.order_result)
 
     def _shape_lead(self, shape: tuple[int, ...]) -> tuple[int, ...]:
         """The leading axes of values of `shape`, beyond :attr:`shape_input`."""
@@ -743,6 +800,9 @@ class Regridder:
             + tuple(self.shape_output[ax] for ax in self._batch_output)
         )
         num_rows, num_columns = self.shape_matrix
+        num_batch = math.prod(shape_lead) * math.prod(
+            self.shape_input[ax] for ax in self._batch_input
+        )
         result = _Layout(
             order_input=tuple(order_input),
             order_result=tuple(int(ax) for ax in np.argsort(order_output)),
@@ -750,17 +810,18 @@ class Regridder:
             shape_result=shape_result,
             num_rows=num_rows,
             num_columns=num_columns,
+            num_batch=num_batch,
         )
         self._layouts[shape_lead] = result
         return result
 
     def _call_device(self, values: Any) -> Any:
-        """Apply this operator on the device, see :meth:`__call__`."""
-        torch = _torch()
+        """
+        Apply this operator on the device to a :mod:`torch` tensor, see
+        :meth:`__call__`.
+        """
+        torch = _cuda.import_torch()
         from . import _cuda as _cuda_regridder
-
-        is_tensor = isinstance(values, torch.Tensor)
-        values = torch.as_tensor(values, device="cuda")
 
         layout = self._layout(self._shape_lead(tuple(values.shape)))
         try:
@@ -775,30 +836,39 @@ class Regridder:
         dtype = torch.float32 if single else torch.float64
 
         x = values.permute(layout.order_input).to(dtype).contiguous()
-        x = x.reshape(layout.num_columns, -1)
-        y = torch.empty((layout.num_rows, x.shape[1]), dtype=dtype, device="cuda")
+        x = x.reshape(layout.num_columns, layout.num_batch)
+        shape_y = (layout.num_rows, layout.num_batch)
 
-        if self._arrays_device is None:
-            self._arrays_device = (
-                cuda.as_cuda_array(self.indptr),
-                cuda.as_cuda_array(self.indices),
-                cuda.as_cuda_array(self.data),
+        if x.numel() and layout.num_rows:
+            y = torch.empty(shape_y, dtype=dtype, device="cuda")
+            indptr, indices, data = self._arrays_numba()
+            _cuda_regridder.matmul(
+                indptr,
+                indices,
+                data,
+                cuda.as_cuda_array(x),
+                cuda.as_cuda_array(y),
             )
-        indptr, indices, data = self._arrays_device
+        else:
+            # `numba` cannot view an empty tensor, and a matrix with no
+            # columns has no entries, so each row of its product is zero
+            y = torch.zeros(shape_y, dtype=dtype, device="cuda")
 
-        _cuda_regridder.matmul(
-            indptr,
-            indices,
-            data,
-            cuda.as_cuda_array(x),
-            cuda.as_cuda_array(y),
-        )
+        return y.reshape(layout.shape_result).permute(layout.order_result)
 
-        result = y.reshape(layout.shape_result).permute(layout.order_result)
+    def _arrays_numba(self) -> tuple[Any, ...]:
+        """
+        The arrays of the matrix on the device, as :mod:`numba` arrays.
 
-        if is_tensor:
-            return result
-        return cuda.as_cuda_array(result.contiguous())
+        Viewing a tensor takes about 35 µs, so the views are kept, and made
+        again only once the fields hold other arrays.
+        """
+        arrays = (self.indptr, self.indices, self.data)
+        kept = self._arrays_device
+        if kept is None or any(a is not b for a, b in zip(arrays, kept[0])):
+            kept = (arrays, tuple(cuda.as_cuda_array(a) for a in arrays))
+            self._arrays_device = kept
+        return kept[1]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -824,21 +894,25 @@ class _Layout:
     num_columns: int
     """The number of columns of the matrix."""
 
-
-def _torch() -> Any:
+    num_batch: int
     """
-    Import :mod:`torch`, which an operator on a device needs.
-
-    It is an optional dependency, so it is absent from the environment the
-    type checker runs in.
+    The number of columns of the dense matrix the values are laid out as,
+    one for each element of the leading axes and the batch axes.
     """
-    try:
-        import torch  # type: ignore[import-not-found]
-    except ImportError as error:  # pragma: nocover
-        raise ImportError(
-            "a `Regridder` on a device needs `torch`; install `regridding[cuda]`"
-        ) from error
-    return torch
+
+
+def _check_device(device: None | str) -> None:
+    """
+    Raise if `device` is not somewhere an operator can be, see
+    :attr:`Regridder.device`.
+
+    Anything else would otherwise be taken for the current CUDA device.
+    """
+    if device is not None and device != "cuda":
+        raise ValueError(
+            f"an operator is stored on the host, with `device=None`, or on the "
+            f"current CUDA device, with `device='cuda'`, not {device!r}"
+        )
 
 
 def _assemble(
@@ -874,19 +948,37 @@ def _assemble(
     dtype
         The type of the entries.
     """
-    # `numba.typed.List()` is declared to return a plain `list` when Numba's
-    # JIT is disabled, a mode this library is not usable in.
-    list_input: TypedList = TypedList()  # type: ignore[assignment]
-    list_output: TypedList = TypedList()  # type: ignore[assignment]
-    list_values: TypedList = TypedList()  # type: ignore[assignment]
+    if not blocks:
+        # `numba` cannot type a list which has nothing in it
+        return (
+            np.zeros(num_rows + 1, dtype=np.int64),
+            np.empty(0, dtype=dtype_indices),
+            np.empty(0, dtype=dtype),
+        )
+
+    blocks_host = []
     for indices_input, indices_output, values in blocks:
         if cuda.is_cuda_array(values):
             indices_input = indices_input.copy_to_host()
             indices_output = indices_output.copy_to_host()
             values = values.copy_to_host()
+        blocks_host.append((indices_input, indices_output, np.asarray(values)))
+
+    # the values of every element are given to `numba` as one type, which is
+    # theirs if they share one, so that weights in single precision are not
+    # copied to double precision on their way into a matrix in single
+    # precision
+    dtype_values = np.result_type(*(values.dtype for _, _, values in blocks_host))
+
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    list_input: TypedList = TypedList()  # type: ignore[assignment]
+    list_output: TypedList = TypedList()  # type: ignore[assignment]
+    list_values: TypedList = TypedList()  # type: ignore[assignment]
+    for indices_input, indices_output, values in blocks_host:
         list_input.append(indices_input)
         list_output.append(indices_output)
-        list_values.append(np.asarray(values, dtype=np.float64))
+        list_values.append(values.astype(dtype_values, copy=False))
 
     starts = np.zeros(len(list_values) + 1, dtype=np.int64)
     starts[1:] = np.cumsum([v.shape[0] for v in list_values])
@@ -1310,6 +1402,7 @@ def _scale(
     indptr: np.ndarray,
     indices: np.ndarray,
     data: np.ndarray,
+    scale: float,
     table_rows: np.ndarray,
     table_columns: np.ndarray,
     factor: np.ndarray,
@@ -1317,8 +1410,8 @@ def _scale(
     result: np.ndarray,
 ) -> None:
     """
-    Multiply each entry of a transposed matrix by the factor of its input
-    cell and divide it by the volume of its output cell.
+    Multiply each entry of a transposed matrix by `scale` and by the factor
+    of its input cell, and divide it by the volume of its output cell.
 
     Each row of a table describes one axis of the rows or the columns: its
     stride and length there, and its stride in `factor` and in `volume`.
@@ -1339,4 +1432,4 @@ def _scale(
                 i = (c // table_columns[a, 0]) % table_columns[a, 1]
                 f += i * table_columns[a, 2]
                 v += i * table_columns[a, 3]
-            result[k] = data[k] * factor[f] / volume[v]
+            result[k] = data[k] * scale * factor[f] / volume[v]

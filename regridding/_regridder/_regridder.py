@@ -425,12 +425,22 @@ class Regridder:
         operator, for as long as anything else keeps this one: the transpose
         refers back to it only weakly.
         """
+        transposed = self._transpose_kept()
+        if transposed is None:
+            transposed = self._transpose()
+            self._transposed = transposed
+        return transposed
+
+    def _transpose_kept(self) -> "None | Regridder":
+        """The exact transpose of this operator, if one is kept, see :attr:`T`."""
         if self._transposed is not None:
             return self._transposed
-        original = None if self._original is None else self._original()
-        if original is not None:
-            return original
+        if self._original is not None:
+            return self._original()
+        return None
 
+    def _transpose(self) -> "Regridder":
+        """Compute the exact transpose of this operator, without keeping it."""
         num_rows, num_columns = self.shape_matrix
         if self.device is not None:
             from . import _cuda as _cuda_regridder
@@ -460,9 +470,7 @@ class Regridder:
                 self.indptr, self.indices, self.data, bounds, cursors, indices, data
             )
 
-        transposed = self._transpose_from(indptr, indices, data)
-        self._transposed = transposed
-        return transposed
+        return self._transpose_from(indptr, indices, data)
 
     def _transpose_from(self, indptr: Any, indices: Any, data: Any) -> "Regridder":
         """The transpose of this operator, given the arrays of its matrix."""
@@ -498,8 +506,13 @@ class Regridder:
         of the weights the entry came from, so this is done for each entry
         rather than as two scalings of the whole matrix: an element whose
         input is shared with others, or whose output is summed with others',
-        can still have cells of its own size.  The result shares the indices
-        of :attr:`T`.
+        can still have cells of its own size.
+
+        The result shares the indices of the exact transpose.  If :attr:`T`
+        has not been computed yet, the exact transpose is computed for this
+        and not kept, so that its values, which the conservative ones
+        replace, are freed rather than kept as long as this operator: 4 or 8
+        bytes for each entry.
 
         Parameters
         ----------
@@ -609,7 +622,11 @@ class Regridder:
                     f"each entry came from is lost"
                 )
 
-        transposed = self.T
+        # MART, for one, needs only the conservative values, so an exact
+        # transpose which is not kept already is not kept for this either
+        transposed = self._transpose_kept()
+        if transposed is None:
+            transposed = self._transpose()
         table_rows = np.array(table_rows, dtype=np.int64).reshape(-1, 4)
         table_columns = np.array(table_columns, dtype=np.int64).reshape(-1, 4)
 

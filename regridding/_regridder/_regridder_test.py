@@ -185,7 +185,8 @@ class TestRoles:
         result = regridder.transpose_conservative(grid_input, grid_output)
         assert result.shape_input == regridder.shape_output
         assert result.shape_output == regridder.shape_input
-        assert result.indices is regridder.T.indices
+        assert np.array_equal(result.indices, regridder.T.indices)
+        assert np.array_equal(result.indptr, regridder.T.indptr)
 
         weights_transposed = regridding.transpose_weights_conservative(
             weights,
@@ -559,6 +560,28 @@ def test_transpose_freed() -> None:
     values = np.random.default_rng(15).normal(size=again.shape_input)
     expected = regridding.Regridder.from_weights(weights, axis_input, axis_output)
     assert np.allclose(again(values), expected(values), rtol=1e-13, atol=1e-15)
+
+
+def test_transpose_conservative_kept() -> None:
+    """
+    The conservative transpose shares the indices of an exact transpose
+    which is kept, and does not keep one which it had to compute, whose
+    values it replaces.
+    """
+    weights, (grid_input, grid_output, axis_input, axis_output) = _weights_trailing()
+
+    regridder = regridding.Regridder.from_weights(weights, axis_input, axis_output)
+    result = regridder.transpose_conservative(grid_input, grid_output)
+    assert regridder._transpose_kept() is None
+
+    transposed = regridder.T
+    again = regridder.transpose_conservative(grid_input, grid_output)
+    assert again.indices is transposed.indices
+    assert again.indptr is transposed.indptr
+    assert np.array_equal(again.data, result.data)
+
+    # a transpose keeps the operator it came from, for as long as it lives
+    assert transposed._transpose_kept() is regridder
 
 
 def test_from_weights_single() -> None:

@@ -22,6 +22,7 @@ __all__ = [
     "rows",
     "zeros",
     "prefix_sum",
+    "import_torch",
 ]
 
 threads = 256
@@ -215,15 +216,7 @@ def prefix_sum(counts: Any, num: int) -> tuple[Any, int]:
     The ``num + 1`` offsets, as a device array whose last element is the
     total, and that total.
     """
-    try:
-        # an optional dependency, so it is absent from the environment the
-        # type checker runs in
-        import torch  # type: ignore[import-not-found]
-    except ImportError as error:  # pragma: nocover
-        raise ImportError(
-            "weights on a device need `torch`, which provides the prefix sum; "
-            "install `regridding[cuda]`"
-        ) from error
+    torch = import_torch()
 
     offset = allocate(num + 1, np.int64)
 
@@ -234,3 +227,20 @@ def prefix_sum(counts: Any, num: int) -> tuple[Any, int]:
         total = int(view[~0].item())
 
     return offset, total
+
+
+def import_torch() -> Any:
+    """
+    Import :mod:`torch`, which the work on a device borrows what :mod:`numba`
+    lacks from: a prefix sum, sorting, and the layout of arrays.
+
+    It is an optional dependency, so it is absent from the environment the
+    type checker runs in.
+    """
+    try:
+        import torch  # type: ignore[import-not-found]
+    except ImportError as error:  # pragma: nocover
+        raise ImportError(
+            "work on a device needs `torch`; install `regridding[cuda]`"
+        ) from error
+    return torch

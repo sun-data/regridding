@@ -18,7 +18,7 @@ from ._weights import (
 )
 from ._interp_ndarray import ndarray_linear_interpolation
 from ._regrid import regrid_from_weights, regrid
-from ._regridder import Regridder
+from ._regridder import Regridder, RegridderBuilder
 from ._fill import fill
 
 __all__ = [
@@ -33,5 +33,6 @@ __all__ = [
     "regrid_from_weights",
     "regrid",
     "Regridder",
+    "RegridderBuilder",
     "fill",
 ]

@@ -52,7 +52,9 @@ class Regridder:
     Transposing the operator swaps the two shapes, so the elements applied
     to the same input are summed instead, and vice versa.
 
-    Build one with :meth:`from_weights`.
+    Build one with :meth:`from_weights`, or with a
+    :class:`~regridding.RegridderBuilder` from weights too large to hold
+    at once.
     """
 
     shape_input: tuple[int, ...]
@@ -234,27 +236,13 @@ class Regridder:
         orthogonal_input = _orthogonal(len(shape_input), axis_input)
         orthogonal_output = _orthogonal(len(shape_output), axis_output)
 
-        for k in range(num_orthogonal):
-            num_weights = shape_weights[k]
-            num_input = shape_input[orthogonal_input[k]]
-            num_output = shape_output[orthogonal_output[k]]
-            if num_weights > 1:
-                if num_input not in (1, num_weights) or num_output not in (
-                    1,
-                    num_weights,
-                ):
-                    raise ValueError(
-                        f"the weights have {num_weights} elements along "
-                        f"orthogonal axis {k}, so the input and output should "
-                        f"have either 1 or {num_weights} along it, but they "
-                        f"have {num_input} and {num_output}"
-                    )
-            elif num_input != num_output:
-                raise ValueError(
-                    f"the weights are the same along orthogonal axis {k}, so "
-                    f"the input and output should have the same length along "
-                    f"it, but they have {num_input} and {num_output}"
-                )
+        _check_orthogonal(
+            shape_input=shape_input,
+            shape_output=shape_output,
+            orthogonal_input=orthogonal_input,
+            orthogonal_output=orthogonal_output,
+            shape_weights=shape_weights,
+        )
 
         result = cls(
             shape_input=shape_input,
@@ -932,6 +920,53 @@ def _check_device(device: None | str) -> None:
         )
 
 
+def _check_orthogonal(
+    shape_input: tuple[int, ...],
+    shape_output: tuple[int, ...],
+    orthogonal_input: tuple[int, ...],
+    orthogonal_output: tuple[int, ...],
+    shape_weights: tuple[int, ...],
+) -> None:
+    """
+    Raise if the input or the output has a length along an orthogonal axis
+    which does not give the operator one of the roles of
+    :class:`Regridder` there.
+
+    Parameters
+    ----------
+    shape_input
+        The shape of the arrays the operator accepts.
+    shape_output
+        The shape of the arrays the operator returns.
+    orthogonal_input
+        The orthogonal axes of the input, in order.
+    orthogonal_output
+        The orthogonal axes of the output, in order.
+    shape_weights
+        The length of the weights along each orthogonal axis, in order.
+    """
+    for k, num_weights in enumerate(shape_weights):
+        num_input = shape_input[orthogonal_input[k]]
+        num_output = shape_output[orthogonal_output[k]]
+        if num_weights > 1:
+            if num_input not in (1, num_weights) or num_output not in (
+                1,
+                num_weights,
+            ):
+                raise ValueError(
+                    f"the weights have {num_weights} elements along "
+                    f"orthogonal axis {k}, so the input and output should "
+                    f"have either 1 or {num_weights} along it, but they "
+                    f"have {num_input} and {num_output}"
+                )
+        elif num_input != num_output:
+            raise ValueError(
+                f"the weights are the same along orthogonal axis {k}, so "
+                f"the input and output should have the same length along "
+                f"it, but they have {num_input} and {num_output}"
+            )
+
+
 def _assemble(
     blocks: list[tuple[Any, Any, Any]],
     offsets_rows: np.ndarray,
@@ -973,29 +1008,7 @@ def _assemble(
             np.empty(0, dtype=dtype),
         )
 
-    blocks_host = []
-    for indices_input, indices_output, values in blocks:
-        if cuda.is_cuda_array(values):
-            indices_input = indices_input.copy_to_host()
-            indices_output = indices_output.copy_to_host()
-            values = values.copy_to_host()
-        blocks_host.append((indices_input, indices_output, np.asarray(values)))
-
-    # the values of every element are given to `numba` as one type, which is
-    # theirs if they share one, so that weights in single precision are not
-    # copied to double precision on their way into a matrix in single
-    # precision
-    dtype_values = np.result_type(*(values.dtype for _, _, values in blocks_host))
-
-    # `numba.typed.List()` is declared to return a plain `list` when Numba's
-    # JIT is disabled, a mode this library is not usable in.
-    list_input: TypedList = TypedList()  # type: ignore[assignment]
-    list_output: TypedList = TypedList()  # type: ignore[assignment]
-    list_values: TypedList = TypedList()  # type: ignore[assignment]
-    for indices_input, indices_output, values in blocks_host:
-        list_input.append(indices_input)
-        list_output.append(indices_output)
-        list_values.append(values.astype(dtype_values, copy=False))
+    list_input, list_output, list_values = _lists(blocks)
 
     starts = np.zeros(len(list_values) + 1, dtype=np.int64)
     starts[1:] = np.cumsum([v.shape[0] for v in list_values])
@@ -1028,6 +1041,48 @@ def _assemble(
         data,
     )
     return indptr, indices, data
+
+
+def _lists(
+    blocks: list[tuple[Any, Any, Any]],
+) -> tuple[TypedList, TypedList, TypedList]:
+    """
+    The input indices, output indices and values of each element of the
+    weights, on the host, as lists :mod:`numba` can take.
+
+    Parameters
+    ----------
+    blocks
+        The ``(indices_input, indices_output, values)`` of each element of
+        the weights, on the host or on a device, in order.  There has to
+        be at least one, since :mod:`numba` cannot type a list which has
+        nothing in it.
+    """
+    blocks_host = []
+    for indices_input, indices_output, values in blocks:
+        if cuda.is_cuda_array(values):
+            indices_input = indices_input.copy_to_host()
+            indices_output = indices_output.copy_to_host()
+            values = values.copy_to_host()
+        blocks_host.append((indices_input, indices_output, np.asarray(values)))
+
+    # the values of every element are given to `numba` as one type, which is
+    # theirs if they share one, so that weights in single precision are not
+    # copied to double precision on their way into a matrix in single
+    # precision
+    dtype_values = np.result_type(*(values.dtype for _, _, values in blocks_host))
+
+    # `numba.typed.List()` is declared to return a plain `list` when Numba's
+    # JIT is disabled, a mode this library is not usable in.
+    list_input: TypedList = TypedList()  # type: ignore[assignment]
+    list_output: TypedList = TypedList()  # type: ignore[assignment]
+    list_values: TypedList = TypedList()  # type: ignore[assignment]
+    for indices_input, indices_output, values in blocks_host:
+        list_input.append(indices_input)
+        list_output.append(indices_output)
+        list_values.append(values.astype(dtype_values, copy=False))
+
+    return list_input, list_output, list_values
 
 
 def _axes(

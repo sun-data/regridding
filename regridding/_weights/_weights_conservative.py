@@ -212,7 +212,10 @@ def _weights_conservative(
                 coordinates_input_x, coordinates_input_y = coordinates_input
                 coordinates_output_x, coordinates_output_y = coordinates_output
                 if weights_input is not None:
-                    weights_input_index = weights_input[index]
+                    # the input cells of this element, which lie along the
+                    # same axes as its vertices, wherever the resampled axes
+                    # are among the orthogonal ones
+                    weights_input_index = weights_input[index_vertices_input]
                 else:
                     weights_input_index = None
                 grid_input_index = (

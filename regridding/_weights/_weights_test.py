@@ -431,3 +431,89 @@ def test_weights_input_unit_on_device() -> None:
             weights_input=np.ones((10, 10)) * u.mm,
             **dict(_grids_unit(), coalesce=False, device="cuda"),
         )
+
+
+def _grids_interleaved(
+    curvilinear: bool,
+) -> tuple[tuple[np.ndarray, ...], tuple[np.ndarray, ...], np.ndarray]:
+    """
+    Input grids of 4 by 4 cells, rotated along the first of two orthogonal
+    axes and scaled along the second, a weight for each of their cells, and
+    an output lattice, bent if `curvilinear` so that the sweep resamples onto
+    it instead of the clipping kernel.
+
+    The second orthogonal axis has as many elements as the input has cells
+    along a resampled axis, so that reading the weights of the cells of an
+    element with its orthogonal index alone, as if the resampled axes were
+    the last ones, finds cells of the right shape, but the wrong ones.
+    """
+    t = np.linspace(-2, 2, 5)
+    x, y = np.meshgrid(t, t, indexing="ij")
+    angle = np.array([0.1, 0.7])[:, np.newaxis, np.newaxis, np.newaxis]
+    scale = np.linspace(0.8, 1.1, 4)[np.newaxis, :, np.newaxis, np.newaxis]
+    grid_input = (
+        scale * (x * np.cos(angle) - y * np.sin(angle)),
+        scale * (x * np.sin(angle) + y * np.cos(angle)),
+    )
+
+    x_output, y_output = np.meshgrid(
+        np.linspace(-3, 3, 7),
+        np.linspace(-3, 3, 8),
+        indexing="ij",
+    )
+    if curvilinear:
+        x_output = x_output + 0.1 * y_output
+    grid_output = (x_output[np.newaxis, np.newaxis], y_output[np.newaxis, np.newaxis])
+
+    weights_input = np.random.default_rng(3).uniform(0.5, 1.5, size=(2, 4, 4, 4))
+
+    return grid_input, grid_output, weights_input
+
+
+@pytest.mark.parametrize(
+    argnames="kernel",
+    argvalues=[
+        "clipping",
+        "sweep",
+        pytest.param("cuda", marks=pytest.mark.cuda),
+    ],
+)
+def test_weights_input_interleaved(kernel: str) -> None:
+    """
+    The weights of the input cells of each element are read from the cells of
+    its own input grid, so moving the resampled axes of the input in among
+    its orthogonal axes gives the same weights.
+    """
+    grid_input, grid_output, weights_input = _grids_interleaved(
+        curvilinear=kernel == "sweep",
+    )
+    kwargs: dict[str, Any] = dict(
+        coordinates_output=grid_output,
+        axis_output=(2, 3),
+        method="conservative",
+    )
+    if kernel == "cuda":
+        kwargs |= dict(coalesce=False, device="cuda")
+
+    trailing, _, _ = regridding.weights(
+        coordinates_input=grid_input,
+        axis_input=(2, 3),
+        weights_input=weights_input,
+        **kwargs,
+    )
+
+    # orthogonal, resampled, orthogonal, resampled
+    order = (0, 2, 1, 3)
+    interleaved, _, _ = regridding.weights(
+        coordinates_input=tuple(np.transpose(c, order) for c in grid_input),
+        axis_input=(1, 3),
+        weights_input=np.transpose(weights_input, order),
+        **kwargs,
+    )
+
+    assert interleaved.shape == trailing.shape
+    for index in np.ndindex(*trailing.shape):
+        for a, b in zip(trailing[index], interleaved[index]):
+            if kernel == "cuda":
+                a, b = a.copy_to_host(), b.copy_to_host()
+            assert np.array_equal(a, b)

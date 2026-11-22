@@ -1,9 +1,11 @@
-from typing import Any
+from typing import Any, NoReturn
 import dataclasses
+import functools
 import pytest
 import numpy as np
 import astropy.units as u
 import regridding
+from regridding._regridder import _builder as _builder_module
 from regridding._regridder import _regridder_test
 from regridding._regridder._cuda_test import requires_cuda
 
@@ -79,8 +81,15 @@ def _stopped(weights: Weights) -> Weights:
     return result, shape_input, shape_output
 
 
+@functools.cache
 def _case(role: str, layout: str) -> _Case:
-    """The weights and grids of `role` in `layout`, see :class:`_Case`."""
+    """
+    The weights and grids of `role` in `layout`, see :class:`_Case`.
+
+    Each case is computed once, since computing the weights is most of the
+    time these tests take with the JIT of Numba disabled, so no test may
+    change one in place.
+    """
     grid_input, grid_output, axis_input, axis_output = _regridder_test._grids(layout)
 
     weights_input = np.random.default_rng(16).uniform(0.5, 1.5, size=(2, 3, 8, 8))
@@ -112,6 +121,30 @@ def _case(role: str, layout: str) -> _Case:
         shape_output=_regridder_test._shape(
             default.shape_output, axis_output, orthogonal_output
         ),
+    )
+
+
+def _case_uniform(role: str) -> _Case:
+    """
+    The weights and grids of `role` in the trailing layout, see
+    :class:`_Case`, with the same input grid, and the same weights of the
+    input cells, for every element.
+    """
+    case = _case(role, "trailing")
+    grid_input = tuple(np.broadcast_to(c[:1, :1], c.shape) for c in case.grid_input)
+    weights = regridding.weights(
+        grid_input,
+        case.grid_output,
+        axis_input=case.axis_input,
+        axis_output=case.axis_output,
+        method="conservative",
+    )
+    weights_input = case.weights_input
+    return dataclasses.replace(
+        case,
+        weights=_stopped(weights),
+        grid_input=grid_input,
+        weights_input=np.broadcast_to(weights_input[:1, :1], weights_input.shape),
     )
 
 
@@ -223,6 +256,37 @@ def _expected_conservative(
     )
 
 
+def _transposed_elements(
+    case: _Case,
+    values: np.ndarray,
+    shape_output: tuple[int, ...],
+) -> np.ndarray:
+    """
+    What the conservative transposes of the elements of the weights of
+    `case` give, each from the cells of its own element, for `values`
+    broadcast to every element, summed along the axes `shape_output` has a
+    length of one along.
+    """
+    weights = regridding.transpose_weights_conservative(
+        case.weights,
+        case.grid_input,
+        case.grid_output,
+        axis_input=case.axis_input,
+        axis_output=case.axis_output,
+        weights_input=case.weights_input,
+    )
+    default = regridding.Regridder.from_weights(
+        weights, case.axis_output, case.axis_input
+    )
+    result = regridding.regrid_from_weights(
+        *weights,
+        values_input=np.broadcast_to(values, default.shape_input),
+        axis_input=case.axis_output,
+        axis_output=case.axis_input,
+    )
+    return _regridder_test._sum(result, shape_output)
+
+
 def _assert_same(
     result: None | regridding.Regridder,
     expected: regridding.Regridder,
@@ -247,6 +311,35 @@ def _assert_same(
         assert a.tobytes() == b.tobytes(), name
 
 
+def _assert_regridder(
+    result: regridding.Regridder,
+    expected: regridding.Regridder,
+    role: str,
+    split: str,
+) -> None:
+    """
+    Check that an operator built from the pieces `split` of the weights of
+    `role` is `expected`, bit for bit, unless pieces which put entries in the
+    same rows were placed out of the order of their elements.  Then check
+    that it gives the same products, to within the rounding of sums taken in
+    another order.
+    """
+    if role == "all" and split == "second":
+        # every element sums into the same rows, and the first piece holds
+        # elements which come after some of the second's
+        assert result.num_entries == expected.num_entries
+        values = np.random.default_rng(17).normal(size=result.shape_input)
+        assert np.allclose(result(values), expected(values), rtol=1e-13)
+        return
+
+    _assert_same(result, expected)
+
+
+def _out_of_memory(*args: Any, **kwargs: Any) -> NoReturn:
+    """Run out of memory, in place of a function which makes room for arrays."""
+    raise MemoryError("out of memory, as a test")
+
+
 @pytest.mark.parametrize(argnames="dtype", argvalues=[np.float64, np.float32])
 @pytest.mark.parametrize(argnames="split", argvalues=list(splits))
 @pytest.mark.parametrize(argnames="layout", argvalues=["trailing", "interleaved"])
@@ -264,19 +357,9 @@ class TestBuilder:
         """
         case = _case(role, layout)
         result, transposed = _build(case, splits[split], dtype=dtype)
-        expected = _expected(case, dtype)
 
         assert transposed is None
-
-        if role == "all" and split == "second":
-            # every element sums into the same rows, and the first piece holds
-            # elements which come after some of the second's
-            assert result.num_entries == expected.num_entries
-            values = np.random.default_rng(17).normal(size=result.shape_input)
-            assert np.allclose(result(values), expected(values), rtol=1e-13)
-            return
-
-        _assert_same(result, expected)
+        _assert_regridder(result, _expected(case, dtype), role, split)
 
     def test_conservative(
         self,
@@ -287,22 +370,51 @@ class TestBuilder:
     ) -> None:
         """
         The conservative transpose is the one computed from the grids of all
-        the weights at once, bit for bit, where an orthogonal axis is not
-        summed after the input is shared along it, and otherwise the builder
-        refuses.
+        the weights at once, bit for bit.  Where an orthogonal axis is summed
+        after the input is shared along it, which
+        `Regridder.transpose_conservative()` refuses for these grids, since
+        they vary along it, it gives what the conservative transposes of the
+        elements give together, to within the rounding of sums taken in
+        another order.
         """
         case = _case(role, layout)
-
-        if role in ("both", "all"):
-            with pytest.raises(NotImplementedError, match="shared along it"):
-                _build(case, splits[split], conservative=True, dtype=dtype)
-            return
-
         result, transposed = _build(case, splits[split], conservative=True, dtype=dtype)
         expected = _expected(case, dtype)
 
-        _assert_same(result, expected)
+        _assert_regridder(result, expected, role, split)
+
+        if role in ("both", "all"):
+            assert transposed is not None
+            values = np.random.default_rng(19).normal(size=transposed.shape_input)
+            expected_values = _transposed_elements(
+                case, values, transposed.shape_output
+            )
+            tolerance = 1e-13 if dtype == np.float64 else 1e-6
+            assert np.allclose(
+                transposed(values),
+                expected_values,
+                rtol=tolerance,
+                atol=tolerance * np.abs(expected_values).max(),
+            )
+            return
+
         _assert_same(transposed, _expected_conservative(case, expected))
+
+
+@pytest.mark.parametrize(argnames="split", argvalues=["whole", "first", "elements"])
+@pytest.mark.parametrize(argnames="role", argvalues=["both", "all"])
+def test_conservative_shared_summed(role: str, split: str) -> None:
+    """
+    Where an orthogonal axis is summed after the input is shared along it,
+    and the grids do not vary along it, the conservative transpose is the
+    one `Regridder.transpose_conservative()` computes, bit for bit.
+    """
+    case = _case_uniform(role)
+    result, transposed = _build(case, splits[split], conservative=True)
+    expected = _expected(case)
+
+    _assert_same(result, expected)
+    _assert_same(transposed, _expected_conservative(case, expected))
 
 
 def test_zeros() -> None:
@@ -324,6 +436,29 @@ def test_zeros() -> None:
 
     values = np.random.default_rng(18).normal(size=result.shape_input)
     assert np.array_equal(result(values), with_zeros(values))
+
+
+def test_zeros_not_finite() -> None:
+    """
+    A NaN in an input cell behind the field stop reaches no output, where
+    the zeros of the stop make NaN of the outputs they lead to.
+    """
+    case = _case("diagonal", "trailing")
+    result, _ = _build(case, splits["whole"])
+    with_zeros = regridding.Regridder.from_weights(
+        case.weights,
+        axis_input=case.axis_input,
+        axis_output=case.axis_output,
+        shape_input=case.shape_input,
+        shape_output=case.shape_output,
+    )
+
+    values = np.ones(result.shape_input)
+    # the first row of input cells, which `_stopped` blocks
+    values[..., 0, :] = np.nan
+
+    assert np.isnan(with_zeros(values)).any()
+    assert np.isfinite(result(values)).all()
 
 
 def test_reversed() -> None:
@@ -613,14 +748,15 @@ def _changed(weights: Weights, change: str) -> Weights:
 def test_place_changed() -> None:
     """
     A piece with fewer entries in the second pass than the first raises,
-    and the builder cannot go on.
+    and the builder cannot go on, so it lets go of the matrix.
     """
     case = _case("diagonal", "trailing")
     (whole,) = splits["whole"]
     builder = _builder(case)
     builder.count(_piece(case.weights, whole), start=_start(whole))
-    with pytest.raises(ValueError, match="does not have the"):
+    with pytest.raises(ValueError, match=r"has \d+ entries, but \d+ were counted"):
         builder.place(_changed(case.weights, "zeroed"), start=_start(whole))
+    assert builder._matrix is None
     with pytest.raises(ValueError, match="cannot go on"):
         builder.build()
 
@@ -635,14 +771,15 @@ def test_place_overrun() -> None:
     (whole,) = splits["whole"]
     builder = _builder(case)
     builder.count(_piece(case.weights, whole), start=_start(whole))
-    with pytest.raises(ValueError, match="does not have the"):
+    with pytest.raises(ValueError, match="gives a row more entries"):
         builder.place(_changed(case.weights, "last"), start=_start(whole))
 
 
 def test_build_rows_changed() -> None:
     """
     A piece whose entries moved to other rows between the passes, with as
-    many in all, is found once every piece has been placed.
+    many in all, is found once every piece has been placed, and the builder
+    lets go of the matrix.
     """
     case = _case("diagonal", "trailing")
     (whole,) = splits["whole"]
@@ -651,6 +788,57 @@ def test_build_rows_changed() -> None:
     builder.place(_changed(case.weights, "moved"), start=_start(whole))
     with pytest.raises(ValueError, match="rows of the matrix"):
         builder.build()
+    assert builder._matrix is None
+
+
+def test_place_out_of_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    A builder which runs out of memory as it makes room for the entries is
+    left as it was, so the piece can be placed again.
+    """
+    case = _case("diagonal", "trailing")
+    first, second = splits["first"]
+    builder = _builder(case)
+    builder.count(_piece(case.weights, first), start=_start(first))
+    builder.count(_piece(case.weights, second), start=_start(second))
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_builder_module, "_index_dtype", _out_of_memory)
+        with pytest.raises(MemoryError):
+            builder.place(_piece(case.weights, first), start=_start(first))
+
+    builder.place(_piece(case.weights, first), start=_start(first))
+    builder.place(_piece(case.weights, second), start=_start(second))
+    result, _ = builder.build()
+
+    _assert_same(result, _expected(case))
+
+
+def test_build_out_of_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    A builder which runs out of memory as it transposes the scaled values
+    keeps the matrix, so it can build the operators again.
+    """
+    case = _case("diagonal", "trailing")
+    (whole,) = splits["whole"]
+    builder = _builder(case, conservative=True)
+    builder.count(_piece(case.weights, whole), start=_start(whole))
+    builder.place(
+        _piece(case.weights, whole),
+        start=_start(whole),
+        **_grids(case, whole),
+    )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(regridding.Regridder, "_transpose", _out_of_memory)
+        with pytest.raises(MemoryError):
+            builder.build()
+
+    result, transposed = builder.build()
+    expected = _expected(case)
+
+    _assert_same(result, expected)
+    _assert_same(transposed, _expected_conservative(case, expected))
 
 
 def test_build_invalid() -> None:

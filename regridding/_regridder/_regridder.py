@@ -517,50 +517,16 @@ class Regridder:
         NotImplementedError
             If an orthogonal axis is summed by the operator after its input
             is shared along it, and either grid varies along it, since the
-            element an entry came from is then lost.
+            element an entry came from is then lost.  A
+            :class:`~regridding.RegridderBuilder`, which knows the element of
+            each entry, builds the transpose of such an operator.
         """
-        ndim_input = len(self.shape_input)
-        ndim_output = len(self.shape_output)
-
-        (
-            coordinates_input,
-            coordinates_output,
-            axis_input,
-            axis_output,
-            _,
-            _,
-            _,
-        ) = _util._normalize_input_output_coordinates(
+        factor, strides_factor, volume, strides_volume = self._factors_flat(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
-            axis_input=tuple(ax - ndim_input for ax in self.axis_input),
-            axis_output=tuple(ax - ndim_output for ax in self.axis_output),
-        )
-        axis_input = tuple(sorted(axis_input))
-        axis_output = tuple(sorted(axis_output))
-
-        shape_cells_input = self._cells(self.shape_input, self._orthogonal_input)
-        shape_cells_output = self._cells(self.shape_output, self._orthogonal_output)
-
-        _check_grids(
-            coordinates_input=coordinates_input,
-            coordinates_output=coordinates_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
-            shape_input=shape_cells_input,
-            shape_output=shape_cells_output,
-        )
-
-        factor, volume = _factors(
-            coordinates_input=coordinates_input,
-            coordinates_output=coordinates_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
-            shape_input=shape_cells_input,
             weights_input=weights_input,
+            shape_weights=self.shape_weights,
         )
-        factor, strides_factor = _flat(factor, shape_cells_input, "input")
-        volume, strides_volume = _flat(volume, shape_cells_output, "output")
 
         orthogonal_input = self._orthogonal_input
         orthogonal_output = self._orthogonal_output
@@ -618,12 +584,7 @@ class Regridder:
         table_rows = np.array(table_rows, dtype=np.int64).reshape(-1, 4)
         table_columns = np.array(table_columns, dtype=np.int64).reshape(-1, 4)
 
-        # a dimensionless unit, like a percentage, scales the weights by the
-        # number it stands for, and any other is dropped, as
-        # `regridding.transpose_weights_conservative` does
-        scale = 1.0
-        if self.unit is not None:
-            scale = float(_util._dimensionless(1.0 << self.unit, strict=False))
+        scale = _scale_unit(self.unit)
 
         if self.device is not None:
             from . import _cuda as _cuda_regridder
@@ -656,20 +617,84 @@ class Regridder:
         # values it does not share
         return dataclasses.replace(transposed, data=result, unit=None)
 
-    def _cells(
+    def _factors_flat(
         self,
-        shape: tuple[int, ...],
-        orthogonal: tuple[int, ...],
-    ) -> tuple[int, ...]:
+        coordinates_input: np.ndarray | tuple[np.ndarray, ...],
+        coordinates_output: np.ndarray | tuple[np.ndarray, ...],
+        weights_input: None | np.ndarray,
+        shape_weights: tuple[int, ...],
+    ) -> tuple[np.ndarray, tuple[int, ...], np.ndarray, tuple[int, ...]]:
         """
-        The shape of the cells of a grid the weights were built for: `shape`
-        along the resampled axes, and the length of the weights along the
-        orthogonal ones.
+        What the conservative transpose multiplies and divides the entries
+        of some elements of the weights by, computed from their grids and
+        laid out flat: the volume of each input cell over the square of its
+        weight, and the volume of each output cell.
+
+        Parameters
+        ----------
+        coordinates_input
+            The vertices of the input grid of the elements.
+        coordinates_output
+            The vertices of the output grid of the elements.
+        weights_input
+            The weights applied to the input values of the elements, if any.
+        shape_weights
+            The number of the elements along each orthogonal axis: those of
+            all the weights, or of a piece of them.
+
+        Returns
+        -------
+        The factors of the input cells and the stride of each axis of the
+        input in them, which is zero along the axes they do not vary along,
+        then the same for the volumes of the output cells.
         """
-        result = list(shape)
-        for ax, n in zip(orthogonal, self.shape_weights):
-            result[ax] = n
-        return tuple(result)
+        ndim_input = len(self.shape_input)
+        ndim_output = len(self.shape_output)
+
+        (
+            coordinates_input,
+            coordinates_output,
+            axis_input,
+            axis_output,
+            _,
+            _,
+            _,
+        ) = _util._normalize_input_output_coordinates(
+            coordinates_input=coordinates_input,
+            coordinates_output=coordinates_output,
+            axis_input=tuple(ax - ndim_input for ax in self.axis_input),
+            axis_output=tuple(ax - ndim_output for ax in self.axis_output),
+        )
+        axis_input = tuple(sorted(axis_input))
+        axis_output = tuple(sorted(axis_output))
+
+        shape_cells_input = _cells(
+            self.shape_input, self._orthogonal_input, shape_weights
+        )
+        shape_cells_output = _cells(
+            self.shape_output, self._orthogonal_output, shape_weights
+        )
+
+        _check_grids(
+            coordinates_input=coordinates_input,
+            coordinates_output=coordinates_output,
+            axis_input=axis_input,
+            axis_output=axis_output,
+            shape_input=shape_cells_input,
+            shape_output=shape_cells_output,
+        )
+
+        factor, volume = _factors(
+            coordinates_input=coordinates_input,
+            coordinates_output=coordinates_output,
+            axis_input=axis_input,
+            axis_output=axis_output,
+            shape_input=shape_cells_input,
+            weights_input=weights_input,
+        )
+        factor, strides_factor = _flat(factor, shape_cells_input, "input")
+        volume, strides_volume = _flat(volume, shape_cells_output, "output")
+        return factor, strides_factor, volume, strides_volume
 
     def __call__(self, values: Any) -> Any:
         """
@@ -1125,6 +1150,31 @@ def _shape_cells(
     return tuple(result)
 
 
+def _cells(
+    shape: tuple[int, ...],
+    orthogonal: tuple[int, ...],
+    shape_weights: tuple[int, ...],
+) -> tuple[int, ...]:
+    """
+    The shape of the cells of the grid of some elements of the weights:
+    `shape` along the resampled axes, and the number of the elements along
+    the orthogonal ones.
+
+    Parameters
+    ----------
+    shape
+        The shape of the input or the output of the operator.
+    orthogonal
+        The orthogonal axes of `shape`.
+    shape_weights
+        The number of the elements along each orthogonal axis.
+    """
+    result = list(shape)
+    for ax, n in zip(orthogonal, shape_weights):
+        result[ax] = n
+    return tuple(result)
+
+
 def _orthogonal(
     ndim: int,
     axis: tuple[int, ...],
@@ -1469,6 +1519,37 @@ def _matmul(
                     y[r, t] = total
 
 
+def _scale_unit(unit: Any) -> float:
+    """
+    What the conservative transpose scales the weights by for their `unit`:
+    the number a dimensionless one, like a percentage, stands for, and one
+    for any other, which is dropped, as
+    :func:`regridding.transpose_weights_conservative` does.
+    """
+    if unit is None:
+        return 1.0
+    return float(_util._dimensionless(1.0 << unit, strict=False))
+
+
+@numba.njit(cache=True)
+def _scaled(
+    value: float,
+    scale: float,
+    factor: float,
+    volume: float,
+) -> float:
+    """
+    The value of an entry of the conservative transpose, from its value in
+    the operator: multiplied by `scale` and by the factor of its input cell,
+    and divided by the volume of its output cell.
+
+    :meth:`Regridder.transpose_conservative` and
+    :class:`~regridding.RegridderBuilder` both scale their entries here, so
+    that they do it in the same order and give exactly the same numbers.
+    """
+    return value * scale * factor / volume
+
+
 @numba.njit(cache=True, parallel=True)
 def _scale(
     indptr: np.ndarray,
@@ -1482,8 +1563,8 @@ def _scale(
     result: np.ndarray,
 ) -> None:
     """
-    Multiply each entry of a transposed matrix by `scale` and by the factor
-    of its input cell, and divide it by the volume of its output cell.
+    Scale each entry of a transposed matrix with :func:`_scaled`, by `scale`,
+    the factor of its input cell and the volume of its output cell.
 
     Each row of a table describes one axis of the rows or the columns: its
     stride and length there, and its stride in `factor` and in `volume`.
@@ -1504,4 +1585,4 @@ def _scale(
                 i = (c // table_columns[a, 0]) % table_columns[a, 1]
                 f += i * table_columns[a, 2]
                 v += i * table_columns[a, 3]
-            result[k] = data[k] * scale * factor[f] / volume[v]
+            result[k] = _scaled(data[k], scale, factor[f], volume[v])

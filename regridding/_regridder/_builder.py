@@ -1,23 +1,19 @@
-from typing import Any, Sequence
+from typing import Any, NoReturn, Sequence
 import dataclasses
 import numpy as np
 import numba
 from numba.typed.typedlist import List as TypedList
-from regridding import _util
-from regridding._weights._weights_transposed._weights_transposed import (
-    _check_grids,
-    _factors,
-)
 from ._regridder import (
     Regridder,
     _axes,
     _check_orthogonal,
-    _flat,
     _index_dtype,
     _lists,
     _lookup,
     _offset,
     _orthogonal,
+    _scale_unit,
+    _scaled,
 )
 
 __all__ = [
@@ -52,13 +48,17 @@ class RegridderBuilder:
     format :func:`regridding.weights` returns for those elements, and it
     says where it lies with the index of its first element.  An element no
     piece covers has no entries.  The second pass has to give the same
-    pieces in the same order, with the same entries, which is checked: the
-    entries of each piece as it is placed, and those of each row by
-    :meth:`build`.
+    pieces in the same order, with the same entries.  Only the numbers of
+    entries are checked, since nothing else of the first pass is kept: that
+    of each piece as it is placed, and that of each row by :meth:`build`.
+    Values which changed between the passes, or entries which moved to
+    other columns, go unnoticed.
 
     Exact zeros are dropped along with the empty slots: they add nothing to
-    a product, and they can be much of the weights, such as those of the
-    cells a field stop blocks.  The matrix is then the one
+    a product of finite values, and they can be much of the weights, such
+    as those of the cells a field stop blocks.  A NaN or an infinity in
+    such a cell then reaches no output, where the zeros would make NaN of
+    every output they lead to.  The matrix is the one
     :meth:`Regridder.from_weights` assembles from the same weights with
     their zeros dropped, bit for bit, as long as each row gets its entries in
     the same order.  A row keeps its entries in the order they were placed,
@@ -70,11 +70,16 @@ class RegridderBuilder:
     With ``conservative=True``, the second pass also takes the grids of each
     piece, and :meth:`build` also returns the conservative transpose of the
     operator, the one :meth:`Regridder.transpose_conservative` computes from
-    the grids of all the weights, bit for bit.  Each entry is scaled while
-    the grids of its piece are at hand, so the grids are never needed all at
-    once either.  The scaled values are kept in the order of the entries of
-    the operator until :meth:`build` transposes them, which takes memory for
-    a third set of values until then.
+    the grids of all the weights, bit for bit.  Each entry is scaled by the
+    cells of the element it came from while the grids of its piece are at
+    hand, so the grids are never needed all at once either.  For the same
+    reason, an orthogonal axis can be summed after the input is shared along
+    it even where the grids vary along it, which
+    :meth:`Regridder.transpose_conservative` refuses: the transpose is then
+    the sum of the conservative transposes of the elements.  The scaled
+    values are kept in the order of the entries of the operator until
+    :meth:`build` transposes them, which takes memory for a third set of
+    values until then.
 
     .. code-block:: python
 
@@ -116,9 +121,15 @@ class RegridderBuilder:
         The shape of the arrays the operator returns, as
         :meth:`Regridder.from_weights` takes it.
     axis_input
-        The resampled axes of `shape_input`.
+        The resampled axes of `shape_input`, counted along it.
+        :meth:`Regridder.from_weights` counts them along the grids the
+        weights were computed for instead, which a builder does not have
+        until a piece comes.  The two differ only for positive axes and
+        grids with fewer axes than the operator: negative axes, counted from
+        the end, mean the same in both.
     axis_output
-        The resampled axes of `shape_output`.
+        The resampled axes of `shape_output`, counted along it, as
+        `axis_input` is.
     shape_weights
         The length of the weights along each orthogonal axis, which is the
         shape :func:`regridding.weights` would give them all at once.
@@ -134,9 +145,6 @@ class RegridderBuilder:
     ValueError
         If the shapes do not fit each other, as for
         :meth:`Regridder.from_weights`.
-    NotImplementedError
-        With ``conservative=True``, if the operator sums an orthogonal axis
-        it shares the input along.
     """
 
     def __init__(
@@ -176,17 +184,6 @@ class RegridderBuilder:
             orthogonal_output=orthogonal_output,
             shape_weights=shape_weights,
         )
-
-        if conservative:
-            for k, num in enumerate(shape_weights):
-                shared = shape_input[orthogonal_input[k]] == 1
-                summed = shape_output[orthogonal_output[k]] == 1
-                if num > 1 and shared and summed:
-                    raise NotImplementedError(
-                        f"orthogonal axis {k} is summed after the input is "
-                        f"shared along it, which a conservative build does not "
-                        f"support"
-                    )
 
         self.shape_input = shape_input
         """The shape of the arrays the operator accepts."""
@@ -329,7 +326,9 @@ class RegridderBuilder:
         Place the entries of a piece of the weights in the matrix, in the
         second pass.
 
-        The first piece placed ends the first pass.
+        The first piece placed ends the first pass, and makes room for every
+        entry.  Without memory enough for them, nothing changes, so the piece
+        can be placed again once memory is freed.
 
         Parameters
         ----------
@@ -355,8 +354,9 @@ class RegridderBuilder:
         ValueError
             If the piece is not the one counted in the same place of the first
             pass, or the grids are missing from a conservative build or given
-            to another.  Also if the piece has entries other than those
-            counted for it, after which the builder cannot go on.
+            to another.  Also if the piece does not have as many entries as
+            were counted for it, or gives a row more than were, after which
+            the builder cannot go on, and lets go of the matrix.
         """
         self._check_usable()
 
@@ -430,13 +430,18 @@ class RegridderBuilder:
 
         self._num_placed += 1
 
-        if overflow or num_entries != num_counted:
-            self._failure = (
-                f"piece {k}, which starts at {piece.start}, does not have the "
-                f"{num_counted} entries counted for it in the first pass; both "
+        if num_entries != num_counted:
+            self._fail(
+                f"piece {k}, which starts at {piece.start}, has {num_entries} "
+                f"entries, but {num_counted} were counted for it in the first "
+                f"pass; both passes have to give the same weights"
+            )
+        if overflow:
+            self._fail(
+                f"piece {k}, which starts at {piece.start}, gives a row more "
+                f"entries than were counted for it in the first pass; both "
                 f"passes have to give the same weights"
             )
-            raise ValueError(self._failure)
 
     def build(self) -> tuple[Regridder, None | Regridder]:
         """
@@ -444,7 +449,8 @@ class RegridderBuilder:
         every piece counted has been placed.
 
         The builder lets go of the matrices, which belong to the operators
-        from then on.
+        from then on.  Without memory enough to transpose the scaled values,
+        nothing changes, so this can be called again once memory is freed.
 
         Returns
         -------
@@ -455,7 +461,8 @@ class RegridderBuilder:
         ------
         ValueError
             If a piece counted in the first pass has not been placed, or a
-            row was not given the entries counted for it.
+            row was not given as many entries as were counted for it, after
+            which the builder cannot go on, and lets go of the matrix.
         """
         self._check_usable()
 
@@ -472,15 +479,12 @@ class RegridderBuilder:
 
         wrong = np.flatnonzero(matrix.cursors != matrix.indptr[1:])
         if wrong.size:
-            self._failure = (
+            self._fail(
                 f"{wrong.size} rows of the matrix, the first of them row "
-                f"{wrong[0]}, were not given the entries counted for them in "
-                f"the first pass; both passes have to give the same weights"
+                f"{wrong[0]}, were not given as many entries as were counted "
+                f"for them in the first pass; both passes have to give the "
+                f"same weights"
             )
-            raise ValueError(self._failure)
-
-        self._matrix = None
-        self._built = True
 
         unit = None if self._unit is _unknown else self._unit
         regridder = dataclasses.replace(
@@ -499,6 +503,11 @@ class RegridderBuilder:
             # `Regridder.transpose_conservative` returns it
             transposed = dataclasses.replace(values._transpose(), unit=None)
 
+        # only once nothing else can fail, so that a builder which ran out of
+        # memory still has the matrix
+        self._matrix = None
+        self._built = True
+
         return regridder, transposed
 
     def _check_usable(self) -> None:
@@ -508,6 +517,16 @@ class RegridderBuilder:
         if self._built:
             raise ValueError("this builder has built its operators already")
 
+    def _fail(self, failure: str) -> NoReturn:
+        """
+        Stop the builder for good, letting go of the matrix, which it can no
+        longer finish, and raise a :class:`ValueError` which says why.
+        """
+        self._failure = failure
+        self._counts = None
+        self._matrix = None
+        raise ValueError(failure)
+
     def _settle_unit(self, unit: Any) -> None:
         """Take `unit` for that of the weights, if no piece has said yet."""
         if self._unit is _unknown:
@@ -515,22 +534,30 @@ class RegridderBuilder:
 
     def _start_placing(self) -> "_Matrix":
         """
-        End the first pass: sum the counts of the rows, in place, into where
-        each row starts, and make room for the entries.
+        End the first pass: make room for the entries, then sum the counts of
+        the rows, in place, into where each row starts.
+
+        Nothing changes until there is room for every entry, so a builder
+        without memory enough for them is left as it was.
         """
         counts = self._counts
         if counts is None:  # pragma: nocover
             raise RuntimeError("the second pass has begun already")
-        np.cumsum(counts, out=counts)
-        _, num_columns = self._regridder.shape_matrix
-        num_entries = int(counts[~0])
+        num_rows, num_columns = self._regridder.shape_matrix
+        num_entries = int(counts.sum())
         num_conservative = num_entries if self.conservative else 0
+        cursors = np.empty(num_rows, dtype=np.int64)
+        indices = np.empty(num_entries, dtype=_index_dtype(num_columns))
+        data = np.empty(num_entries, dtype=self.dtype)
+        data_conservative = np.empty(num_conservative, dtype=self.dtype)
+        np.cumsum(counts, out=counts)
+        cursors[:] = counts[:~0]
         matrix = _Matrix(
             indptr=counts,
-            cursors=counts[:~0].copy(),
-            indices=np.empty(num_entries, dtype=_index_dtype(num_columns)),
-            data=np.empty(num_entries, dtype=self.dtype),
-            data_conservative=np.empty(num_conservative, dtype=self.dtype),
+            cursors=cursors,
+            indices=indices,
+            data=data,
+            data_conservative=data_conservative,
         )
         self._counts = None
         self._matrix = matrix
@@ -686,64 +713,30 @@ class RegridderBuilder:
         weights_input
             The weights applied to the input values of its elements, if any.
         """
-        ndim_input = len(self.shape_input)
-        ndim_output = len(self.shape_output)
-
-        (
-            coordinates_input,
-            coordinates_output,
-            axis_input,
-            axis_output,
-            _,
-            _,
-            _,
-        ) = _util._normalize_input_output_coordinates(
+        factor, strides_factor, volume, strides_volume = self._regridder._factors_flat(
             coordinates_input=coordinates_input,
             coordinates_output=coordinates_output,
-            axis_input=tuple(ax - ndim_input for ax in self.axis_input),
-            axis_output=tuple(ax - ndim_output for ax in self.axis_output),
-        )
-        axis_input = tuple(sorted(axis_input))
-        axis_output = tuple(sorted(axis_output))
-
-        orthogonal_input = self._regridder._orthogonal_input
-        orthogonal_output = self._regridder._orthogonal_output
-        shape_cells_input = _cells(self.shape_input, orthogonal_input, piece.shape)
-        shape_cells_output = _cells(self.shape_output, orthogonal_output, piece.shape)
-
-        _check_grids(
-            coordinates_input=coordinates_input,
-            coordinates_output=coordinates_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
-            shape_input=shape_cells_input,
-            shape_output=shape_cells_output,
-        )
-
-        factor, volume = _factors(
-            coordinates_input=coordinates_input,
-            coordinates_output=coordinates_output,
-            axis_input=axis_input,
-            axis_output=axis_output,
-            shape_input=shape_cells_input,
             weights_input=weights_input,
+            shape_weights=piece.shape,
         )
-        factor, strides_factor = _flat(factor, shape_cells_input, "input")
-        volume, strides_volume = _flat(volume, shape_cells_output, "output")
 
+        # the cells along the resampled axes, which the grids of the piece
+        # share with the operator
         lookup_factor = _lookup(
-            shape_cells_input,
+            self.shape_input,
             self.axis_input,
             {ax: strides_factor[ax] for ax in self.axis_input},
         )
         lookup_volume = _lookup(
-            shape_cells_output,
+            self.shape_output,
             self.axis_output,
             {ax: strides_volume[ax] for ax in self.axis_output},
         )
 
         # the cells of each element of the piece, which knows its element, so
         # it need not find it from the row and the column of an entry
+        orthogonal_input = self._regridder._orthogonal_input
+        orthogonal_output = self._regridder._orthogonal_output
         offsets_factor = []
         offsets_volume = []
         for local in np.ndindex(*piece.shape):
@@ -754,15 +747,8 @@ class RegridderBuilder:
                 sum(i * strides_volume[ax] for i, ax in zip(local, orthogonal_output))
             )
 
-        # a dimensionless unit, like a percentage, scales the weights by the
-        # number it stands for, and any other is dropped, as
-        # `Regridder.transpose_conservative` does
-        scale = 1.0
-        if piece.unit is not _unknown and piece.unit is not None:
-            scale = float(_util._dimensionless(1.0 << piece.unit, strict=False))
-
         return _Scaling(
-            scale=scale,
+            scale=_scale_unit(piece.unit),
             factor=factor,
             offsets_factor=np.array(offsets_factor, dtype=np.int64),
             lookup_factor=lookup_factor,
@@ -885,21 +871,6 @@ class _Scaling:
         )
 
 
-def _cells(
-    shape: tuple[int, ...],
-    orthogonal: tuple[int, ...],
-    shape_piece: tuple[int, ...],
-) -> tuple[int, ...]:
-    """
-    The shape of the cells of a grid of a piece of the weights: `shape` along
-    the resampled axes, and the length of the piece along the orthogonal ones.
-    """
-    result = list(shape)
-    for ax, n in zip(orthogonal, shape_piece):
-        result[ax] = n
-    return tuple(result)
-
-
 @numba.njit(cache=True, parallel=True)
 def _count(
     indices_input: TypedList,
@@ -985,13 +956,13 @@ def _place(
     """
     Place the entries of a piece of the weights in the rows of the matrix,
     each at the cursor of its row, skipping empty slots and exact zeros, and
-    return how many there are and whether any found its row full.
+    return how many there are, and whether any found no room left at the end
+    of the matrix, which leaves it out.
 
     The value of each entry in the conservative transpose is its value in
-    the operator, multiplied by `scale` and the factor of its input cell and
-    divided by the volume of its output cell, in the order
-    :func:`regridding._regridder._regridder._scale` multiplies them, so that
-    it gives exactly the same numbers.
+    the operator scaled by :func:`regridding._regridder._regridder._scaled`,
+    as :meth:`Regridder.transpose_conservative` scales it, so that it gives
+    exactly the same numbers.
 
     Parameters
     ----------
@@ -1063,6 +1034,7 @@ def _place(
                 v = values_b[w]
                 if i < 0 or o < 0 or v == 0:
                     continue
+                total += 1
                 r = offset_rows + lookup_rows[o]
                 p = cursors[r]
                 if p >= num_entries:
@@ -1077,7 +1049,8 @@ def _place(
                 if conservative:
                     f = offset_factor + lookup_factor[i]
                     u = offset_volume + lookup_volume[o]
-                    data_conservative[p] = data[p] * scale * factor[f] / volume[u]
-                total += 1
+                    # indices read from arrays look like arrays to a type
+                    # checker, and so do the elements they index
+                    data_conservative[p] = _scaled(data[p], scale, factor[f], volume[u])  # type: ignore[arg-type]
         totals[g] = total
     return int(totals.sum()), bool(overflows.any())

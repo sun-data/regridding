@@ -379,6 +379,17 @@ def test_units_invalid() -> None:
         )
 
 
+def test_units_piece_invalid() -> None:
+    """A piece whose elements have values in different units raises."""
+    case = _case("diagonal", "trailing")
+    array, shape_input, shape_output = _regridder_test._with_unit(case.weights, u.s)
+    indices_input, indices_output, values = array[0, 1]
+    array[0, 1] = (indices_input, indices_output, values.value * u.m)
+    (whole,) = splits["whole"]
+    with pytest.raises(ValueError, match="should have one unit"):
+        _builder(case).count((array, shape_input, shape_output), start=_start(whole))
+
+
 def test_uncovered() -> None:
     """The elements no piece covers have no entries."""
     case = _case("diagonal", "trailing")
@@ -571,21 +582,31 @@ def test_place_grids_invalid() -> None:
 
 def _changed(weights: Weights, change: str) -> Weights:
     """
-    `weights` with an element whose entries changed between the passes:
-    with its values zeroed, or with an entry moved to another row.
+    `weights` with an element whose entries changed between the passes: the
+    values of the first element zeroed, an entry of it moved to the row of
+    its first entry, or an entry of the last element moved to the last row
+    of the matrix.
+
+    The rows of an element follow its output indices, in the same order, so
+    the last row of the last element is the last row of the matrix with any
+    entries.
     """
     array, shape_input, shape_output = weights
     array = array.copy()
-    indices_input, indices_output, values = array[0, 0]
+    index = (0, 0) if change != "last" else tuple(n - 1 for n in array.shape)
+    indices_input, indices_output, values = array[index]
     if change == "zeroed":
         values = np.zeros_like(values)
     else:
         valid = np.flatnonzero((indices_input >= 0) & (values != 0))
-        first = indices_output[valid[0]]
-        other = valid[indices_output[valid] != first]
+        if change == "moved":
+            target = indices_output[valid[0]]
+        else:
+            target = indices_output[valid].max()
+        other = valid[indices_output[valid] != target]
         indices_output = indices_output.copy()
-        indices_output[other[~0]] = first
-    array[0, 0] = (indices_input, indices_output, values)
+        indices_output[other[~0]] = target
+    array[index] = (indices_input, indices_output, values)
     return array, shape_input, shape_output
 
 
@@ -602,6 +623,20 @@ def test_place_changed() -> None:
         builder.place(_changed(case.weights, "zeroed"), start=_start(whole))
     with pytest.raises(ValueError, match="cannot go on"):
         builder.build()
+
+
+def test_place_overrun() -> None:
+    """
+    A piece which gives the last row of the matrix more entries than were
+    counted for it, with as many in all, raises as it is placed, rather than
+    writing past the end of the matrix.
+    """
+    case = _case("diagonal", "trailing")
+    (whole,) = splits["whole"]
+    builder = _builder(case)
+    builder.count(_piece(case.weights, whole), start=_start(whole))
+    with pytest.raises(ValueError, match="does not have the"):
+        builder.place(_changed(case.weights, "last"), start=_start(whole))
 
 
 def test_build_rows_changed() -> None:

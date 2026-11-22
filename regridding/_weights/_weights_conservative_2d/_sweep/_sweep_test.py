@@ -1,7 +1,10 @@
+from typing import Callable
 import pytest
 import numpy as np
 import astropy.units as u
 import regridding
+from . import _sweep
+from ._sweep import weights_conservative_2d
 
 box_x = np.linspace(-1, 1, num=2)[..., np.newaxis]
 box_y = np.linspace(-1, 1, num=2)
@@ -421,3 +424,80 @@ def test_row_starts_on_face() -> None:
         _area(*grid_output).ravel(),
         rtol=1e-6,
     )
+
+
+def _grids_exact() -> tuple[
+    tuple[np.ndarray, ...],
+    tuple[np.ndarray, ...],
+    np.ndarray,
+]:
+    """
+    An input lattice, an output lattice which is not quite even, so that the
+    sweep is used, and weights of the input cells, all of values which
+    single precision holds exactly.
+    """
+    t = np.linspace(-1, 1, 9)
+    grid_input = tuple(np.meshgrid(t + 0.125, t - 0.0625, indexing="ij"))
+    v = _lattice(-1.2, 1.2, 11).astype(np.float32).astype(np.float64)
+    grid_output = tuple(np.meshgrid(v, v, indexing="ij"))
+    weights_input = np.random.default_rng(6).uniform(0.5, 1.5, size=(8, 8))
+    weights_input = weights_input.astype(np.float32).astype(np.float64)
+    return grid_input, grid_output, weights_input
+
+
+def _readonly(a: np.ndarray) -> np.ndarray:
+    """`a` as a view which cannot be written to."""
+    return np.broadcast_to(a, a.shape)
+
+
+def _strided(a: np.ndarray) -> np.ndarray:
+    """`a` as a view which is not contiguous."""
+    return np.repeat(np.repeat(a, 2, axis=0), 2, axis=1)[::2, ::2]
+
+
+def _single(a: np.ndarray) -> np.ndarray:
+    """`a` in single precision."""
+    return a.astype(np.float32)
+
+
+_layouts: dict[str, Callable[[np.ndarray], np.ndarray]] = dict(
+    readonly=_readonly,
+    fortran=np.asfortranarray,
+    strided=_strided,
+    single=_single,
+)
+"""Ways to lay out the same values, which :mod:`numba` would compile apart."""
+
+
+@pytest.mark.parametrize(argnames="layout", argvalues=list(_layouts))
+def test_layouts(layout: str) -> None:
+    """
+    Grids and weights of the input cells in another layout or precision give
+    the weights which writable, C-contiguous arrays of double precision give,
+    exactly, from the one version of the sweep which :mod:`numba` compiles.
+    """
+    grid_input, grid_output, weights_input = _grids_exact()
+    change = _layouts[layout]
+
+    expected = weights_conservative_2d(grid_input, grid_output, weights_input)
+    result = weights_conservative_2d(
+        tuple(change(c) for c in grid_input),
+        tuple(change(c) for c in grid_output),
+        change(weights_input),
+    )
+
+    for a, b in zip(result, expected):
+        assert a.dtype == b.dtype
+        assert np.array_equal(a, b)
+
+    # with the JIT of Numba on, one version was compiled for every layout
+    assert len(getattr(_sweep._weights_conservative_2d, "signatures", [None])) == 1
+
+
+def test_weights_input_none() -> None:
+    """No weights of the input cells give the weights which weights of one give."""
+    grid_input, grid_output, _ = _grids_exact()
+    expected = weights_conservative_2d(grid_input, grid_output, np.ones((8, 8)))
+    result = weights_conservative_2d(grid_input, grid_output, None)
+    for a, b in zip(result, expected):
+        assert np.array_equal(a, b)

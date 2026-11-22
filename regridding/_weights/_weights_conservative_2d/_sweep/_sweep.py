@@ -73,10 +73,6 @@ def _compact_rows(
     return indices_input, indices_output, values
 
 
-@numba.njit(
-    cache=True,
-    fastmath=True,
-)
 def weights_conservative_2d(
     grid_input: tuple[np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray],
@@ -86,6 +82,12 @@ def weights_conservative_2d(
     For each cell of `grid_output`,
     compute the fraction of area shared with each cell of `grid_input`
     and save as a list of weights.
+
+    The sweep is given its arguments as one type, whatever type they come
+    in: writable, C-contiguous arrays of double precision, with weights of
+    one if there are none, which leave the weights exactly as they are.  It
+    takes minutes to compile, and :mod:`numba` would otherwise compile it
+    again for each layout of the arrays it is given.
 
     Parameters
     ----------
@@ -97,6 +99,44 @@ def weights_conservative_2d(
         Every component must have the same 2D shape.
     weights_input
         Optional weights applied to the values of the input grid before resampling.
+    """
+    x_input, y_input = (np.array(c, dtype=np.float64, order="C") for c in grid_input)
+    x_output, y_output = (np.array(c, dtype=np.float64, order="C") for c in grid_output)
+
+    if weights_input is None:
+        weights_input = np.ones(tuple(n - 1 for n in x_input.shape))
+    else:
+        weights_input = np.array(weights_input, dtype=np.float64, order="C")
+
+    return _weights_conservative_2d(
+        grid_input=(x_input, y_input),
+        grid_output=(x_output, y_output),
+        weights_input=weights_input,
+    )
+
+
+@numba.njit(
+    cache=True,
+    fastmath=True,
+)
+def _weights_conservative_2d(
+    grid_input: tuple[np.ndarray, np.ndarray],
+    grid_output: tuple[np.ndarray, np.ndarray],
+    weights_input: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute the weights of :func:`weights_conservative_2d`, from arguments of
+    the one type it gives.
+
+    Parameters
+    ----------
+    grid_input
+        The vertices of the old grid.
+    grid_output
+        The vertices of the new grid.
+    weights_input
+        The weights applied to the values of the input grid before
+        resampling, ones if there are none.
     """
 
     volume_input = _grids.grid_volume(grid_input)
@@ -134,7 +174,7 @@ def _sweep_grid(
     grid_input: tuple[np.ndarray, np.ndarray],
     grid_output: tuple[np.ndarray, np.ndarray],
     volume_input: np.ndarray,
-    weights_input: None | np.ndarray,
+    weights_input: np.ndarray,
     rows: TypedList,
     sweep_input: bool,
 ) -> None:
@@ -151,7 +191,8 @@ def _sweep_grid(
     volume_input
         The area of the input grid which will used to compute the weight.
     weights_input
-        Optional weights applied to the values of the input grid before resampling.
+        The weights applied to the values of the input grid before
+        resampling, ones if there are none.
     weights_output
         The current list of output weights.
         New weights will be appended to this list.
@@ -218,7 +259,7 @@ def _sweep_along_axis(
     volume_input: np.ndarray,
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
-    weights_input: None | np.ndarray,
+    weights_input: np.ndarray,
     rows: TypedList,
     sweep_input: bool,
     axis_sweep: int,
@@ -255,7 +296,8 @@ def _sweep_along_axis(
         this could be calculated from the other arguments,
         but we don't to save computation time.
     weights_input
-        Optional weights applied to the values of the input grid before resampling.
+        The weights applied to the values of the input grid before
+        resampling, ones if there are none.
     weights_output
         The current list of weights.
         New weights will be appended to this list.
@@ -578,7 +620,7 @@ def _step_inside_static(
     volume_input: np.ndarray,
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
-    weights_input: None | np.ndarray,
+    weights_input: np.ndarray,
     weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
@@ -638,7 +680,8 @@ def _step_inside_static(
         this could be calculated from the other arguments,
         but we don't to save computation time.
     weights_input
-        Optional weights applied to the values of the input grid before resampling.
+        The weights applied to the values of the input grid before
+        resampling, ones if there are none.
     weights_output
         The current list of weights.
         New weights will be appended to this list.
@@ -768,7 +811,7 @@ def _calc_and_save_weights(
     volume_input: np.ndarray,
     shape_cells_input: tuple[int, int],
     shape_cells_output: tuple[int, int],
-    weights_input: None | np.ndarray,
+    weights_input: np.ndarray,
     weights_output: TypedList[tuple[int, int, float]],
     sweep_input: bool,
     axis_sweep: int,
@@ -803,8 +846,7 @@ def _calc_and_save_weights(
 
         weight_left = area_sweep / area_input_left
 
-        if weights_input is not None:
-            weight_left *= weights_input[index_input_left]
+        weight_left *= weights_input[index_input_left]
 
         index_input_left = _arrays.index_flat(index_input_left, shape_cells_input)
         index_output_left = _arrays.index_flat(index_output_left, shape_cells_output)
@@ -826,8 +868,7 @@ def _calc_and_save_weights(
 
         weight_right = -area_sweep / area_input_right
 
-        if weights_input is not None:
-            weight_right *= weights_input[index_input_right]
+        weight_right *= weights_input[index_input_right]
 
         index_input_right = _arrays.index_flat(index_input_right, shape_cells_input)
         index_output_right = _arrays.index_flat(index_output_right, shape_cells_output)

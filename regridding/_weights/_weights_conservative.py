@@ -141,7 +141,15 @@ def _weights_conservative(
     shape_values_output = tuple(shape_values_output)
 
     if weights_input is not None:
-        weights_input = np.broadcast_to(weights_input, shape_values_input)
+        # Each element reads the weights of its own input cells, so broadcast
+        # them to the cells of the input grid as broadcast against the output
+        # grid.  `shape_values_input` is the input grid as given, which may
+        # lack orthogonal axes of the output grid, or have only one element
+        # along them.
+        shape_weights_input = list(coordinates_input[0].shape)
+        for ax in axis_input:
+            shape_weights_input[ax] -= 1
+        weights_input = np.broadcast_to(weights_input, tuple(shape_weights_input))
 
     weights = np.empty(shape_orthogonal, dtype=TypedList)
 
@@ -190,7 +198,10 @@ def _weights_conservative(
                 if index_stop >= x_output.shape[0]:
                     break
 
-            concurrent.futures.wait(futures)
+            # raise any error a thread met, which would otherwise leave its
+            # elements without weights
+            for future in futures:
+                future.result()
 
         weights = weights.reshape(shape_orthogonal)
 
@@ -212,7 +223,10 @@ def _weights_conservative(
                 coordinates_input_x, coordinates_input_y = coordinates_input
                 coordinates_output_x, coordinates_output_y = coordinates_output
                 if weights_input is not None:
-                    weights_input_index = weights_input[index]
+                    # the input cells of this element, which lie along the
+                    # same axes as its vertices, wherever the resampled axes
+                    # are among the orthogonal ones
+                    weights_input_index = weights_input[index_vertices_input]
                 else:
                     weights_input_index = None
                 grid_input_index = (

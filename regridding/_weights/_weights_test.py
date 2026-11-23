@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, NoReturn
 import pytest
 import numpy as np
 import astropy.units as u
@@ -433,6 +433,23 @@ def test_weights_input_unit_on_device() -> None:
         )
 
 
+def _assert_same_weights(
+    result: np.ndarray,
+    expected: np.ndarray,
+    device: bool = False,
+) -> None:
+    """
+    Assert that two arrays of weights have exactly the same indices and
+    values for every element, copying them from the device if `device`.
+    """
+    assert result.shape == expected.shape
+    for index in np.ndindex(*expected.shape):
+        for a, b in zip(result[index], expected[index]):
+            if device:
+                a, b = a.copy_to_host(), b.copy_to_host()
+            assert np.array_equal(a, b)
+
+
 def _grids_interleaved(
     curvilinear: bool,
 ) -> tuple[tuple[np.ndarray, ...], tuple[np.ndarray, ...], np.ndarray]:
@@ -511,9 +528,119 @@ def test_weights_input_interleaved(kernel: str) -> None:
         **kwargs,
     )
 
-    assert interleaved.shape == trailing.shape
-    for index in np.ndindex(*trailing.shape):
-        for a, b in zip(trailing[index], interleaved[index]):
-            if kernel == "cuda":
-                a, b = a.copy_to_host(), b.copy_to_host()
-            assert np.array_equal(a, b)
+    _assert_same_weights(interleaved, trailing, device=kernel == "cuda")
+
+
+def _grids_broadcast(
+    case: str,
+    ndim: int,
+    curvilinear: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    The arguments of a conservative build onto three output grids along an
+    orthogonal axis, from an input grid which the output grids broadcast
+    along that axis, and the same arguments with the input grid broadcast by
+    hand.
+
+    The input grid has 4 cells along each of its `ndim` resampled axes.  In
+    the ``"shared"`` case it has no orthogonal axis and a weight for each of
+    its cells; in ``"length 1"`` it has the orthogonal axis, but only one
+    element along it; and in ``"per element"`` it has no orthogonal axis,
+    but different weights for each element.  The output grids are lattices
+    shifted along the first resampled axis, and bent if `curvilinear`, so
+    that the sweep resamples onto them instead of the clipping kernel.
+    """
+    t = np.linspace(-2, 2, 5)
+    grid_input = tuple(np.meshgrid(*ndim * [t], indexing="ij"))
+
+    t_output = (np.linspace(-3, 3, 7), np.linspace(-3, 3, 8))[:ndim]
+    grid_output = list(np.meshgrid(*t_output, indexing="ij"))
+    if curvilinear:
+        grid_output[0] = grid_output[0] + 0.1 * grid_output[1]
+    shift = np.array([0, 0.1, 0.2]).reshape((3,) + ndim * (1,))
+    grid_output = (grid_output[0] + shift,) + tuple(
+        np.broadcast_to(c, shift.shape[:1] + c.shape) for c in grid_output[1:]
+    )
+
+    rng = np.random.default_rng(4)
+    shape_cells = ndim * (4,)
+    if case == "shared":
+        weights_input = rng.uniform(0.5, 1.5, size=shape_cells)
+    elif case == "length 1":
+        grid_input = tuple(c[np.newaxis] for c in grid_input)
+        weights_input = rng.uniform(0.5, 1.5, size=(1,) + shape_cells)
+    else:
+        weights_input = rng.uniform(0.5, 1.5, size=(3,) + shape_cells)
+
+    ndim_input = grid_input[0].ndim
+    axis_output = tuple(range(1, ndim + 1))
+    kwargs: dict[str, Any] = dict(
+        coordinates_input=grid_input,
+        coordinates_output=grid_output,
+        axis_input=tuple(range(ndim_input - ndim, ndim_input)),
+        axis_output=axis_output,
+        weights_input=weights_input,
+        method="conservative",
+    )
+    kwargs_broadcast = kwargs | dict(
+        coordinates_input=tuple(
+            np.broadcast_to(c, (3,) + c.shape[-ndim:]) for c in grid_input
+        ),
+        axis_input=axis_output,
+    )
+
+    return kwargs, kwargs_broadcast
+
+
+@pytest.mark.parametrize(
+    argnames="kernel",
+    argvalues=[
+        "1d",
+        "clipping",
+        "sweep",
+        pytest.param("cuda", marks=pytest.mark.cuda),
+    ],
+)
+@pytest.mark.parametrize(
+    argnames="case",
+    argvalues=["shared", "length 1", "per element"],
+)
+def test_weights_input_broadcast(case: str, kernel: str) -> None:
+    """
+    The weights of the input cells are broadcast against the output grid
+    along with the input grid, so an input grid which the output grid
+    broadcasts gives the same weights as one broadcast by hand.
+    """
+    kwargs, kwargs_broadcast = _grids_broadcast(
+        case=case,
+        ndim=1 if kernel == "1d" else 2,
+        curvilinear=kernel == "sweep",
+    )
+    if kernel == "cuda":
+        kwargs |= dict(coalesce=False, device="cuda")
+        kwargs_broadcast |= dict(coalesce=False, device="cuda")
+
+    result, _, _ = regridding.weights(**kwargs)
+    expected, _, _ = regridding.weights(**kwargs_broadcast)
+
+    _assert_same_weights(result, expected, device=kernel == "cuda")
+
+
+def test_weights_1d_thread_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    An error in one of the threads which build 1D weights is raised, instead
+    of leaving the elements of that thread without weights.
+    """
+
+    def _fail(**kwargs: Any) -> NoReturn:
+        raise RuntimeError("the thread failed")
+
+    monkeypatch.setattr(_conservative, "weights_conservative_1d", _fail)
+
+    with pytest.raises(RuntimeError, match="the thread failed"):
+        regridding.weights(
+            coordinates_input=(np.linspace(-2, 2, 5),),
+            coordinates_output=(np.linspace(-3, 3, 7),),
+            method="conservative",
+            coalesce=False,
+        )

@@ -87,7 +87,8 @@ def weights_conservative_2d(
     in: writable, C-contiguous arrays of double precision, with weights of
     one if there are none, which leave the weights exactly as they are.  It
     takes minutes to compile, and :mod:`numba` would otherwise compile it
-    again for each layout of the arrays it is given.
+    again for each layout of the arrays it is given.  A grid which is
+    already of that type is given as it is, without a copy.
 
     Parameters
     ----------
@@ -98,21 +99,34 @@ def weights_conservative_2d(
         The vertices of the new grid.
         Every component must have the same 2D shape.
     weights_input
-        Optional weights applied to the values of the input grid before resampling.
+        Optional weights applied to the values of the input grid before
+        resampling, which must broadcast to the shape of its cells.
     """
-    x_input, y_input = (np.array(c, dtype=np.float64, order="C") for c in grid_input)
-    x_output, y_output = (np.array(c, dtype=np.float64, order="C") for c in grid_output)
+    x_input, y_input = (_c_double(c) for c in grid_input)
+    x_output, y_output = (_c_double(c) for c in grid_output)
 
+    # the sweep does not check its indices, so weights of the wrong shape
+    # are refused here, instead of being read past their end
+    shape_cells_input = tuple(n - 1 for n in x_input.shape)
     if weights_input is None:
-        weights_input = np.ones(tuple(n - 1 for n in x_input.shape))
+        weights_input = np.ones(shape_cells_input)
     else:
-        weights_input = np.array(weights_input, dtype=np.float64, order="C")
+        weights_input = _c_double(np.broadcast_to(weights_input, shape_cells_input))
 
     return _weights_conservative_2d(
         grid_input=(x_input, y_input),
         grid_output=(x_output, y_output),
         weights_input=weights_input,
     )
+
+
+def _c_double(a: np.ndarray) -> np.ndarray:
+    """
+    `a` as a writable, aligned, C-contiguous array of double precision, of
+    the class :class:`numpy.ndarray` itself, copied only if it is not one
+    already.
+    """
+    return np.require(a, dtype=np.float64, requirements=["C", "W", "A", "E"])
 
 
 @numba.njit(
@@ -193,9 +207,9 @@ def _sweep_grid(
     weights_input
         The weights applied to the values of the input grid before
         resampling, ones if there are none.
-    weights_output
-        The current list of output weights.
-        New weights will be appended to this list.
+    rows
+        The lists of ``(input, output, weight)`` triples of every row swept
+        so far, to which the rows of this sweep are appended.
     sweep_input
         A boolean flag indicating whether to iterate along `grid_input`
         or `grid_output`.
@@ -298,9 +312,9 @@ def _sweep_along_axis(
     weights_input
         The weights applied to the values of the input grid before
         resampling, ones if there are none.
-    weights_output
-        The current list of weights.
-        New weights will be appended to this list.
+    rows
+        The lists of ``(input, output, weight)`` triples of every row swept
+        so far, to which the rows of this sweep are appended.
     sweep_input
         A boolean flag indicating whether to iterate along `grid_input`
         or `grid_output`.

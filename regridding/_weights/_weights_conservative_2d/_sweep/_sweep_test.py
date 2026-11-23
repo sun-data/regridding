@@ -432,15 +432,24 @@ def _grids_exact() -> tuple[
     np.ndarray,
 ]:
     """
-    An input lattice, an output lattice which is not quite even, so that the
-    sweep is used, and weights of the input cells, all of values which
-    single precision holds exactly.
+    An input lattice, an output lattice with its vertices moved a little at
+    random, and weights of the input cells, all of values which single
+    precision holds exactly.
+
+    These are given to the sweep directly, without the perturbation which
+    :func:`regridding.weights` gives the output grid against degenerate
+    grids, so the output lattice is perturbed here instead, so that none of
+    its edges is parallel to an edge of the input lattice.
     """
     t = np.linspace(-1, 1, 9)
     grid_input = tuple(np.meshgrid(t + 0.125, t - 0.0625, indexing="ij"))
-    v = _lattice(-1.2, 1.2, 11).astype(np.float32).astype(np.float64)
-    grid_output = tuple(np.meshgrid(v, v, indexing="ij"))
-    weights_input = np.random.default_rng(6).uniform(0.5, 1.5, size=(8, 8))
+    v = np.linspace(-1.2, 1.2, 11)
+    rng = np.random.default_rng(6)
+    grid_output = tuple(
+        (c + 0.01 * rng.standard_normal(c.shape)).astype(np.float32).astype(np.float64)
+        for c in np.meshgrid(v, v, indexing="ij")
+    )
+    weights_input = rng.uniform(0.5, 1.5, size=(8, 8))
     weights_input = weights_input.astype(np.float32).astype(np.float64)
     return grid_input, grid_output, weights_input
 
@@ -501,3 +510,49 @@ def test_weights_input_none() -> None:
     result = weights_conservative_2d(grid_input, grid_output, None)
     for a, b in zip(result, expected):
         assert np.array_equal(a, b)
+
+
+def test_weights_input_broadcast() -> None:
+    """
+    Weights of the input cells which broadcast to the shape of the cells give
+    the weights which the weights broadcast by hand give.
+    """
+    grid_input, grid_output, weights_input = _grids_exact()
+    row = weights_input[0]
+    expected = weights_conservative_2d(
+        grid_input,
+        grid_output,
+        np.broadcast_to(row, weights_input.shape),
+    )
+    result = weights_conservative_2d(grid_input, grid_output, row)
+    for a, b in zip(result, expected):
+        assert np.array_equal(a, b)
+
+
+def test_weights_input_wrong_shape() -> None:
+    """
+    Weights of the input cells which do not broadcast to the shape of the
+    cells are refused, instead of being read past their end.
+    """
+    grid_input, grid_output, weights_input = _grids_exact()
+    with pytest.raises(ValueError, match="broadcast"):
+        weights_conservative_2d(grid_input, grid_output, weights_input[:, :~0])
+
+
+@pytest.mark.parametrize(argnames="layout", argvalues=[None, *_layouts])
+def test_c_double(layout: None | str) -> None:
+    """
+    An array which is writable, C-contiguous and of double precision already
+    is given to the sweep as it is, and any other as such a copy.
+    """
+    a = np.arange(12.0).reshape(3, 4)
+    b = a if layout is None else _layouts[layout](a)
+
+    result = _sweep._c_double(b)
+
+    assert type(result) is np.ndarray
+    assert result.dtype == np.float64
+    assert result.flags.c_contiguous
+    assert result.flags.writeable
+    assert np.array_equal(result, a)
+    assert (result is b) == (layout is None)
